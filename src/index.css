@@ -1,0 +1,386 @@
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Lato:wght@400;700;900&family=Merriweather:wght@400;700;900&family=Nunito:wght@400;600;700;800;900&family=Playfair+Display:wght@400;600;700;800;900&family=Poppins:wght@400;500;600;700;800;900&family=Roboto:wght@400;500;700;900&family=Source+Sans+3:wght@400;500;600;700;800;900&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── CSS Variable defaults (overridden by ThemeContext) ─────── */
+:root {
+  --color-primary: #1e3a5f;
+  --color-secondary: #2563eb;
+  --color-accent: #f59e0b;
+  --color-bg: #f8fafc;
+  --color-navbar: #1e3a5f;
+  --color-footer: #111827;
+  --font-body: "Inter", sans-serif;
+  --font-heading: "Inter", sans-serif;
+}
+
+/* ── Base resets ────────────────────────────────────────────── */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-body);
+  background-color: var(--color-bg);
+  color: #1f2937;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+:root[data-theme-mode="dark"] body {
+  color: #e5e7eb;
+  background-color: var(--color-bg);
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-family: var(--font-heading);
+}
+
+/* ── Utility: line clamp (Tailwind v3 has this built-in but
+      keep for safety) ─────────────────────────────────────── */
+.line-clamp-3 {
+  overflow: hidden;
+  display: -webkit-box;
+  line-clamp: 3;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+}
+
+/* ── Scrollbar styling ──────────────────────────────────────── */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 99px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+/* ── Focus rings ────────────────────────────────────────────── */
+input:focus,
+textarea:focus,
+select:focus {
+  outline: none;
+  border-color: var(--color-primary) !important;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+}
+
+/* ── Transitions ────────────────────────────────────────────── */
+a,
+button {
+  transition:
+    opacity 0.15s ease,
+    color 0.15s ease,
+    background-color 0.15s ease;
+}
+
+button:disabled {
+  cursor: not-allowed;
+}
+
+/* Modular messenger appearance tokens. Personal chat choices can override the
+   lab theme without altering the public website. */
+.chat-app-theme main { background: var(--chat-app) !important; }
+.chat-app-theme .bg-white { background-color: var(--chat-surface) !important; }
+.chat-app-theme .bg-slate-50, .chat-app-theme .bg-slate-100 { background-color: var(--chat-surface-alt) !important; }
+.chat-app-theme .border-slate-200 { border-color: var(--chat-border) !important; }
+.chat-app-theme .text-slate-900, .chat-app-theme .text-slate-800, .chat-app-theme .text-slate-700 { color: var(--chat-text) !important; }
+.chat-app-theme .text-slate-600, .chat-app-theme .text-slate-500, .chat-app-theme .text-slate-400 { color: var(--chat-muted) !important; }
+.chat-density-compact .chat-message-bubble { padding: .45rem .7rem !important; }
+.chat-reduce-motion *, .chat-reduce-motion *::before, .chat-reduce-motion *::after { animation-duration: .001ms !important; transition-duration: .001ms !important; }
+
+/* Hide browser-native password reveal controls when custom toggle is used. */
+.hide-password-reveal::-ms-reveal,
+.hide-password-reveal::-ms-clear {
+  display: none;
+}
+
+.hide-password-reveal::-webkit-credentials-auto-fill-button,
+.hide-password-reveal::-webkit-textfield-decoration-container {
+  display: none !important;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+/* ── Animations ─────────────────────────────────────────────── */
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.animate-fade-in-up {
+  animation: fadeInUp 0.4s ease both;
+}
+
+.animate-spin {
+  animation: spin 0.75s linear infinite;
+}
+
+/* ── Prose images ───────────────────────────────────────────── */
+img {
+  max-width: 100%;
+  display: block;
+}
+
+/* ── No-underline helper ────────────────────────────────────── */
+.no-underline {
+  text-decoration: none;
+}
+
+/* ── Admin sidebar transition ───────────────────────────────── */
+aside {
+  transition: width 0.2s ease;
+}
+@property --angle {
+  syntax: "<angle>";
+  initial-value: 0deg;
+  inherits: false;
+}
+
+.rotating-border {
+  background: linear-gradient(
+    var(--angle),
+    var(--color-accent),
+    var(--color-secondary),
+    var(--color-primary),
+    var(--color-accent)
+  );
+  animation: spin-border 4s linear infinite;
+}
+
+@keyframes spin-border {
+  to {
+    --angle: 360deg;
+  }
+}
+
+.ken-burns {
+  animation: ken-burns 8s ease-in-out infinite alternate;
+  transform-origin: center;
+}
+
+@keyframes ken-burns {
+  from {
+    transform: scale(1);
+  }
+  to {
+    transform: scale(1.08);
+  }
+}
+
+@media (min-width: 1024px) {
+  body.nav-vertical #app-layout-content {
+    margin-left: var(--app-sidebar-width, 220px);
+    transition: margin-left 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+}
+
+@media (max-width: 1023px) {
+  body.nav-mobile-top #app-layout-content {
+    padding-top: 58px;
+  }
+
+  body.nav-bottom-mobile #app-layout-content {
+    padding-bottom: 78px;
+  }
+}
+
+/* Global dark fallback for existing light utility/inline styles */
+:root[data-theme-mode="dark"] .bg-white {
+  background-color: #111827;
+}
+
+:root[data-theme-mode="dark"] .bg-gray-50,
+:root[data-theme-mode="dark"] .bg-gray-100 {
+  background-color: #0f172a;
+}
+
+:root[data-theme-mode="dark"] .bg-slate-50,
+:root[data-theme-mode="dark"] .bg-slate-100,
+:root[data-theme-mode="dark"] .bg-slate-200 {
+  background-color: #0f172a;
+}
+
+:root[data-theme-mode="dark"] .bg-\[\#f8fafc\],
+:root[data-theme-mode="dark"] .bg-\[\#f9fafb\] {
+  background-color: #0f172a;
+}
+
+:root[data-theme-mode="dark"] .text-gray-900 {
+  color: #f3f4f6;
+}
+
+:root[data-theme-mode="dark"] .text-slate-900 {
+  color: #f3f4f6;
+}
+
+:root[data-theme-mode="dark"] .text-gray-800 {
+  color: #e5e7eb;
+}
+
+:root[data-theme-mode="dark"] .text-slate-800,
+:root[data-theme-mode="dark"] .text-slate-700 {
+  color: #d1d5db;
+}
+
+:root[data-theme-mode="dark"] .text-gray-700 {
+  color: #d1d5db;
+}
+
+:root[data-theme-mode="dark"] .text-gray-600,
+:root[data-theme-mode="dark"] .text-gray-500,
+:root[data-theme-mode="dark"] .text-gray-400 {
+  color: #9ca3af;
+}
+
+:root[data-theme-mode="dark"] .text-slate-600,
+:root[data-theme-mode="dark"] .text-slate-500,
+:root[data-theme-mode="dark"] .text-slate-400 {
+  color: #9ca3af;
+}
+
+:root[data-theme-mode="dark"] .border,
+:root[data-theme-mode="dark"] .border-t,
+:root[data-theme-mode="dark"] .border-b,
+:root[data-theme-mode="dark"] .border-l,
+:root[data-theme-mode="dark"] .border-r {
+  border-color: rgba(148, 163, 184, 0.25);
+}
+
+:root[data-theme-mode="dark"] .border-slate-50,
+:root[data-theme-mode="dark"] .border-slate-100,
+:root[data-theme-mode="dark"] .border-slate-200,
+:root[data-theme-mode="dark"] .border-slate-300,
+:root[data-theme-mode="dark"] .border-gray-100,
+:root[data-theme-mode="dark"] .border-gray-200,
+:root[data-theme-mode="dark"] .border-gray-300 {
+  border-color: rgba(148, 163, 184, 0.25);
+}
+
+:root[data-theme-mode="dark"] input,
+:root[data-theme-mode="dark"] textarea,
+:root[data-theme-mode="dark"] select {
+  background-color: #0f172a;
+  color: #e5e7eb;
+  border-color: rgba(148, 163, 184, 0.28);
+}
+
+:root[data-theme-mode="dark"] input::placeholder,
+:root[data-theme-mode="dark"] textarea::placeholder {
+  color: #9ca3af;
+}
+
+:root[data-theme-mode="dark"] [style*="background: white"],
+:root[data-theme-mode="dark"] [style*="background:white"],
+:root[data-theme-mode="dark"] [style*="background: #fff"],
+:root[data-theme-mode="dark"] [style*="background:#fff"] {
+  background: #111827 !important;
+}
+
+:root[data-theme-mode="dark"] [style*="background: #f9fafb"],
+:root[data-theme-mode="dark"] [style*="background:#f9fafb"],
+:root[data-theme-mode="dark"] [style*="background: #f8fafc"],
+:root[data-theme-mode="dark"] [style*="background:#f8fafc"] {
+  background: #0f172a !important;
+}
+
+/* Scoped dark fallback for admin sections that still use light utility/inline styles */
+:root[data-theme-mode="dark"] .admin-dashboard-theme {
+  color: #e5e7eb;
+}
+
+:root[data-theme-mode="dark"] .admin-dashboard-theme .bg-white {
+  background-color: #111827;
+}
+
+:root[data-theme-mode="dark"] .admin-dashboard-theme .bg-gray-50 {
+  background-color: #0f172a;
+}
+
+:root[data-theme-mode="dark"] .admin-dashboard-theme .text-gray-900 {
+  color: #f3f4f6;
+}
+
+:root[data-theme-mode="dark"] .admin-dashboard-theme .text-gray-800 {
+  color: #e5e7eb;
+}
+
+:root[data-theme-mode="dark"] .admin-dashboard-theme .text-gray-700 {
+  color: #d1d5db;
+}
+
+:root[data-theme-mode="dark"] .admin-dashboard-theme .text-gray-600,
+:root[data-theme-mode="dark"] .admin-dashboard-theme .text-gray-500,
+:root[data-theme-mode="dark"] .admin-dashboard-theme .text-gray-400 {
+  color: #9ca3af;
+}
+
+:root[data-theme-mode="dark"] .admin-dashboard-theme .border,
+:root[data-theme-mode="dark"] .admin-dashboard-theme .border-t,
+:root[data-theme-mode="dark"] .admin-dashboard-theme .border-b,
+:root[data-theme-mode="dark"] .admin-dashboard-theme .border-l,
+:root[data-theme-mode="dark"] .admin-dashboard-theme .border-r {
+  border-color: rgba(148, 163, 184, 0.25);
+}
+
+:root[data-theme-mode="dark"]
+  .admin-dashboard-theme
+  [style*="background: white"],
+:root[data-theme-mode="dark"]
+  .admin-dashboard-theme
+  [style*="background:white"],
+:root[data-theme-mode="dark"]
+  .admin-dashboard-theme
+  [style*="background: #fff"],
+:root[data-theme-mode="dark"]
+  .admin-dashboard-theme
+  [style*="background:#fff"] {
+  background: #111827 !important;
+}
+
+:root[data-theme-mode="dark"]
+  .admin-dashboard-theme
+  [style*="background: #f9fafb"],
+:root[data-theme-mode="dark"]
+  .admin-dashboard-theme
+  [style*="background:#f9fafb"],
+:root[data-theme-mode="dark"]
+  .admin-dashboard-theme
+  [style*="background: #f8fafc"],
+:root[data-theme-mode="dark"]
+  .admin-dashboard-theme
+  [style*="background:#f8fafc"] {
+  background: #0f172a !important;
+}

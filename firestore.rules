@@ -1,0 +1,297 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    function getRole() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
+    }
+    function isAdmin() {
+      return isSignedIn() && (
+        request.auth.uid == 'hdTp1OzLLmhEI6Chtqa9KGK4Cny1'
+        || getRole() == 'admin'
+        || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.adminLevel == 'moderator'
+        || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.adminLevel == 'primary'
+      );
+    }
+    function isPrimaryAdmin() {
+      return isSignedIn() && (request.auth.uid == 'hdTp1OzLLmhEI6Chtqa9KGK4Cny1' || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.adminLevel == 'primary');
+    }
+    function hasAdminPermission(permission) {
+      return isPrimaryAdmin() || (isAdmin() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.adminPermissions is list && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.adminPermissions.hasAny([permission]));
+    }
+    function isCollaborator() {
+      return isSignedIn() && (getRole() == 'collaborator' || getRole() == 'lab_head' || getRole() == 'admin');
+    }
+    function isStrictCollaborator() {
+      return isSignedIn() && (getRole() == 'collaborator' || getRole() == 'lab_head');
+    }
+    function isChatParticipant(chatId) {
+      return isStrictCollaborator()
+        && get(/databases/$(database)/documents/privateChats/$(chatId)).data.participants.hasAny([request.auth.uid]);
+    }
+    function isOtherChatParticipant(chatId, uid) {
+      return get(/databases/$(database)/documents/privateChats/$(chatId)).data.participants.hasAny([uid])
+        && uid != request.auth.uid;
+    }
+    function isPublicationOwner() {
+      return isSignedIn()
+        && (
+          resource.data.createdByUid == request.auth.uid
+          || (
+            !(resource.data.createdByUid is string)
+            && resource.data.contributorUids is list
+            && resource.data.contributorUids.size() == 1
+            && resource.data.contributorUids.hasAny([request.auth.uid])
+          )
+        );
+    }
+    function isPublicationSelfDisclaimer() {
+      return isCollaborator()
+        && resource.data.createdByUid != request.auth.uid
+        && resource.data.contributorUids is list
+        && request.resource.data.contributorUids is list
+        && resource.data.contributorUids.hasAny([request.auth.uid])
+        && !request.resource.data.contributorUids.hasAny([request.auth.uid])
+        && request.resource.data.contributorUids.size() == resource.data.contributorUids.size() - 1
+        && request.resource.data.diff(resource.data).changedKeys().hasOnly([
+          'contributorUids',
+          'authorEntries',
+          'authors',
+          'updatedAt'
+        ]);
+    }
+    function isGalleryOwner() {
+      return isSignedIn() && resource.data.uploaderUid == request.auth.uid;
+    }
+
+    match /siteContent/{docId} {
+      allow read: if true;
+      allow write: if hasAdminPermission('content.manage');
+    }
+    match /theme/{docId} {
+      allow read: if true;
+      allow write: if hasAdminPermission('content.manage');
+    }
+    match /collaborators/{docId} {
+      allow read: if true;
+      allow create: if hasAdminPermission('collaborators.manage') || hasAdminPermission('requests.manage');
+      allow update: if hasAdminPermission('collaborators.manage') || (isCollaborator() && resource.data.uid == request.auth.uid);
+      allow delete: if hasAdminPermission('collaborators.manage');
+    }
+    match /publications/{docId} {
+      allow read: if true;
+      allow create: if isCollaborator() && request.resource.data.createdByUid == request.auth.uid;
+      allow update: if hasAdminPermission('publications.manage') || isPublicationOwner() || isPublicationSelfDisclaimer();
+      allow delete: if hasAdminPermission('publications.manage') || isPublicationOwner();
+    }
+    match /researchIdeas/{docId} {
+      allow read: if true;
+      allow create: if isCollaborator()
+        && request.resource.data.authorId == request.auth.uid;
+      allow update: if hasAdminPermission('ideas.manage')
+        || (isCollaborator()
+          && resource.data.authorId == request.auth.uid
+          && request.resource.data.authorId == resource.data.authorId
+          && request.resource.data.createdAt == resource.data.createdAt);
+      allow delete: if hasAdminPermission('ideas.manage') || (isCollaborator() && resource.data.authorId == request.auth.uid);
+    }
+    match /comments/{docId} {
+      allow read: if true;
+      allow create: if isCollaborator()
+        && request.resource.data.authorId == request.auth.uid;
+      allow update: if hasAdminPermission('ideas.manage')
+        || (isCollaborator()
+          && resource.data.authorId == request.auth.uid
+          && request.resource.data.authorId == resource.data.authorId
+          && request.resource.data.ideaId == resource.data.ideaId
+          && request.resource.data.createdAt == resource.data.createdAt);
+      allow delete: if hasAdminPermission('ideas.manage') || (isCollaborator() && resource.data.authorId == request.auth.uid);
+    }
+    match /announcements/{docId} {
+      allow read: if true;
+      allow write: if hasAdminPermission('content.manage');
+    }
+    match /gallery/{docId} {
+      allow read: if true;
+      allow create: if isCollaborator()
+        && request.resource.data.uploaderUid == request.auth.uid;
+      allow update: if hasAdminPermission('gallery.manage') || (isCollaborator() && isGalleryOwner());
+      allow delete: if hasAdminPermission('gallery.manage') || (isCollaborator() && isGalleryOwner());
+    }
+    match /pendingRequests/{docId} {
+      allow create: if request.resource.data.keys().hasOnly([
+          'name', 'email', 'affiliation', 'designation', 'bio', 'photo',
+          'linkedin', 'orcid', 'scholar', 'researchgate', 'facebook',
+          'researchInterests', 'status', 'submittedAt'
+        ])
+        && request.resource.data.name is string
+        && request.resource.data.name.size() >= 2
+        && request.resource.data.name.size() <= 120
+        && request.resource.data.email is string
+        && request.resource.data.email.size() <= 254
+        && request.resource.data.bio is string
+        && request.resource.data.bio.size() >= 10
+        && request.resource.data.bio.size() <= 5000
+        && request.resource.data.researchInterests is list
+        && request.resource.data.status == 'pending';
+      allow read, update, delete: if hasAdminPermission('requests.manage');
+    }
+    match /contactMessages/{docId} {
+      allow create: if request.resource.data.keys().hasOnly([
+          'name', 'email', 'subject', 'message', 'submittedAt', 'isRead'
+        ])
+        && request.resource.data.name is string
+        && request.resource.data.name.size() >= 2
+        && request.resource.data.name.size() <= 120
+        && request.resource.data.email is string
+        && request.resource.data.email.size() <= 254
+        && request.resource.data.subject is string
+        && request.resource.data.subject.size() <= 200
+        && request.resource.data.message is string
+        && request.resource.data.message.size() >= 10
+        && request.resource.data.message.size() <= 5000
+        && request.resource.data.isRead == false;
+      allow read, update, delete: if hasAdminPermission('messages.manage');
+    }
+    match /privateChats/{chatId} {
+      allow read: if isStrictCollaborator()
+        && resource.data.participants is list
+        && resource.data.participants.hasAny([request.auth.uid]);
+
+      allow create: if isStrictCollaborator()
+        && request.resource.data.participants is list
+        && request.resource.data.participants.size() == 2
+        && request.resource.data.participants[0] != request.resource.data.participants[1]
+        && request.resource.data.participants.hasAny([request.auth.uid])
+        && request.resource.data.keys().hasOnly([
+          'participants', 'participantNames', 'unreadCounts', 'typingBy', 'createdAt', 'updatedAt'
+        ]);
+
+      allow update: if isStrictCollaborator()
+        && resource.data.participants is list
+        && resource.data.participants.hasAny([request.auth.uid])
+        && request.resource.data.participants == resource.data.participants;
+
+      allow delete: if false;
+
+      match /messages/{messageId} {
+        allow read: if isChatParticipant(chatId);
+
+        allow create: if isChatParticipant(chatId)
+          && request.resource.data.conversationId == chatId
+          && request.resource.data.senderId == request.auth.uid
+          && request.resource.data.recipientId is string
+          && isOtherChatParticipant(chatId, request.resource.data.recipientId)
+          && request.resource.data.encryptedByUser is map
+          && request.resource.data.encryptedByUser.keys().hasAll([
+            request.auth.uid, request.resource.data.recipientId
+          ])
+          && request.resource.data.createdAt is timestamp
+          && request.resource.data.expiresAt is timestamp
+          && request.resource.data.expiresAt > request.resource.data.createdAt
+          && request.resource.data.expiresAt <= request.resource.data.createdAt + duration.value(72, 'h')
+          && request.resource.data.keys().hasOnly([
+            'conversationId', 'senderId', 'recipientId', 'encryptedByUser',
+            'createdAt', 'expiresAt', 'replyToMessageId'
+          ]);
+
+        allow update: if isChatParticipant(chatId)
+          && (
+            (
+              request.resource.data.diff(resource.data).changedKeys().hasOnly([
+                'encryptedByUser',
+                'deletedForEveryoneAt',
+                'reactions'
+              ])
+              && request.resource.data.encryptedByUser is map
+              && request.resource.data.encryptedByUser.keys().size() == 0
+              && request.resource.data.reactions is map
+              && request.resource.data.reactions.keys().size() == 0
+              && request.resource.data.deletedForEveryoneAt is timestamp
+            )
+            ||
+            (
+              resource.data.recipientId == request.auth.uid
+              && request.resource.data.diff(resource.data).changedKeys().hasOnly(['readAt', 'deliveredAt', 'reactions', 'hiddenFor'])
+            )
+            ||
+            (
+              resource.data.senderId == request.auth.uid
+              && request.resource.data.diff(resource.data).changedKeys().hasOnly([
+                'encryptedByUser',
+                'editedAt',
+                'deletedForEveryoneAt',
+                'reactions',
+                'hiddenFor'
+              ])
+            )
+          );
+
+        allow delete: if false;
+      }
+    }
+    match /chatPublicKeys/{userId} {
+      allow read: if isCollaborator();
+      allow create, update: if isStrictCollaborator()
+        && request.auth.uid == userId
+        && request.resource.data.ownerUid == request.auth.uid
+        && request.resource.data.chatPublicKeyJwk is map
+        && request.resource.data.keys().hasOnly([
+          'ownerUid', 'chatPublicKeyJwk', 'chatKeyUpdatedAt'
+        ]);
+      allow delete: if isAdmin() || (isStrictCollaborator() && request.auth.uid == userId);
+    }
+    match /presence/{userId} {
+      allow read: if isStrictCollaborator() || isAdmin();
+      allow create, update: if isSignedIn()
+        && request.auth.uid == userId
+        && request.resource.data.ownerUid == request.auth.uid
+        && request.resource.data.keys().hasOnly(['ownerUid', 'isOnline', 'lastActiveAt', 'lastSeenAt']);
+      allow delete: if isAdmin() || (isSignedIn() && request.auth.uid == userId);
+    }
+    match /privateChatNotifications/{docId} {
+      allow read: if isAdmin();
+      allow write: if isAdmin();
+    }
+    match /privateChatNotificationEvents/{docId} {
+      allow read: if isAdmin();
+      allow write: if isAdmin();
+    }
+    match /users/{userId} {
+      allow read: if isAdmin() || (isSignedIn() && request.auth.uid == userId);
+      allow create: if isAdmin()
+        || (
+          isSignedIn()
+          && request.auth.uid == userId
+          && (request.resource.data.role == 'collaborator' || request.resource.data.role == 'lab_head')
+          && request.resource.data.keys().hasOnly([
+            'email',
+            'name',
+            'role',
+            'createdAt',
+            'presence'
+          ])
+        );
+      allow update: if isPrimaryAdmin()
+        || (
+          isSignedIn()
+          && request.auth.uid == userId
+          && request.resource.data.role == resource.data.role
+          && request.resource.data.diff(resource.data).changedKeys().hasOnly([
+            'email',
+            'name',
+            'presence'
+          ])
+        );
+    }
+    match /adminAuditLog/{docId} {
+      allow read: if isAdmin();
+      allow create: if isPrimaryAdmin()
+        && request.resource.data.actorUid == request.auth.uid;
+      allow update, delete: if false;
+    }
+  }
+}
