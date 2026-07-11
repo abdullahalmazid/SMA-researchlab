@@ -1,145 +1,171 @@
 # Rahman Research Lab
 
-Rahman Research Lab is a public-facing website for a research group. It showcases the lab's people, publications, ideas, announcements, gallery, and contact channels, while also providing secure role-based portals for collaborators and administrators.
+Rahman Research Lab is a full research-team website and collaboration platform. It combines a public research presence with authenticated collaborator tools, granular administration, encrypted private messaging, content management, publications, research ideas, galleries, and role-based portals.
 
-## Overview
+The production application uses React, TypeScript, Firebase Authentication, Cloud Firestore, Cloudinary and Vercel. The current release is compatible with Firebase's free Spark plan and does not require Cloud Functions.
 
-The application is built as a single-page React experience with a polished landing page, content-managed sections, authenticated collaboration features, and Firebase-backed data flows. It is designed to present the lab professionally on the web while keeping private workflows separated behind login.
+## Main Features
 
-## Features
+### Public website
 
-- Responsive home page with hero content, highlights, and call-to-action sections
-- Public pages for About, Collaborators, Publications, Research Ideas, Gallery, and Contact
-- Research idea listing, detail pages, and comment threads
-- Collaborator profiles with search and filter controls
-- Admin and collaborator portals protected by role-based routing
-- Firebase-powered content, authentication, and Firestore data management
-- Cloudinary-powered media uploads for profile and content assets
-- Theme-aware UI built with Tailwind CSS and custom CSS variables
+- Responsive Home, About, Lab Head, Collaborators, Publications, Research Ideas, Gallery and Contact pages
+- Consistent page heroes, navigation, footer branding and route-level scroll reset
+- Searchable collaborator directory with public profile pages
+- Formal publication catalogue with dedicated publication-detail routes
+- Research idea cards, detail pages, comments, replies and synchronized author identities
+- Gallery viewer with navigation-safe modal positioning
+- Dynamic content and branding from Firestore
+- Lab logo synchronized across navigation, footer and browser favicon
+- Configurable global colors and typography
 
-## Tech Stack
+### Collaborator portal
 
-| Layer     | Technology                         |
-| --------- | ---------------------------------- |
-| Frontend  | React 18, TypeScript, Vite         |
-| Styling   | Tailwind CSS, custom CSS variables |
-| Routing   | React Router v6                    |
-| Backend   | Firebase Authentication, Firestore |
-| Media     | Cloudinary                         |
-| Messaging | Encrypted Firestore chat + Firebase Authentication email |
+- Authenticated profile editing
+- Canonical collaborator name, photo and identity synchronization
+- Personal publications and gallery management
+- Research idea and discussion participation
+- Secure private team messenger
+- Lab-head support through the same canonical collaborator model
 
-## Public Routes
+### Administration
 
-| Route                  | Purpose                                      |
-| ---------------------- | -------------------------------------------- |
-| `/`                    | Home page                                    |
-| `/about`               | Lab overview                                 |
-| `/collaborators`       | Collaborator directory and join request flow |
-| `/publications`        | Publications and ongoing work                |
-| `/research-ideas`      | Research idea feed                           |
-| `/research-ideas/:id`  | Research idea detail page                    |
-| `/gallery`             | Lab gallery                                  |
-| `/contact`             | Contact form                                 |
-| `/login`               | Lab-head and collaborator login              |
-| `/admin-login`         | Separate administrator login                 |
-| `/chat`                | Collaborator private encrypted chat          |
-| `/admin/*`             | Admin dashboard                              |
-| `/collaborator-portal` | Collaborator portal                          |
+- Separate administrator login and protected dashboard
+- Page content editor with page cards, expandable field groups and save-state feedback
+- Compact Theme Studio with colors, typography, preview and premium presets
+- Logo, favicon and branding management
+- Collaboration-request review and approval
+- Collaborator directory management
+- Publication, research idea, gallery, announcement and contact-message management
+- Moderator roles with granular permissions
+- Primary administrator protection
+- Real-time grant, edit and withdrawal of administrative access
+- Permission audit records
+- Admin preview modes for lab-head and collaborator interfaces
+
+### Private messenger
+
+- Full-screen encrypted collaborator messaging
+- Right-edge launcher with unread-message count instead of a main navigation tab
+- Recent conversations and searchable team directory
+- Synchronized collaborator names and profile images
+- Online, offline, last-seen and typing states
+- Replies, editing, reactions, pinned messages and read receipts
+- Delete for me, delete for everyone, clear conversation and tray removal
+- Former-collaborator/orphan-conversation handling
+- Short collaborator profile panel with full-profile navigation
+- Lab-theme synchronization
+- Personal chat themes: Lab, Light, Dark, Monochrome, Midnight and Soft Blue
+- Compact density, background pattern and reduced-motion preferences
+
+Personal chat appearance is stored on the current device and does not require additional Firestore writes.
+
+## Technology
+
+| Layer | Technology |
+| --- | --- |
+| Frontend | React 18, TypeScript, Vite |
+| Styling | Tailwind CSS, CSS variables, theme tokens |
+| Routing | React Router v6 |
+| Authentication | Firebase Authentication |
+| Database | Cloud Firestore |
+| Media | Cloudinary |
+| Hosting | Vercel |
+| Messaging | Encrypted Firestore private chat |
+| Email | Firebase Authentication password-reset email |
+
+## Routes
+
+### Public routes
+
+| Route | Purpose |
+| --- | --- |
+| `/` | Home |
+| `/about` | Lab overview |
+| `/lab-head` | Dedicated lab-head page |
+| `/collaborators` | Collaborator directory and application flow |
+| `/collaborators/:uid` | Public collaborator profile |
+| `/publications` | Publication catalogue |
+| `/publications/:id` | Publication details |
+| `/research-ideas` | Research idea feed |
+| `/research-ideas/:id` | Research idea details and discussion |
+| `/gallery` | Lab and collaborator gallery |
+| `/contact` | Contact page |
+| `/login` | Lab-head and collaborator login |
+| `/admin-login` | Primary and moderator administrator login |
+
+### Protected routes
+
+| Route | Access |
+| --- | --- |
+| `/chat` | Collaborators and lab head |
+| `/collaborator-portal` | Collaborators and lab head |
+| `/admin/*` | Primary administrator and authorized moderators |
+
+Dashboard sections use stable routes such as `/admin/content`, `/admin/permissions`, `/admin/publications`, `/admin/research-ideas` and `/admin/gallery`.
 
 ## Project Structure
 
 ```text
-rahmanlab/
-  ├── index.html
-  ├── package.json
-  ├── vite.config.ts
-  ├── tsconfig.json
-  ├── tsconfig.node.json
-  ├── tailwind.config.js
-  ├── postcss.config.js
-  ├── firebase.json
-  ├── firestore.rules
-  ├── firestore.indexes.json
-  ├── vercel.json
-  ├── .env.example
-  ├── README.md
-  ├── scripts/
-  │   └── firestore-seed.ts
-  └── src/
-      ├── App.tsx
-      ├── main.tsx
-      ├── index.css
-      ├── components/
-      │   ├── Navbar.tsx
-      │   ├── Footer.tsx
-      │   ├── ContactForm.tsx
-      │   ├── PublicationCard.tsx
-      │   ├── IdeaCard.tsx
-      │   ├── CollaboratorCard.tsx
-      │   ├── CollaboratorPublicProfile.tsx
-      │   ├── CommentSection.tsx
-      │   ├── CloudinaryUpload.tsx
-      │   └── ProtectedRoute.tsx
-      ├── context/
-      │   ├── AuthContext.tsx
-      │   └── ThemeContext.tsx
-      ├── firebase/
-      │   ├── config.ts
-      │   └── hooks.ts
-      ├── pages/
-      │   ├── Home.tsx
-      │   ├── About.tsx
-      │   ├── Collaborators.tsx
-      │   ├── Publications.tsx
-      │   ├── ResearchIdeas.tsx
-      │   ├── IdeaDetail.tsx
-      │   ├── Gallery.tsx
-      │   ├── Contact.tsx
-      │   └── Login.tsx
-      ├── portals/
-      │   ├── AdminDashboard.tsx
-      │   └── CollaboratorPortal.tsx
-      ├── admin/
-      │   ├── AdminSections.tsx
-      │   ├── ContentEditor.tsx
-      │   ├── ThemeControl.tsx
-      │   ├── CollaboratorRequests.tsx
-      │   ├── ManageCollaborators.tsx
-      │   ├── ManagePublications.tsx
-      │   └── ManageGallery.tsx
-      └── types/
-          └── index.ts
+.
+├── firebase.json
+├── firestore.indexes.json
+├── firestore.rules
+├── index.html
+├── package.json
+├── vercel.json
+├── vite.config.ts
+├── scripts/
+│   ├── firestore-seed.ts
+│   └── migrate-collaborators-to-uid.ts
+└── src/
+    ├── admin/
+    │   ├── app/                 # Dashboard navigation contracts
+    │   ├── components/          # Shared admin pages, dialogs and modals
+    │   ├── core/                # Dashboard layer constants
+    │   └── features/            # Feature entry points
+    ├── chat/
+    │   ├── components/          # Messenger workspace and settings
+    │   ├── theme/               # Chat tokens and personal appearance
+    │   ├── crypto.ts
+    │   ├── hooks.ts
+    │   ├── keyStore.ts
+    │   ├── service.ts
+    │   └── types.ts
+    ├── components/              # Shared public components
+    ├── context/                 # Auth, theme, editing and preview contexts
+    ├── firebase/                # Firebase configuration and realtime hooks
+    ├── hooks/                   # Shared application hooks
+    ├── pages/                   # Public pages and detail routes
+    ├── portals/                 # Admin and collaborator portals
+    ├── types/
+    ├── App.tsx
+    ├── index.css
+    └── main.tsx
 ```
 
-## Getting Started
+## Local Setup
 
-1. Install dependencies.
+### 1. Install dependencies
 
 ```bash
 npm install
 ```
 
-2. Create a local environment file from the template.
+### 2. Create the local environment file
+
+macOS/Linux:
 
 ```bash
 cp .env.example .env
 ```
 
-If you are using PowerShell on Windows, the equivalent command is `Copy-Item .env.example .env`.
+PowerShell:
 
-3. Fill in the Firebase and Cloudinary values for your own project. Keep private keys, production credentials, and service-account files out of version control.
-
-4. Run the app locally.
-
-```bash
-npm run dev
+```powershell
+Copy-Item .env.example .env
 ```
 
-Open http://localhost:5173 in your browser.
-
-## Environment Variables
-
-The app expects these client-side variables in the local `.env` file:
+### 3. Configure client environment variables
 
 ```env
 VITE_FIREBASE_API_KEY=
@@ -149,70 +175,142 @@ VITE_FIREBASE_STORAGE_BUCKET=
 VITE_FIREBASE_MESSAGING_SENDER_ID=
 VITE_FIREBASE_APP_ID=
 VITE_FIREBASE_MEASUREMENT_ID=
+
+VITE_ADMIN_UID=
+VITE_LAB_HEAD_UID=
+
 VITE_CLOUDINARY_CLOUD_NAME=
 VITE_CLOUDINARY_UPLOAD_PRESET=
 VITE_SITE_URL=http://localhost:5173
 ```
 
-## Available Scripts
+All `VITE_` variables are included in the browser bundle. Never place a Firebase Admin service account, SMTP password, private server credential or Cloudinary API secret in these variables.
+
+### 4. Start development
 
 ```bash
 npm run dev
-npm run build
-npm run preview
 ```
 
-## Deployment
+Open `http://localhost:5173`.
 
-The project builds as a standard Vite app and can be deployed to platforms such as Firebase Hosting, Vercel, or any static host that supports SPA routing.
+## Scripts
 
 ```bash
-npm run build
+npm run dev      # Development server
+npm run build    # TypeScript check and production build
+npm run preview  # Preview the production build locally
 ```
 
-Before deploying, make sure your hosting provider is configured to serve `dist/` and route unknown paths back to `index.html`.
+## Firebase Deployment
 
-### Firebase Rules and Indexes (Spark plan)
-
-Deploy Firestore security rules and indexes:
+Select the Firebase project and deploy only Firestore rules and indexes:
 
 ```bash
+firebase login
 firebase use syedlab-research
 firebase deploy --only firestore:rules,firestore:indexes
 ```
 
-This version does not require Cloud Functions or the Blaze plan. Conversation deletion removes encrypted message payloads and hides the conversation for both participants through security-rule-controlled Firestore batches.
+Do not deploy Functions for this Spark-plan release.
 
-### Canonical collaborator migration
+Keep these files in version control:
 
-New collaborator profiles use `collaborators/{uid}`. Existing random-ID profiles remain supported. To preview the non-destructive migration with Google application credentials configured:
+- `firebase.json`
+- `.firebaserc`
+- `firestore.rules`
+- `firestore.indexes.json`
+
+Firestore rules are not secret. They must be reviewed and versioned with the application.
+
+## Vercel Deployment
+
+1. Import the GitHub repository into Vercel.
+2. Select the Vite framework preset.
+3. Use:
+
+```text
+Install Command: npm install
+Build Command: npm run build
+Output Directory: dist
+```
+
+4. Add every required `VITE_` variable under **Vercel → Project Settings → Environment Variables**.
+5. Deploy the project.
+6. Add the generated Vercel domain under **Firebase Authentication → Settings → Authorized domains**.
+
+`vercel.json` provides the SPA rewrite needed when refreshing protected or detail routes.
+
+## Collaborator Application and Password Setup
+
+This release uses a Spark-plan-compatible workflow:
+
+1. A visitor submits a collaborator request.
+2. The website displays an under-review confirmation and request reference.
+3. The administrator approves the request.
+4. Firebase Authentication creates the account.
+5. Canonical `users/{uid}` and `collaborators/{uid}` documents are created.
+6. Firebase sends its standard password-reset email.
+7. The approved collaborator uses that link to create the first password.
+
+Applicants should check Inbox, Spam, Junk and Promotions folders. EmailJS, Cloud Functions and the Blaze plan are not required.
+
+## Roles and Permissions
+
+`users/{uid}` is the canonical authorization record:
+
+```ts
+adminLevel: "primary" | "moderator" | "none"
+adminPermissions: string[]
+```
+
+The primary administrator can grant, change and withdraw moderator access from **Admin Dashboard → Roles & Permissions**. The interface shows moderator status, active permission count and the administrator who last changed access. Firestore rules enforce the same permissions. The primary administrator cannot be demoted by a moderator.
+
+## Canonical Collaborator Data
+
+New profiles use:
+
+```text
+collaborators/{uid}
+```
+
+The collaborator document is the canonical public identity for names, photos and profile information. The user document is canonical for authentication roles and administrative permissions.
+
+Preview the legacy migration:
 
 ```bash
 npx ts-node --esm scripts/migrate-collaborators-to-uid.ts
 ```
 
-After reviewing the report, apply it with:
+Apply it only after reviewing the report:
 
 ```bash
 npx ts-node --esm scripts/migrate-collaborators-to-uid.ts --commit
 ```
 
-The script preserves legacy documents for manual verification and cleanup.
+The migration is non-destructive and preserves legacy documents for manual verification.
 
-### Administrative access
+## Chat Security and Limitations
 
-The primary administrator can grant limited moderator access from **Admin Dashboard → Roles & Permissions**. Moderator permissions are enforced by Firestore rules. The protected primary administrator cannot be demoted by a moderator.
+- Private message payloads are encrypted before being stored in Firestore.
+- Private keys remain in the user's browser; public keys are stored in Firestore.
+- Clearing browser storage or switching to a new device can prevent that browser from decrypting messages encrypted for an older local key.
+- Messages are configured with expiry metadata.
+- Deletion uses security-rule-controlled updates and batches; Cloud Functions are not required.
+- Chat appearance preferences are local to the device.
+- A collaborator must sign in at least once before other users can encrypt new messages for that account.
 
-### Segmented dashboard architecture
+## Security Checklist
 
-Dashboard routes now use stable URLs such as `/admin/research-ideas`, `/admin/publications`, and `/admin/gallery`. Feature entry points live under `src/admin/features`, shared modal/page infrastructure under `src/admin/components`, navigation contracts under `src/admin/app`, and layer constants under `src/admin/core`.
+- Do not commit `.env`, `syedlab.env`, service-account JSON or Firebase Admin credentials.
+- Treat every `VITE_` value as public browser configuration.
+- Keep Firestore rules and indexes in Git.
+- Configure the production domain in Firebase Authorized Domains.
+- Create Authentication users through the approval workflow or Firebase Console.
+- Keep `users/{uid}` and `collaborators/{uid}` aligned by UID.
+- Test grants and withdrawals with separate accounts before production launch.
+- Test chat with two different authenticated browsers.
 
-The Research Ideas feature is fully separated into its page, editor, Firestore service, and realtime hooks. Its edit, moderation, details, comment deletion, filtering, and sorting flows no longer depend on the legacy monolithic component.
+## License
 
-## Security & Privacy
-
-- Do not commit private credentials or service-account JSON files.
-- Keep any seeded user accounts and internal admin data out of the public repository.
-- Treat all `VITE_` variables as public client-side configuration, not secrets.
-- The seed script creates content only. Create Authentication users yourself, then add matching `users/{uid}` documents with role `admin`, `lab_head`, or `collaborator`.
-- Chat private keys stay in the user's browser; only public keys are stored in Firestore. Clearing browser storage prevents that browser from decrypting older messages.
+See [LICENSE](LICENSE).
