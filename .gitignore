@@ -82,3 +82,6 @@ Thumbs.db
 
 # TypeScript cache
 *.tsbuildinfo
+
+syedlab.env
+.copilot-recovery-before-restore.patch
