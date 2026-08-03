@@ -4,7 +4,9 @@ import { useNavigate } from "react-router-dom";
 import { db } from "../firebase/config";
 import AppIcon from "./AppIcon";
 import CloudinaryUpload from "./CloudinaryUpload";
+import CollaboratorCard from "./CollaboratorCard";
 import EditableText from "./EditableText";
+import type { CollaboratorProfile } from "../types";
 
 /* ------------------------------------------------------------------ model */
 
@@ -535,11 +537,29 @@ const CollaboratorRequestForm: React.FC = () => {
   );
   const linkCount = LINK_FIELDS.filter(({ key }) => form[key]).length;
 
+  /**
+   * A throwaway profile shaped like the real thing, so the preview goes through
+   * the actual card component — no second implementation to drift out of sync
+   * the next time the card changes.
+   */
+  const livePreview = {
+    ...form,
+    id: "preview",
+    uid: "preview",
+    name: form.name.trim() || "Your name",
+    researchInterests: interests,
+  } as unknown as CollaboratorProfile;
+
   return (
     /* noValidate: native validation fires first and shows browser-styled
        bubbles that can't be restyled, translated or pointed at by an error
        summary. One validation path, one presentation. */
-    <form onSubmit={submit} noValidate>
+    <form
+      onSubmit={submit}
+      noValidate
+      className="grid grid-cols-1 gap-9 lg:grid-cols-[minmax(0,1.35fr)_minmax(260px,0.85fr)]"
+    >
+      <div>
       <div className="mb-6 flex gap-2.5 rounded-xl border border-blue-200 bg-blue-50 p-3.5 text-[12.5px] leading-relaxed text-blue-800">
         <span className="mt-0.5 shrink-0">
           <AppIcon name="about" size={13} />
@@ -815,6 +835,27 @@ const CollaboratorRequestForm: React.FC = () => {
         </button>
         {isDirty && <span className="text-[12px] text-slate-400">Draft saved as you type</span>}
       </div>
+      </div>
+
+      {/* --------------------------------------------------- live preview */}
+      {/* The whole reason this form has a two-column layout. It answers "how
+          long should my bio be" and "why is my photo cropped" without a line of
+          help text, because you watch it happen. */}
+      <aside aria-label="Preview of your card">
+        <div className="lg:sticky lg:top-6">
+          <div className="mb-3 flex items-baseline gap-2">
+            <h3 className="text-[13px] font-bold text-slate-700">Your card</h3>
+            <span className="text-[11.5px] text-slate-400">updates as you type</span>
+          </div>
+
+          <CollaboratorCard collaborator={livePreview} previewMode />
+
+          <p className="mt-3.5 text-[11.5px] leading-relaxed text-slate-400">
+            This is how you&apos;ll appear on the <b className="font-semibold text-slate-600">Collaborators</b>{" "}
+            page once an administrator approves the request.
+          </p>
+        </div>
+      </aside>
     </form>
   );
 };
