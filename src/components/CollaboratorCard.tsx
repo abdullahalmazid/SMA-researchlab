@@ -13,6 +13,12 @@ export interface CollaboratorCardProps {
   isLabHead?: boolean;
   /** Cards above the fold should not lazy-load; it delays LCP. */
   priority?: boolean;
+  /**
+   * Renders the bio in-flow instead of behind the hover reveal. For the live
+   * preview in the request form, where the point is to show someone their bio —
+   * hiding it until they hover over their own card would be absurd.
+   */
+  previewMode?: boolean;
 }
 
 /** Empty env var must never match an empty uid, or everyone becomes the PI. */
@@ -82,6 +88,7 @@ const CollaboratorCard: React.FC<CollaboratorCardProps> = ({
   onClick,
   isLabHead,
   priority = false,
+  previewMode = false,
 }) => {
   /**
    * Tracks *which* photo failed rather than a bare boolean. A plain flag stays
@@ -187,7 +194,7 @@ const CollaboratorCard: React.FC<CollaboratorCardProps> = ({
             </p>
           )}
 
-          {c.bio && (
+          {c.bio && !previewMode && (
             <div className={REVEAL}>
               <div className="overflow-hidden">
                 <p className="mt-2 line-clamp-3 text-[12.5px] leading-6 text-white/85">{c.bio}</p>
@@ -214,7 +221,11 @@ const CollaboratorCard: React.FC<CollaboratorCardProps> = ({
         )}
 
         {c.bio && (
-          <p className={`mt-2.5 line-clamp-3 text-[13px] leading-6 text-slate-600 ${TOUCH_ONLY}`}>
+          <p
+            className={`mt-2.5 line-clamp-3 text-[13px] leading-6 text-slate-600 ${
+              previewMode ? "" : TOUCH_ONLY
+            }`}
+          >
             {c.bio}
           </p>
         )}
