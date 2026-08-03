@@ -217,7 +217,7 @@ const Home: React.FC = () => {
                 tag="h1"
                 className="font-black text-white leading-none mb-5"
                 defaultValue={
-                  content["home.heroTitle"] ?? "Rahman Research Lab"
+                  content["home.heroTitle"] ?? "DASS Research Lounge"
                 }
               />
             </span>
@@ -353,7 +353,7 @@ const Home: React.FC = () => {
                     <EditableText
                       id="labhead.name"
                       tag="span"
-                      defaultValue={labHead.name || "Lab Head Name"}
+                      defaultValue={labHead.name || "Dr. Syed Mithun Ali"}
                       className="text-white font-black text-xl leading-tight"
                     />
                   </h2>
@@ -378,7 +378,7 @@ const Home: React.FC = () => {
                       <EditableText
                         id="labhead.department"
                         tag="span"
-                        defaultValue={labHead.department || "Department"}
+                        defaultValue={labHead.department || "Industrial and Production Engineering"}
                         className="text-xs mt-0.5"
                       />
                     </p>
