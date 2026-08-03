@@ -12,11 +12,14 @@ const FOCUS =
 
 /**
  * Slides up on pointer hover and on keyboard focus — hover alone would leave
- * the bio unreachable for anyone tabbing through the grid. On a device with no
- * hover the panel is dropped entirely; the in-flow copy below takes over.
+ * the bio unreachable for anyone tabbing through the grid. Dropped entirely on
+ * devices with no hover; the in-flow copy below takes over.
+ *
+ * pointer-events-none matters: the panel sits over the click overlay, so
+ * without it the card stops responding the moment the panel opens.
  */
 const PANEL =
-  "translate-y-full transition-transform duration-300 ease-[cubic-bezier(.32,.72,0,1)] group-hover:translate-y-0 group-focus-within:translate-y-0 motion-reduce:transition-none [@media(hover:none)]:hidden";
+  "pointer-events-none translate-y-full transition-transform duration-300 ease-[cubic-bezier(.32,.72,0,1)] group-hover:translate-y-0 group-focus-within:translate-y-0 motion-reduce:transition-none [@media(hover:none)]:hidden";
 
 /** Touch only — mirrors PANEL so the photo is never permanently covered. */
 const BIO_INLINE = "hidden [@media(hover:none)]:block";
@@ -47,7 +50,11 @@ const CollaboratorCard: React.FC<Props> = ({ collaborator: c, onClick }) => {
   const visibleInterests = interests.slice(0, 2);
 
   return (
-    <article className="group relative isolate flex h-full flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white transition duration-200 hover:border-slate-300 hover:shadow-[0_14px_30px_rgba(15,23,42,0.12)] motion-safe:hover:-translate-y-0.5">
+    <article
+      className={`group relative isolate flex h-full flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white transition duration-200 hover:border-slate-300 hover:shadow-[0_14px_30px_rgba(15,23,42,0.12)] motion-safe:hover:-translate-y-0.5 ${
+        onClick ? "cursor-pointer" : ""
+      }`}
+    >
       <div className="relative aspect-[4/3] overflow-hidden bg-slate-100">
         {c.photo && !imgErr ? (
           <img
@@ -82,24 +89,12 @@ const CollaboratorCard: React.FC<Props> = ({ collaborator: c, onClick }) => {
           </span>
         )}
 
-        {/* Name plate. The button's ::after covers the whole card, so the card
-            is clickable while a screen reader still gets a heading link. */}
-        <div className="absolute inset-x-0 bottom-0 z-10 bg-gradient-to-t from-black/85 via-black/40 to-transparent px-4 pb-3.5 pt-12">
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 bg-gradient-to-t from-black/85 via-black/40 to-transparent px-4 pb-3.5 pt-12">
           <h3
             className="text-[16.5px] font-bold leading-snug text-white"
             style={{ fontFamily: "var(--font-heading)" }}
           >
-            {onClick ? (
-              <button
-                type="button"
-                onClick={onClick}
-                className={`text-left after:absolute after:inset-0 after:content-[''] ${FOCUS}`}
-              >
-                {c.name}
-              </button>
-            ) : (
-              c.name
-            )}
+            {c.name}
           </h3>
           {c.designation && (
             <p className="mt-0.5 line-clamp-1 text-[12.5px] font-medium text-white/80">
@@ -158,7 +153,8 @@ const CollaboratorCard: React.FC<Props> = ({ collaborator: c, onClick }) => {
           </ul>
         )}
 
-        {/* mt-auto keeps footers aligned across a grid of uneven cards. */}
+        {/* mt-auto keeps footers aligned across a grid of uneven cards.
+            z-40 puts these above the click overlay so they stay clickable. */}
         <div className="mt-auto flex items-center gap-1 pt-4">
           {socialLinks.map((link) => (
             <a
@@ -168,7 +164,7 @@ const CollaboratorCard: React.FC<Props> = ({ collaborator: c, onClick }) => {
               rel="noreferrer"
               aria-label={`${c.name} on ${link.label}`}
               onClick={(event) => event.stopPropagation()}
-              className={`relative z-20 flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 ${FOCUS}`}
+              className={`relative z-40 flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 ${FOCUS}`}
             >
               <AppIcon name={link.icon} size={16} />
             </a>
@@ -184,6 +180,19 @@ const CollaboratorCard: React.FC<Props> = ({ collaborator: c, onClick }) => {
           )}
         </div>
       </div>
+
+      {/* The click target. A direct child of <article> at z-30, so it covers the
+          whole card and sits above the hover panel. Empty and aria-labelled, so
+          the heading above stays a heading instead of being swallowed into one
+          long link announcement. */}
+      {onClick && (
+        <button
+          type="button"
+          onClick={onClick}
+          aria-label={`View ${c.name}'s profile`}
+          className="absolute inset-0 z-30 rounded-2xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[color:var(--color-secondary)]"
+        />
+      )}
     </article>
   );
 };
