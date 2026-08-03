@@ -50,6 +50,18 @@ const LABELS: Record<RequiredKey, string> = {
   bio: "Short bio",
 };
 
+/** Every field in submit order, so the error summary lists them the way the
+    form reads rather than in whatever order the error object happened to fill. */
+const ALL_FIELDS: FieldKey[] = [...REQUIRED, ...LINK_FIELDS.map((link) => link.key)];
+
+const FIELD_LABELS: Record<FieldKey, string> = {
+  ...LABELS,
+  ...(Object.fromEntries(LINK_FIELDS.map((link) => [link.key, link.label])) as Record<
+    LinkKey,
+    string
+  >),
+};
+
 /**
  * Errors name the fix, not the failure. "Please fill all required fields" tells
  * someone that something is wrong and nothing about which thing or what to do.
@@ -532,9 +544,7 @@ const CollaboratorRequestForm: React.FC = () => {
     );
   }
 
-  const failures = REQUIRED.filter((key) => errors[key]).concat(
-    LINK_FIELDS.map(({ key }) => key).filter((key) => errors[key]) as never[],
-  );
+  const failures = ALL_FIELDS.filter((key) => errors[key]);
   const linkCount = LINK_FIELDS.filter(({ key }) => form[key]).length;
 
   /**
@@ -615,9 +625,7 @@ const CollaboratorRequestForm: React.FC = () => {
                   onClick={() => focusField(key)}
                   className="text-left text-red-700 underline"
                 >
-                  {LABELS[key as RequiredKey] ??
-                    LINK_FIELDS.find((l) => l.key === key)?.label}{" "}
-                  — {errors[key]}
+                  {FIELD_LABELS[key]} — {errors[key]}
                 </button>
               </li>
             ))}
