@@ -10,6 +10,17 @@ interface Props {
 const FOCUS =
   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-secondary)] focus-visible:ring-offset-2";
 
+/**
+ * Slides up on pointer hover and on keyboard focus — hover alone would leave
+ * the bio unreachable for anyone tabbing through the grid. On a device with no
+ * hover the panel is dropped entirely; the in-flow copy below takes over.
+ */
+const PANEL =
+  "translate-y-full transition-transform duration-300 ease-[cubic-bezier(.32,.72,0,1)] group-hover:translate-y-0 group-focus-within:translate-y-0 motion-reduce:transition-none [@media(hover:none)]:hidden";
+
+/** Touch only — mirrors PANEL so the photo is never permanently covered. */
+const BIO_INLINE = "hidden [@media(hover:none)]:block";
+
 const CollaboratorCard: React.FC<Props> = ({ collaborator: c, onClick }) => {
   const [imgErr, setImgErr] = useState(false);
   const isLabHead = c.uid === String(import.meta.env.VITE_LAB_HEAD_UID || "");
@@ -35,96 +46,102 @@ const CollaboratorCard: React.FC<Props> = ({ collaborator: c, onClick }) => {
   const interests = c.researchInterests ?? [];
   const visibleInterests = interests.slice(0, 2);
 
-  /**
-   * The name is the single primary target. Its ::after overlay makes the whole
-   * card clickable while a screen reader still gets a heading — the old
-   * role="link" div announced every child as one unstructured string.
-   * Social links sit above the overlay at z-10.
-   */
-  const stretched =
-    "after:absolute after:inset-0 after:rounded-[16px] after:content-['']";
-
   return (
-    <article className="group relative isolate flex h-full flex-col rounded-[16px] border border-slate-200 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)] transition duration-200 hover:border-slate-300 hover:shadow-[0_12px_28px_rgba(15,23,42,0.10)] motion-safe:hover:-translate-y-0.5">
-      <div className="flex flex-1 flex-col p-5">
-        {/* Identity row — replaces the 160px gradient photo band. */}
-        <div className="flex items-start gap-4">
-          {c.photo && !imgErr ? (
-            <img
-              src={c.photo}
-              alt=""
-              loading="lazy"
-              decoding="async"
-              onError={() => setImgErr(true)}
-              className="h-[72px] w-[72px] shrink-0 rounded-[14px] border border-slate-200 object-cover"
-            />
-          ) : (
-            <div
-              aria-hidden="true"
-              className="flex h-[72px] w-[72px] shrink-0 items-center justify-center rounded-[14px] text-xl font-semibold text-white"
-              style={{
-                background:
-                  "linear-gradient(135deg, var(--color-primary), var(--color-secondary))",
-              }}
-            >
-              {initials}
-            </div>
-          )}
-
-          <div className="min-w-0 flex-1">
-            <h3
-              className="text-[16px] font-bold leading-snug tracking-[-0.01em] text-slate-900"
-              style={{ fontFamily: "var(--font-heading)" }}
-            >
-              {onClick ? (
-                <button
-                  type="button"
-                  onClick={onClick}
-                  className={`text-left decoration-slate-300 underline-offset-2 group-hover:underline ${stretched} ${FOCUS} focus-visible:after:ring-2 focus-visible:after:ring-[color:var(--color-secondary)] focus-visible:after:ring-offset-2`}
-                >
-                  {c.name}
-                </button>
-              ) : (
-                c.name
-              )}
-            </h3>
-
-            {c.designation && (
-              <p
-                className="mt-1 line-clamp-1 text-[13px] font-semibold leading-5"
-                style={{ color: "var(--color-secondary)" }}
-              >
-                {c.designation}
-              </p>
-            )}
-
-            {c.affiliation && (
-              <p className="mt-0.5 flex items-center gap-1.5 text-[12px] leading-5 text-slate-500">
-                <AppIcon name="building" size={12} />
-                <span className="line-clamp-1">{c.affiliation}</span>
-              </p>
-            )}
-
-            {isLabHead && (
-              <p
-                className="mt-2 inline-flex rounded-md px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.1em]"
-                style={{
-                  background: "color-mix(in srgb, var(--color-accent) 20%, white)",
-                  color: "var(--color-primary)",
-                }}
-              >
-                Principal Investigator
-              </p>
-            )}
+    <article className="group relative isolate flex h-full flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white transition duration-200 hover:border-slate-300 hover:shadow-[0_14px_30px_rgba(15,23,42,0.12)] motion-safe:hover:-translate-y-0.5">
+      <div className="relative aspect-[4/3] overflow-hidden bg-slate-100">
+        {c.photo && !imgErr ? (
+          <img
+            src={c.photo}
+            alt=""
+            loading="lazy"
+            decoding="async"
+            onError={() => setImgErr(true)}
+            className="h-full w-full object-cover"
+          />
+        ) : (
+          <div
+            aria-hidden="true"
+            className="flex h-full w-full items-center justify-center text-5xl font-semibold text-white"
+            style={{
+              background: "linear-gradient(135deg, var(--color-primary), var(--color-secondary))",
+            }}
+          >
+            {initials}
           </div>
+        )}
+
+        {isLabHead && (
+          <span
+            className="absolute left-3 top-3 z-20 rounded-md px-2 py-1 text-[9.5px] font-semibold uppercase tracking-[0.1em]"
+            style={{
+              background: "color-mix(in srgb, var(--color-accent) 92%, white)",
+              color: "#3d2600",
+            }}
+          >
+            Principal investigator
+          </span>
+        )}
+
+        {/* Name plate. The button's ::after covers the whole card, so the card
+            is clickable while a screen reader still gets a heading link. */}
+        <div className="absolute inset-x-0 bottom-0 z-10 bg-gradient-to-t from-black/85 via-black/40 to-transparent px-4 pb-3.5 pt-12">
+          <h3
+            className="text-[16.5px] font-bold leading-snug text-white"
+            style={{ fontFamily: "var(--font-heading)" }}
+          >
+            {onClick ? (
+              <button
+                type="button"
+                onClick={onClick}
+                className={`text-left after:absolute after:inset-0 after:content-[''] ${FOCUS}`}
+              >
+                {c.name}
+              </button>
+            ) : (
+              c.name
+            )}
+          </h3>
+          {c.designation && (
+            <p className="mt-0.5 line-clamp-1 text-[12.5px] font-medium text-white/80">
+              {c.designation}
+            </p>
+          )}
         </div>
 
         {c.bio && (
-          <p className="mt-4 line-clamp-2 text-[13.5px] leading-6 text-slate-600">{c.bio}</p>
+          <div
+            className={`absolute inset-x-0 bottom-0 z-20 px-4 pb-3.5 pt-3.5 ${PANEL}`}
+            style={{ background: "color-mix(in srgb, var(--color-primary) 94%, black)" }}
+          >
+            <p className="line-clamp-3 text-[12.5px] leading-6 text-white/85">{c.bio}</p>
+            {onClick && (
+              <p
+                className="mt-2.5 flex items-center gap-1.5 border-t border-white/15 pt-2.5 text-[11px] font-semibold uppercase tracking-[0.12em]"
+                style={{ color: "var(--color-accent)" }}
+              >
+                Click for full profile <span aria-hidden="true">→</span>
+              </p>
+            )}
+          </div>
+        )}
+      </div>
+
+      <div className="flex flex-1 flex-col p-4">
+        {c.affiliation && (
+          <p className="flex items-center gap-1.5 text-[12px] leading-5 text-slate-500">
+            <AppIcon name="building" size={12} />
+            <span className="line-clamp-1">{c.affiliation}</span>
+          </p>
+        )}
+
+        {c.bio && (
+          <p className={`mt-2.5 line-clamp-3 text-[13px] leading-6 text-slate-600 ${BIO_INLINE}`}>
+            {c.bio}
+          </p>
         )}
 
         {visibleInterests.length > 0 && (
-          <ul className="mt-3.5 flex flex-wrap gap-1.5">
+          <ul className="mt-3 flex flex-wrap gap-1.5">
             {visibleInterests.map((interest) => (
               <li
                 key={interest}
@@ -135,14 +152,14 @@ const CollaboratorCard: React.FC<Props> = ({ collaborator: c, onClick }) => {
             ))}
             {interests.length > visibleInterests.length && (
               <li className="px-1 py-1 text-[11px] font-medium leading-none text-slate-400">
-                +{interests.length - visibleInterests.length} more
+                +{interests.length - visibleInterests.length}
               </li>
             )}
           </ul>
         )}
 
         {/* mt-auto keeps footers aligned across a grid of uneven cards. */}
-        <div className="mt-auto flex items-center gap-1 pt-5">
+        <div className="mt-auto flex items-center gap-1 pt-4">
           {socialLinks.map((link) => (
             <a
               key={link.label}
@@ -151,7 +168,7 @@ const CollaboratorCard: React.FC<Props> = ({ collaborator: c, onClick }) => {
               rel="noreferrer"
               aria-label={`${c.name} on ${link.label}`}
               onClick={(event) => event.stopPropagation()}
-              className={`relative z-10 flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 ${FOCUS}`}
+              className={`relative z-20 flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 ${FOCUS}`}
             >
               <AppIcon name={link.icon} size={16} />
             </a>
