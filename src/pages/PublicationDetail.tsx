@@ -269,15 +269,17 @@ const useRelatedPublications = (publication: Publication | null, max = 3): Publi
 };
 
 /* ------------------------------------------------------------------ *
- * Shared class strings
+ * Shared tokens
+ *
+ * slate-400 on white is 2.85:1 and fails WCAG AA, so every label that used
+ * it has moved to slate-500 (4.76:1).
  * ------------------------------------------------------------------ */
 
-const FOCUS_DARK =
-  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--color-primary)]";
-const FOCUS_LIGHT =
+const FOCUS =
   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-secondary)] focus-visible:ring-offset-2";
-const EYEBROW = "text-[11px] font-black uppercase tracking-[.18em] text-slate-400";
-const CARD = "rounded-[24px] border border-slate-200 bg-white shadow-sm";
+const EYEBROW = "text-[11px] font-semibold uppercase tracking-[.16em] text-slate-500";
+const PANEL =
+  "rounded-[20px] border border-slate-200 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)]";
 
 /* ------------------------------------------------------------------ *
  * Presentational pieces
@@ -354,6 +356,25 @@ const PublicationSeo: React.FC<{ publication: Publication }> = ({ publication })
   );
 };
 
+/**
+ * Solid surface, real border, dark text. It now sits on the page background
+ * below the hero rather than dissolving into the coloured band.
+ */
+const BackToPublications: React.FC = () => (
+  <Link
+    to="/publications"
+    className={`group inline-flex items-center gap-2.5 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-[0_1px_2px_rgba(15,23,42,0.04)] transition hover:border-slate-300 hover:text-slate-900 hover:shadow-[0_4px_14px_rgba(15,23,42,0.08)] print:hidden ${FOCUS}`}
+  >
+    <span
+      aria-hidden="true"
+      className="text-base leading-none transition-transform motion-safe:group-hover:-translate-x-0.5"
+    >
+      ←
+    </span>
+    Back to publications
+  </Link>
+);
+
 const Bar: React.FC<{ className?: string }> = ({ className = "" }) => (
   <div className={`rounded-full bg-current opacity-10 ${className}`} />
 );
@@ -369,23 +390,24 @@ const PublicationSkeleton: React.FC = () => (
     <span className="sr-only">Loading publication</span>
 
     <header
-      className="border-b border-white/10 px-4 py-14 text-white"
+      className="border-b border-white/10 px-4 py-16 text-white"
       style={{ background: "var(--color-primary)" }}
     >
       <div className="mx-auto max-w-5xl">
-        <Bar className="h-4 w-32" />
-        <div className="mt-8 flex gap-2">
-          <Bar className="h-6 w-32" />
-          <Bar className="h-6 w-16" />
-        </div>
-        <Bar className="mt-5 h-10 w-full max-w-3xl" />
-        <Bar className="mt-3 h-10 w-2/3 max-w-xl" />
-        <Bar className="mt-6 h-4 w-1/2 max-w-md" />
+        <Bar className="h-3 w-40" />
+        <Bar className="mt-6 h-9 w-full max-w-3xl" />
+        <Bar className="mt-3 h-9 w-2/3 max-w-xl" />
+        <Bar className="mt-7 h-4 w-1/2 max-w-md" />
+        <Bar className="mt-3 h-4 w-1/3 max-w-xs" />
       </div>
     </header>
 
-    <div className="mx-auto grid max-w-5xl gap-6 px-4 py-10 text-slate-900 lg:grid-cols-[minmax(0,1fr)_280px]">
-      <div className={`${CARD} p-6 md:p-9`}>
+    <div className="mx-auto max-w-5xl px-4 pt-8 text-slate-900">
+      <Bar className="h-11 w-52 !rounded-xl" />
+    </div>
+
+    <div className="mx-auto grid max-w-5xl gap-6 px-4 py-8 text-slate-900 lg:grid-cols-[minmax(0,1fr)_300px]">
+      <div className={`${PANEL} p-6 md:p-9`}>
         <Bar className="h-3 w-24" />
         <div className="mt-6 grid gap-3">
           {Array.from({ length: 7 }).map((_, index) => (
@@ -394,8 +416,8 @@ const PublicationSkeleton: React.FC = () => (
         </div>
       </div>
 
-      <div className={`${CARD} h-fit p-6`}>
-        <Bar className="h-5 w-40" />
+      <div className={`${PANEL} h-fit p-6`}>
+        <Bar className="h-3 w-36" />
         <div className="mt-6 grid gap-4">
           {Array.from({ length: 4 }).map((_, index) => (
             <div key={index} className="grid gap-2">
@@ -404,7 +426,7 @@ const PublicationSkeleton: React.FC = () => (
             </div>
           ))}
         </div>
-        <Bar className="mt-7 h-11 w-full" />
+        <Bar className="mt-7 h-11 w-full !rounded-xl" />
       </div>
     </div>
   </main>
@@ -416,40 +438,58 @@ const Notice: React.FC<{ title: string; body: string }> = ({ title, body }) => (
     style={{ background: "var(--color-bg)" }}
   >
     <div className="max-w-md text-center">
-      <h1 className="text-2xl font-black text-slate-900">{title}</h1>
+      <h1 className="text-2xl font-bold tracking-tight text-slate-900">{title}</h1>
       <p className="mt-3 text-[15px] leading-7 text-slate-600">{body}</p>
-      <Link
-        to="/publications"
-        className={`mt-6 inline-block rounded-lg font-bold ${FOCUS_LIGHT}`}
-        style={{ color: "var(--color-secondary)" }}
-      >
-        Browse all publications
-      </Link>
+      <div className="mt-7 flex justify-center">
+        <BackToPublications />
+      </div>
     </div>
   </main>
 );
 
-const AuthorList: React.FC<{ authors: PublicationAuthorEntry[] }> = ({ authors }) => {
+/** Inline for the hero, stacked for a sidebar. */
+const AuthorList: React.FC<{
+  authors: PublicationAuthorEntry[];
+  variant?: "inline" | "stacked";
+}> = ({ authors, variant = "stacked" }) => {
   if (authors.length === 0) {
-    return <p className="mt-2 text-sm font-semibold text-slate-400">Not recorded</p>;
+    return <p className="text-sm font-medium text-slate-500">Not recorded</p>;
   }
 
+  const inline = variant === "inline";
+  const linkClass = inline
+    ? "rounded-sm text-white underline decoration-white/40 underline-offset-4 transition hover:decoration-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--color-primary)]"
+    : `rounded-sm underline decoration-slate-300 underline-offset-4 transition hover:decoration-current ${FOCUS}`;
+
   return (
-    <ul className="mt-2 grid gap-2 font-semibold text-slate-700">
+    <ul
+      className={
+        inline
+          ? "flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[15px] font-medium leading-7 text-white/90"
+          : "grid gap-2 text-sm font-medium text-slate-700"
+      }
+    >
       {authors.map((author, index) => {
         const profileId = authorProfileId(author);
+        const isLast = index === authors.length - 1;
+
         return (
           <li key={`${author.name}-${index}`}>
             {profileId ? (
               <Link
                 to={profilePath(profileId)}
-                className={`rounded-sm underline decoration-slate-300 underline-offset-4 transition hover:decoration-current ${FOCUS_LIGHT}`}
-                style={{ color: "var(--color-secondary)" }}
+                className={linkClass}
+                style={inline ? undefined : { color: "var(--color-secondary)" }}
               >
                 {author.name}
               </Link>
             ) : (
-              author.name
+              <span>{author.name}</span>
+            )}
+            {inline && !isLast && (
+              <span aria-hidden="true" className="text-white/50">
+                ,
+              </span>
             )}
           </li>
         );
@@ -489,13 +529,17 @@ const CitationExport: React.FC<{ publication: Publication }> = ({ publication })
   };
 
   return (
-    <section aria-labelledby="cite-heading" className={`${CARD} mt-6 p-6 md:p-9 print:hidden`}>
+    <section aria-labelledby="cite-heading" className={`${PANEL} mt-6 p-6 md:p-8 print:hidden`}>
       <div className="flex flex-wrap items-center justify-between gap-4">
         <h2 id="cite-heading" className={EYEBROW}>
           Cite this work
         </h2>
 
-        <div role="tablist" aria-label="Citation format" className="flex gap-1 rounded-full bg-slate-100 p-1">
+        <div
+          role="tablist"
+          aria-label="Citation format"
+          className="flex gap-1 rounded-lg bg-slate-100 p-1"
+        >
           {CITATION_FORMATS.map((entry) => {
             const active = entry.id === format;
             return (
@@ -510,8 +554,10 @@ const CitationExport: React.FC<{ publication: Publication }> = ({ publication })
                   setFormat(entry.id);
                   setStatus("idle");
                 }}
-                className={`rounded-full px-3.5 py-1.5 text-xs font-black transition ${FOCUS_LIGHT} ${
-                  active ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-800"
+                className={`rounded-md px-3 py-1.5 text-xs font-semibold transition ${FOCUS} ${
+                  active
+                    ? "bg-white text-slate-900 shadow-sm"
+                    : "text-slate-600 hover:text-slate-900"
                 }`}
               >
                 {entry.label}
@@ -526,7 +572,7 @@ const CitationExport: React.FC<{ publication: Publication }> = ({ publication })
         role="tabpanel"
         aria-labelledby={`cite-tab-${format}`}
         tabIndex={0}
-        className={`mt-5 max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-2xl bg-slate-50 p-5 font-mono text-[13px] leading-6 text-slate-700 ${FOCUS_LIGHT}`}
+        className={`mt-5 max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-xl border border-slate-200 bg-slate-50 p-5 font-mono text-[12.5px] leading-6 text-slate-700 ${FOCUS}`}
       >
         {citation}
       </pre>
@@ -535,12 +581,12 @@ const CitationExport: React.FC<{ publication: Publication }> = ({ publication })
         <button
           type="button"
           onClick={handleCopy}
-          className={`rounded-xl px-4 py-2.5 text-sm font-black text-white transition hover:opacity-90 ${FOCUS_LIGHT}`}
+          className={`rounded-xl px-4 py-2.5 text-sm font-semibold text-white transition hover:opacity-90 ${FOCUS}`}
           style={{ background: "var(--color-secondary)" }}
         >
           Copy citation
         </button>
-        <p aria-live="polite" className="text-sm font-bold text-slate-500">
+        <p aria-live="polite" className="text-sm font-medium text-slate-600">
           {status === "copied" && "Copied to clipboard"}
           {status === "failed" && "Copy blocked by your browser — select the text above instead"}
         </p>
@@ -553,23 +599,31 @@ const RelatedPublications: React.FC<{ publications: Publication[] }> = ({ public
   if (publications.length === 0) return null;
 
   return (
-    <section aria-labelledby="related-heading" className="mt-6 print:hidden">
+    <section aria-labelledby="related-heading" className="mt-10 print:hidden">
       <h2 id="related-heading" className={EYEBROW}>
         Related work
       </h2>
 
-      <ul className="mt-5 grid gap-3">
+      <ul className="mt-4 grid gap-3">
         {publications.map((entry) => (
           <li key={entry.id}>
             <Link
               to={`/publications/${entry.id}`}
-              className={`block rounded-[20px] border border-slate-200 bg-white p-5 shadow-sm transition hover:border-slate-300 hover:shadow-md ${FOCUS_LIGHT}`}
+              className={`group flex items-start gap-4 rounded-[16px] border border-slate-200 bg-white p-5 shadow-[0_1px_2px_rgba(15,23,42,0.04)] transition hover:border-slate-300 hover:shadow-[0_8px_20px_rgba(15,23,42,0.07)] ${FOCUS}`}
             >
-              <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+              <span className="hidden shrink-0 self-stretch border-r border-slate-200 pr-4 text-[15px] font-bold leading-6 text-slate-900 [font-variant-numeric:tabular-nums] sm:block">
                 {entry.year}
-                {entry.journal ? ` · ${entry.journal}` : ""}
-              </p>
-              <p className="mt-2 font-black leading-snug text-slate-900">{entry.title}</p>
+              </span>
+              <span className="min-w-0">
+                <span className="block font-semibold leading-snug text-slate-900 decoration-slate-300 underline-offset-2 group-hover:underline">
+                  {entry.title}
+                </span>
+                {entry.journal && (
+                  <span className="mt-1 block truncate text-[12.5px] italic text-slate-500">
+                    {entry.journal}
+                  </span>
+                )}
+              </span>
             </Link>
           </li>
         ))}
@@ -578,15 +632,9 @@ const RelatedPublications: React.FC<{ publications: Publication[] }> = ({ public
   );
 };
 
-const Pill: React.FC<{ children: React.ReactNode }> = ({ children }) => (
-  <span className="rounded-full bg-white/10 px-3 py-1 text-[10px] font-black uppercase tracking-widest print:border print:border-slate-300 print:bg-transparent">
-    {children}
-  </span>
-);
-
 const Field: React.FC<{ label: string; children: React.ReactNode }> = ({ label, children }) => (
-  <div>
-    <dt className="text-[10px] font-black uppercase tracking-widest text-slate-400">{label}</dt>
+  <div className="border-t border-slate-100 pt-4 first:border-0 first:pt-0">
+    <dt className="text-[10px] font-semibold uppercase tracking-[.14em] text-slate-500">{label}</dt>
     {children}
   </div>
 );
@@ -625,51 +673,68 @@ const PublicationDetail: React.FC = () => {
   const doiUrl = publication.doi ? `https://doi.org/${publication.doi}` : "";
   const paperUrl = publication.url || doiUrl;
   const hasTags = (publication.tags?.length ?? 0) > 0;
+  const isOngoing = publication.type === "ongoing";
+  const statusColor = isOngoing ? "#fbbf24" : "#6ee7b7";
 
   return (
     <main className="min-h-screen" style={{ background: "var(--color-bg)" }}>
       <PublicationSeo publication={publication} />
 
+      {/* Hero: status → title → authors → venue, the order a reader expects. */}
       <header
-        className="border-b border-white/10 px-4 py-14 text-white print:border-slate-200 print:bg-white print:py-6 print:text-slate-900"
+        className="border-b border-white/10 px-4 py-16 text-white print:border-slate-200 print:bg-white print:py-6 print:text-slate-900"
         style={{ background: "var(--color-primary)" }}
       >
         <div className="mx-auto max-w-5xl">
-          <Link
-            to="/publications"
-            className={`rounded-lg text-sm font-bold text-white/80 transition hover:text-white print:hidden ${FOCUS_DARK}`}
+          <p
+            className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[11px] font-semibold uppercase tracking-[.16em]"
+            style={{ color: statusColor }}
           >
-            <span aria-hidden="true">←</span> Publications
-          </Link>
+            <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-current" />
+            {isOngoing ? "Ongoing research" : "Published"}
+            <span aria-hidden="true" className="text-white/40">
+              /
+            </span>
+            <span className="text-white/70 [font-variant-numeric:tabular-nums]">
+              {publication.year}
+            </span>
+          </p>
 
-          <div className="mt-8 flex flex-wrap gap-2 print:mt-0">
-            <Pill>{publication.type === "ongoing" ? "Ongoing research" : "Published"}</Pill>
-            <Pill>{publication.year}</Pill>
-          </div>
-
-          <h1 className="mt-5 max-w-4xl text-3xl font-black leading-tight md:text-5xl print:text-2xl">
+          <h1 className="mt-5 max-w-4xl text-[28px] font-bold leading-[1.2] tracking-[-0.02em] md:text-[42px] print:text-2xl">
             {publication.title}
           </h1>
 
+          {authors.length > 0 && (
+            <div className="mt-6 max-w-3xl">
+              <h2 className="sr-only">Authors</h2>
+              <AuthorList authors={authors} variant="inline" />
+            </div>
+          )}
+
           {publication.journal && (
-            <p className="mt-5 max-w-3xl text-base leading-7 text-white/80 print:text-slate-600">
+            <p className="mt-3 max-w-3xl text-[15px] italic leading-7 text-white/70 print:text-slate-600">
               {publication.journal}
             </p>
           )}
         </div>
       </header>
 
-      <div className="mx-auto grid max-w-5xl gap-6 px-4 py-10 lg:grid-cols-[minmax(0,1fr)_280px] print:block">
+      {/* Back control lives here, on the page surface, where it reads clearly. */}
+      <nav aria-label="Breadcrumb" className="mx-auto max-w-5xl px-4 pt-8">
+        <BackToPublications />
+      </nav>
+
+      <div className="mx-auto grid max-w-5xl gap-6 px-4 py-8 lg:grid-cols-[minmax(0,1fr)_300px] print:block">
         <div className="min-w-0">
           <article
             aria-labelledby="abstract-heading"
-            className={`${CARD} p-6 md:p-9 print:border-0 print:p-0 print:shadow-none`}
+            className={`${PANEL} p-6 md:p-9 print:border-0 print:p-0 print:shadow-none`}
           >
             <h2 id="abstract-heading" className={EYEBROW}>
               Abstract
             </h2>
 
-            <p className="mt-5 max-w-[68ch] whitespace-pre-line text-[15px] leading-7 text-slate-700">
+            <p className="mt-5 max-w-[68ch] whitespace-pre-line text-[15.5px] leading-[1.75] text-slate-700">
               {publication.abstract || "No abstract has been provided for this publication."}
             </p>
 
@@ -680,7 +745,7 @@ const PublicationDetail: React.FC = () => {
                   {publication.tags.map((tag) => (
                     <li
                       key={tag}
-                      className="rounded-full bg-slate-100 px-3 py-1.5 text-xs font-bold text-slate-600"
+                      className="rounded-md bg-slate-100 px-2.5 py-1.5 text-xs font-medium text-slate-600"
                     >
                       {tag}
                     </li>
@@ -696,27 +761,41 @@ const PublicationDetail: React.FC = () => {
 
         <aside
           aria-labelledby="record-heading"
-          className={`${CARD} h-fit p-6 lg:sticky lg:top-24 lg:max-h-[calc(100vh-7rem)] lg:overflow-y-auto print:hidden`}
+          className={`${PANEL} h-fit p-6 lg:sticky lg:top-24 lg:max-h-[calc(100vh-7rem)] lg:overflow-y-auto print:hidden`}
         >
-          <h2 id="record-heading" className="font-black text-slate-900">
+          <h2 id="record-heading" className={EYEBROW}>
             Publication record
           </h2>
 
-          <dl className="mt-5 grid gap-5 text-sm">
-            <Field label="Authors">
-              <dd>
-                <AuthorList authors={authors} />
+          <dl className="mt-5 grid gap-4">
+            {publication.journal && (
+              <Field label="Published in">
+                <dd className="mt-1.5 text-sm font-medium leading-6 text-slate-700">
+                  {publication.journal}
+                </dd>
+              </Field>
+            )}
+
+            <Field label="Year">
+              <dd className="mt-1.5 text-sm font-medium text-slate-700 [font-variant-numeric:tabular-nums]">
+                {publication.year}
+              </dd>
+            </Field>
+
+            <Field label="Status">
+              <dd className="mt-1.5 text-sm font-medium text-slate-700">
+                {isOngoing ? "In progress" : "Published"}
               </dd>
             </Field>
 
             {publication.doi && (
               <Field label="DOI">
-                <dd className="mt-1 break-all font-semibold">
+                <dd className="mt-1.5 break-all text-sm font-medium">
                   <a
                     href={doiUrl}
                     target="_blank"
                     rel="noreferrer"
-                    className={`rounded-sm underline decoration-slate-300 underline-offset-4 transition hover:decoration-current ${FOCUS_LIGHT}`}
+                    className={`rounded-sm underline decoration-slate-300 underline-offset-4 transition hover:decoration-current ${FOCUS}`}
                     style={{ color: "var(--color-secondary)" }}
                   >
                     {publication.doi}
@@ -725,16 +804,6 @@ const PublicationDetail: React.FC = () => {
                 </dd>
               </Field>
             )}
-
-            {publication.journal && (
-              <Field label="Published in">
-                <dd className="mt-1 font-semibold text-slate-700">{publication.journal}</dd>
-              </Field>
-            )}
-
-            <Field label="Year">
-              <dd className="mt-1 font-semibold text-slate-700">{publication.year}</dd>
-            </Field>
           </dl>
 
           {paperUrl && (
@@ -742,10 +811,10 @@ const PublicationDetail: React.FC = () => {
               href={paperUrl}
               target="_blank"
               rel="noreferrer"
-              className={`mt-7 block rounded-xl px-4 py-3 text-center text-sm font-black text-white transition hover:opacity-90 ${FOCUS_LIGHT}`}
+              className={`mt-6 block rounded-xl px-4 py-3 text-center text-sm font-semibold text-white transition hover:opacity-90 ${FOCUS}`}
               style={{ background: "var(--color-secondary)" }}
             >
-              Open full paper <span aria-hidden="true">↗</span>
+              Read the full paper <span aria-hidden="true">↗</span>
               <span className="sr-only"> (opens in a new tab)</span>
             </a>
           )}
