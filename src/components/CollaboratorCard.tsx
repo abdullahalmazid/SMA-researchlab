@@ -1,255 +1,173 @@
 import React, { useState } from "react";
 import type { CollaboratorProfile } from "../types";
-import AppIcon from "./AppIcon";
+import AppIcon, { type AppIconName } from "./AppIcon";
 
 interface Props {
   collaborator: CollaboratorProfile;
   onClick?: () => void;
 }
 
+const FOCUS =
+  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-secondary)] focus-visible:ring-offset-2";
+
 const CollaboratorCard: React.FC<Props> = ({ collaborator: c, onClick }) => {
   const [imgErr, setImgErr] = useState(false);
-  const [hovered, setHovered] = useState(false);
   const isLabHead = c.uid === String(import.meta.env.VITE_LAB_HEAD_UID || "");
 
   const initials = c.name
     .split(" ")
-    .map((w) => w[0])
+    .map((word) => word[0])
+    .filter(Boolean)
     .slice(0, 2)
     .join("")
     .toUpperCase();
 
-  const socialLinks = [
-    {
-      href: c.linkedin,
-      label: "LinkedIn",
-      icon: "linkedin" as const,
-    },
-    {
-      href: c.scholar,
-      label: "Google Scholar",
-      icon: "scholar" as const,
-    },
-    {
-      href: c.orcid,
-      label: "ORCID",
-      icon: "orcid" as const,
-    },
-    {
-      href: c.researchgate,
-      label: "ResearchGate",
-      icon: "researchgate" as const,
-    },
-    {
-      href: c.facebook,
-      label: "Facebook",
-      icon: "facebook" as const,
-    },
-  ].filter((s) => s.href);
+  const socialLinks = (
+    [
+      { href: c.linkedin, label: "LinkedIn", icon: "linkedin" as AppIconName },
+      { href: c.scholar, label: "Google Scholar", icon: "scholar" as AppIconName },
+      { href: c.orcid, label: "ORCID", icon: "orcid" as AppIconName },
+      { href: c.researchgate, label: "ResearchGate", icon: "researchgate" as AppIconName },
+      { href: c.facebook, label: "Facebook", icon: "facebook" as AppIconName },
+    ] as const
+  ).filter((link) => link.href);
+
+  const interests = c.researchInterests ?? [];
+  const visibleInterests = interests.slice(0, 2);
+
+  /**
+   * The name is the single primary target. Its ::after overlay makes the whole
+   * card clickable while a screen reader still gets a heading — the old
+   * role="link" div announced every child as one unstructured string.
+   * Social links sit above the overlay at z-10.
+   */
+  const stretched =
+    "after:absolute after:inset-0 after:rounded-[16px] after:content-['']";
 
   return (
-    <div
-      onClick={onClick}
-      onKeyDown={(event) => {
-        if ((event.key === "Enter" || event.key === " ") && onClick) {
-          event.preventDefault();
-          onClick();
-        }
-      }}
-      role={onClick ? "link" : undefined}
-      tabIndex={onClick ? 0 : undefined}
-      aria-label={onClick ? `View ${c.name}'s collaborator profile` : undefined}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-      className="rounded-2xl overflow-hidden cursor-pointer flex flex-col focus:outline-none focus-visible:ring-4 focus-visible:ring-sky-300"
-      style={{
-        background: "white",
-        border: "1px solid #e8eef4",
-        boxShadow: hovered
-          ? "0 20px 48px rgba(0,0,0,0.14)"
-          : "0 2px 12px rgba(0,0,0,0.06)",
-        transform: hovered ? "translateY(-6px)" : "translateY(0)",
-        transition: "box-shadow 0.28s ease, transform 0.28s ease",
-      }}
-    >
-      {/* Photo header with gradient mesh */}
-      <div
-        className="relative flex items-center justify-center py-8 overflow-hidden"
-        style={{
-          background: `linear-gradient(145deg, var(--color-primary) 0%, var(--color-secondary) 60%, var(--color-primary) 100%)`,
-          minHeight: 160,
-        }}
-      >
-        {/* Decorative dots */}
-        <div
-          className="absolute inset-0 opacity-10"
-          style={{
-            backgroundImage:
-              "radial-gradient(circle, rgba(255,255,255,0.8) 1px, transparent 1px)",
-            backgroundSize: "18px 18px",
-          }}
-        />
-        {/* Accent glow */}
-        <div
-          className="absolute bottom-0 left-1/2 w-32 h-32 rounded-full opacity-30 blur-2xl"
-          style={{
-            background: "var(--color-accent)",
-            transform: "translateX(-50%) translateY(50%)",
-          }}
-        />
-
-        {/* Avatar with glow ring */}
-        <div
-          className="relative z-10"
-          style={{
-            padding: 3,
-            borderRadius: "50%",
-            background: hovered
-              ? "linear-gradient(135deg, var(--color-accent), var(--color-secondary))"
-              : "rgba(255,255,255,0.3)",
-            transition: "background 0.3s ease",
-            boxShadow: hovered ? "0 0 24px rgba(245,158,11,0.5)" : "none",
-          }}
-        >
+    <article className="group relative isolate flex h-full flex-col rounded-[16px] border border-slate-200 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)] transition duration-200 hover:border-slate-300 hover:shadow-[0_12px_28px_rgba(15,23,42,0.10)] motion-safe:hover:-translate-y-0.5">
+      <div className="flex flex-1 flex-col p-5">
+        {/* Identity row — replaces the 160px gradient photo band. */}
+        <div className="flex items-start gap-4">
           {c.photo && !imgErr ? (
             <img
               src={c.photo}
-              alt={c.name}
+              alt=""
+              loading="lazy"
+              decoding="async"
               onError={() => setImgErr(true)}
-              className="rounded-full object-cover"
-              style={{ width: 100, height: 100, display: "block" }}
+              className="h-[72px] w-[72px] shrink-0 rounded-[14px] border border-slate-200 object-cover"
             />
           ) : (
             <div
-              className="rounded-full flex items-center justify-center text-white font-black"
+              aria-hidden="true"
+              className="flex h-[72px] w-[72px] shrink-0 items-center justify-center rounded-[14px] text-xl font-semibold text-white"
               style={{
-                width: 100,
-                height: 100,
                 background:
-                  "linear-gradient(135deg, var(--color-secondary), var(--color-primary))",
-                fontSize: 32,
+                  "linear-gradient(135deg, var(--color-primary), var(--color-secondary))",
               }}
             >
               {initials}
             </div>
           )}
-        </div>
-      </div>
 
-      {/* Info */}
-      <div className="p-5 flex flex-col flex-1">
-        <h3
-          className="font-black text-gray-900 text-lg leading-tight mb-1 text-center"
-          style={{ fontFamily: "var(--font-heading)" }}
-        >
-          {c.name}
-        </h3>
-        {isLabHead && <span className="mx-auto mb-2 rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-wider" style={{ background: "color-mix(in srgb, var(--color-accent) 22%, white)", color: "var(--color-primary)" }}>Lab Head · Principal Investigator</span>}
-        <p
-          className="text-sm font-bold mb-1 text-center"
-          style={{ color: "var(--color-secondary)" }}
-        >
-          {c.designation}
-        </p>
-        <p className="text-xs text-gray-400 mb-3 text-center flex items-center justify-center gap-1">
-          <AppIcon name="building" size={12} /> {c.affiliation}
-        </p>
+          <div className="min-w-0 flex-1">
+            <h3
+              className="text-[16px] font-bold leading-snug tracking-[-0.01em] text-slate-900"
+              style={{ fontFamily: "var(--font-heading)" }}
+            >
+              {onClick ? (
+                <button
+                  type="button"
+                  onClick={onClick}
+                  className={`text-left decoration-slate-300 underline-offset-2 group-hover:underline ${stretched} ${FOCUS} focus-visible:after:ring-2 focus-visible:after:ring-[color:var(--color-secondary)] focus-visible:after:ring-offset-2`}
+                >
+                  {c.name}
+                </button>
+              ) : (
+                c.name
+              )}
+            </h3>
 
-        {/* Bio */}
-        <p
-          className="text-sm text-gray-600 leading-relaxed mb-4 flex-1 text-center"
-          style={{
-            display: "-webkit-box",
-            WebkitLineClamp: 3,
-            WebkitBoxOrient: "vertical",
-            overflow: "hidden",
-            lineHeight: 1.7,
-          }}
-        >
-          {c.bio}
-        </p>
+            {c.designation && (
+              <p
+                className="mt-1 line-clamp-1 text-[13px] font-semibold leading-5"
+                style={{ color: "var(--color-secondary)" }}
+              >
+                {c.designation}
+              </p>
+            )}
 
-        {/* Research interests */}
-        {c.researchInterests && c.researchInterests.length > 0 && (
-          <div className="flex flex-wrap justify-center gap-1.5 mb-4">
-            {c.researchInterests.slice(0, 2).map((r) => (
-              <span
-                key={r}
-                className="text-xs px-2 py-0.5 rounded-full font-medium"
+            {c.affiliation && (
+              <p className="mt-0.5 flex items-center gap-1.5 text-[12px] leading-5 text-slate-500">
+                <AppIcon name="building" size={12} />
+                <span className="line-clamp-1">{c.affiliation}</span>
+              </p>
+            )}
+
+            {isLabHead && (
+              <p
+                className="mt-2 inline-flex rounded-md px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.1em]"
                 style={{
-                  background: "#f0fdf4",
-                  color: "#166534",
-                  border: "1px solid #bbf7d0",
+                  background: "color-mix(in srgb, var(--color-accent) 20%, white)",
+                  color: "var(--color-primary)",
                 }}
               >
-                {r}
-              </span>
-            ))}
-            {c.researchInterests.length > 2 && (
-              <span
-                className="text-xs px-2 py-0.5 rounded-full font-medium"
-                style={{
-                  background: "#f8fafc",
-                  color: "#64748b",
-                  border: "1px solid #e2e8f0",
-                }}
-              >
-                +{c.researchInterests.length - 2}
-              </span>
+                Principal Investigator
+              </p>
             )}
           </div>
+        </div>
+
+        {c.bio && (
+          <p className="mt-4 line-clamp-2 text-[13.5px] leading-6 text-slate-600">{c.bio}</p>
         )}
 
-        {/* Social links */}
-        {socialLinks.length > 0 && (
-          <div className="flex items-center justify-center gap-2 mb-4">
-            {socialLinks.map((s) => (
-              <a
-                key={s.label}
-                href={s.href}
-                target="_blank"
-                rel="noreferrer"
-                onClick={(e) => e.stopPropagation()}
-                title={s.label}
-                className="no-underline font-black text-black rounded-lg flex items-center justify-center transition-all"
-                style={{
-                  background: "#ffffff",
-                  border: "1px solid #111827",
-                  width: 30,
-                  height: 30,
-                  fontSize: 11,
-                }}
-                onMouseEnter={(e) => {
-                  (e.currentTarget as HTMLElement).style.transform =
-                    "translateY(-2px)";
-                  (e.currentTarget as HTMLElement).style.boxShadow =
-                    "0 4px 12px rgba(17,24,39,0.25)";
-                }}
-                onMouseLeave={(e) => {
-                  (e.currentTarget as HTMLElement).style.transform =
-                    "translateY(0)";
-                  (e.currentTarget as HTMLElement).style.boxShadow = "none";
-                }}
+        {visibleInterests.length > 0 && (
+          <ul className="mt-3.5 flex flex-wrap gap-1.5">
+            {visibleInterests.map((interest) => (
+              <li
+                key={interest}
+                className="rounded-md bg-slate-100 px-2 py-1 text-[11px] font-medium leading-none text-slate-600"
               >
-                <AppIcon name={s.icon} size={14} />
-              </a>
+                {interest}
+              </li>
             ))}
-          </div>
+            {interests.length > visibleInterests.length && (
+              <li className="px-1 py-1 text-[11px] font-medium leading-none text-slate-400">
+                +{interests.length - visibleInterests.length} more
+              </li>
+            )}
+          </ul>
         )}
 
-        {/* CTA */}
-        <div
-          className="flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl text-xs font-black transition-all"
-          style={{
-            background: hovered ? "var(--color-primary)" : "#f1f5f9",
-            color: hovered ? "white" : "var(--color-primary)",
-            transition: "background 0.25s ease, color 0.25s ease",
-          }}
-        >
-          View Full Profile →
+        {/* mt-auto keeps footers aligned across a grid of uneven cards. */}
+        <div className="mt-auto flex items-center gap-1 pt-5">
+          {socialLinks.map((link) => (
+            <a
+              key={link.label}
+              href={link.href}
+              target="_blank"
+              rel="noreferrer"
+              aria-label={`${c.name} on ${link.label}`}
+              onClick={(event) => event.stopPropagation()}
+              className={`relative z-10 flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 ${FOCUS}`}
+            >
+              <AppIcon name={link.icon} size={16} />
+            </a>
+          ))}
+
+          {onClick && (
+            <span
+              aria-hidden="true"
+              className="ml-auto text-sm text-slate-400 transition group-hover:text-slate-900 motion-safe:group-hover:translate-x-0.5"
+            >
+              →
+            </span>
+          )}
         </div>
       </div>
-    </div>
+    </article>
   );
 };
 
