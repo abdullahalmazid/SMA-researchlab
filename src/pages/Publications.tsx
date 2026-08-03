@@ -213,11 +213,11 @@ const Publications: React.FC = () => {
             >
               <div
                 className="w-1.5 h-1.5 rounded-full animate-pulse"
-                style={{ background: "var(--color-accent)" }}
+                style={{ background: "var(--color-secondary)" }}
               />
               <EditableText
                 id="publications.hero.labLabel"
-                defaultValue={content["publications.hero.labLabel"] ?? "Rahman Research Lab"}
+                defaultValue={content["publications.hero.labLabel"] ?? "DASS Research Lounge"}
                 aria-label="Edit lab label"
                 className="text-xs font-bold tracking-widest uppercase"
               />
@@ -247,7 +247,7 @@ const Publications: React.FC = () => {
             >
               <EditableText
                 id="publications.pageSubtitle"
-                defaultValue={content["publications.pageSubtitle"] ?? ""}
+                defaultValue={content["publications.pageSubtitle"] ?? "Scroll down to see the publications"}
                 aria-label="Edit publications page subtitle"
                 className="text-base max-w-2xl mx-auto leading-relaxed"
               />
