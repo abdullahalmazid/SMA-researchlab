@@ -28,14 +28,27 @@ const FOCUS =
  * without hard-coding the bio's height.
  *
  * Opens on pointer hover and on keyboard focus — hover alone would leave the
- * bio unreachable for anyone tabbing through the grid. Dropped entirely on
- * devices with no hover; the in-flow copy below takes over.
+ * bio unreachable for anyone tabbing through the grid.
+ *
+ * Note the direction of the query. The touch layout is the default and the
+ * hover treatment is what gets opted into, so a device that reports something
+ * ambiguous lands on the layout that works without a pointer. Testing for
+ * `hover: none` the other way round leaves those devices with a bio nobody can
+ * reach. It's a capability query, not a breakpoint: a narrow window on a laptop
+ * still has a mouse, and a large tablet still doesn't.
+ *
+ * These strings are written out in full on purpose — Tailwind scans source text
+ * for complete class names, so building them by interpolation silently produces
+ * no CSS at all.
  */
 const REVEAL =
-  "grid grid-rows-[0fr] transition-[grid-template-rows] duration-300 ease-[cubic-bezier(.32,.72,0,1)] group-hover:grid-rows-[1fr] group-focus-within:grid-rows-[1fr] motion-reduce:transition-none [@media(hover:none)]:hidden";
+  "hidden grid-rows-[0fr] transition-[grid-template-rows] duration-300 ease-[cubic-bezier(.32,.72,0,1)] group-hover:grid-rows-[1fr] group-focus-within:grid-rows-[1fr] motion-reduce:transition-none [@media(hover:hover)_and_(pointer:fine)]:grid";
 
-/** Touch only — mirrors REVEAL so the photo is never permanently covered. */
-const BIO_INLINE = "hidden [@media(hover:none)]:block";
+/** Shown only where there's a real pointer. */
+const HOVER_ONLY = "hidden [@media(hover:hover)_and_(pointer:fine)]:block";
+
+/** The default. Hidden once we know the device can hover. */
+const TOUCH_ONLY = "[@media(hover:hover)_and_(pointer:fine)]:hidden";
 
 type SocialKey = "linkedin" | "scholar" | "orcid" | "researchgate" | "facebook";
 type Social = { key: SocialKey; label: string; icon: AppIconName };
@@ -201,7 +214,7 @@ const CollaboratorCard: React.FC<CollaboratorCardProps> = ({
         )}
 
         {c.bio && (
-          <p className={`mt-2.5 line-clamp-3 text-[13px] leading-6 text-slate-600 ${BIO_INLINE}`}>
+          <p className={`mt-2.5 line-clamp-3 text-[13px] leading-6 text-slate-600 ${TOUCH_ONLY}`}>
             {c.bio}
           </p>
         )}
@@ -248,12 +261,25 @@ const CollaboratorCard: React.FC<CollaboratorCardProps> = ({
           {onClick && (
             <span
               aria-hidden="true"
-              className="ml-auto text-sm text-slate-400 transition group-hover:text-slate-900 motion-safe:group-hover:translate-x-0.5"
+              className={`ml-auto text-sm text-slate-400 transition group-hover:text-slate-900 motion-safe:group-hover:translate-x-0.5 ${HOVER_ONLY}`}
             >
               →
             </span>
           )}
         </div>
+
+        {/* Touch gets a target it can see. Deliberately not a <button>: the
+            overlay below already covers the whole card, and it sits above this
+            in the stack, so a tap here still lands on it. A second real button
+            would just mean the same action announced twice. */}
+        {onClick && (
+          <span
+            aria-hidden="true"
+            className={`mt-3 flex items-center justify-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2.5 text-[11.5px] font-semibold uppercase tracking-[0.1em] text-slate-600 ${TOUCH_ONLY}`}
+          >
+            View profile →
+          </span>
+        )}
       </div>
 
       {/* The click target. A direct child of <article> at z-30, so it covers the
