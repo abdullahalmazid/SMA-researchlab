@@ -62,11 +62,8 @@ const relativeLuminance = (hex: string) => {
  * Small building blocks
  * ------------------------------------------------------------------ */
 
-const LabHeadAvatar: React.FC<{ photo: string; name: string; size: number }> = ({
-  photo,
-  name,
-  size,
-}) => {
+/** Fluid rather than a fixed pixel size: ~220px on phones, up to 320px on wide screens. */
+const LabHeadAvatar: React.FC<{ photo: string; name: string }> = ({ photo, name }) => {
   const [failed, setFailed] = useState(false);
   const initials = name
     .split(" ")
@@ -77,11 +74,11 @@ const LabHeadAvatar: React.FC<{ photo: string; name: string; size: number }> = (
     .toUpperCase();
 
   const shared: React.CSSProperties = {
-    width: size,
-    height: size,
-    borderRadius: 24,
-    border: "3px solid rgba(255,255,255,0.28)",
-    boxShadow: "0 18px 40px rgba(0,0,0,0.24)",
+    width: "clamp(220px, 24vw, 320px)",
+    aspectRatio: "1 / 1",
+    borderRadius: 28,
+    border: "4px solid rgba(255,255,255,0.3)",
+    boxShadow: "0 24px 56px rgba(0,0,0,0.28)",
   };
 
   if (photo && !failed) {
@@ -103,7 +100,7 @@ const LabHeadAvatar: React.FC<{ photo: string; name: string; size: number }> = (
       style={{
         ...shared,
         background: "rgba(255,255,255,0.12)",
-        fontSize: size * 0.3,
+        fontSize: "clamp(64px, 7vw, 96px)",
         letterSpacing: "0.02em",
       }}
     >
@@ -119,7 +116,7 @@ const LabHeadAvatar: React.FC<{ photo: string; name: string; size: number }> = (
 const SectionHeading: React.FC<{
   id: string;
   eyebrow: React.ReactNode;
-  tone: { border: string; muted: string; heading: string };
+  tone: { border: string; muted: string };
   as?: "h2" | "h3";
 }> = ({ id, eyebrow, tone, as: Tag = "h2" }) => (
   <div className="mb-6">
@@ -156,7 +153,6 @@ const LabHead: React.FC = () => {
       body: withAlpha(theme.primaryColor, isDark ? 0.86 : 0.8),
       muted: withAlpha(theme.primaryColor, isDark ? 0.66 : 0.6),
       shadow: isDark ? "0 1px 2px rgba(0,0,0,0.4)" : "0 1px 2px rgba(15,23,42,0.05)",
-      shadowHover: isDark ? "0 14px 34px rgba(0,0,0,0.45)" : "0 14px 34px rgba(15,23,42,0.10)",
     };
   }, [theme.backgroundColor, theme.primaryColor]);
 
@@ -211,6 +207,8 @@ const LabHead: React.FC = () => {
     "--focus-offset": tone.surface,
   } as React.CSSProperties;
 
+  const heroGradient = `linear-gradient(130deg, ${theme.primaryColor} 0%, ${theme.secondaryColor} 70%)`;
+
   /* ---------------------------------------------------------------- *
    * Loading and empty states
    * ---------------------------------------------------------------- */
@@ -224,20 +222,29 @@ const LabHead: React.FC = () => {
         role="status"
       >
         <span className="sr-only">Loading the lab head profile</span>
+
         <div
-          className="px-4 py-20 motion-safe:animate-pulse"
-          style={{ background: `linear-gradient(130deg, ${theme.primaryColor} 0%, ${theme.secondaryColor} 70%)` }}
+          className="px-4 py-16 motion-safe:animate-pulse md:py-20"
+          style={{ background: heroGradient }}
         >
-          <div className="mx-auto flex max-w-6xl flex-col items-center gap-8 md:flex-row md:items-end">
-            <div className="h-[168px] w-[168px] shrink-0 rounded-[24px] bg-white/15" />
-            <div className="w-full max-w-xl space-y-4">
-              <div className="h-3 w-28 rounded-full bg-white/20" />
-              <div className="h-9 w-3/4 rounded-lg bg-white/20" />
-              <div className="h-4 w-1/2 rounded-full bg-white/15" />
+          <div className="mx-auto max-w-6xl">
+            <div className="h-3 w-28 rounded-full bg-white/20" />
+            <div className="mt-8 flex flex-col items-center gap-8 md:flex-row md:items-center md:gap-12">
+              <div
+                className="shrink-0 rounded-[28px] bg-white/15"
+                style={{ width: "clamp(220px, 24vw, 320px)", aspectRatio: "1 / 1" }}
+              />
+              <div className="w-full max-w-xl space-y-4">
+                <div className="h-6 w-28 rounded-full bg-white/15" />
+                <div className="h-10 w-3/4 rounded-lg bg-white/20" />
+                <div className="h-4 w-1/2 rounded-full bg-white/15" />
+                <div className="h-11 w-40 rounded-xl bg-white/20" />
+              </div>
             </div>
           </div>
         </div>
-        <div className="mx-auto grid max-w-6xl gap-6 px-4 py-12 lg:grid-cols-[minmax(0,1fr)_320px]">
+
+        <div className="mx-auto grid max-w-6xl gap-6 px-4 py-14 lg:grid-cols-[minmax(0,1fr)_320px]">
           <div className="h-72 rounded-[20px] motion-safe:animate-pulse" style={panelStyle} />
           <div className="h-56 rounded-[20px] motion-safe:animate-pulse" style={panelStyle} />
         </div>
@@ -247,7 +254,10 @@ const LabHead: React.FC = () => {
 
   if (!labHead.name) {
     return (
-      <main className="grid min-h-[70vh] place-items-center px-4 py-16" style={{ background: tone.page }}>
+      <main
+        className="grid min-h-[70vh] place-items-center px-4 py-16"
+        style={{ background: tone.page }}
+      >
         <div className="max-w-lg rounded-[20px] p-10 text-center" style={panelStyle}>
           <div
             className="mx-auto mb-5 inline-flex rounded-2xl p-3"
@@ -287,9 +297,7 @@ const LabHead: React.FC = () => {
       <section
         aria-labelledby="labhead-name"
         className="relative overflow-hidden px-4 py-16 md:py-20"
-        style={{
-          background: `linear-gradient(130deg, ${theme.primaryColor} 0%, ${theme.secondaryColor} 70%)`,
-        }}
+        style={{ background: heroGradient }}
       >
         <div
           aria-hidden="true"
@@ -302,12 +310,16 @@ const LabHead: React.FC = () => {
 
         <div className="relative mx-auto max-w-6xl">
           <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-white/70">
-            <EditableText id="labhead.heroTitle" defaultValue="Meet the Lab Head" className="inline" />
+            <EditableText
+              id="labhead.heroTitle"
+              defaultValue="Meet the Lab Head"
+              className="inline"
+            />
           </p>
 
-          <div className="mt-8 flex flex-col items-center gap-8 text-center md:flex-row md:items-end md:gap-10 md:text-left">
+          <div className="mt-8 flex flex-col items-center gap-8 text-center md:flex-row md:items-center md:gap-12 md:text-left">
             <div className="shrink-0">
-              <LabHeadAvatar photo={labHead.photo} name={labHead.name} size={168} />
+              <LabHeadAvatar photo={labHead.photo} name={labHead.name} />
             </div>
 
             <div className="min-w-0 flex-1">
@@ -331,7 +343,11 @@ const LabHead: React.FC = () => {
               {(labHead.title || labHead.department) && (
                 <p className="mt-4 text-[15px] leading-7 text-white/85">
                   {labHead.title && (
-                    <EditableText id="labhead.title" defaultValue={labHead.title} className="inline" />
+                    <EditableText
+                      id="labhead.title"
+                      defaultValue={labHead.title}
+                      className="inline"
+                    />
                   )}
                   {labHead.title && labHead.department && (
                     <span aria-hidden="true" className="mx-2 text-white/40">
@@ -361,13 +377,14 @@ const LabHead: React.FC = () => {
                   {labHead.email && (
                     <a
                       href={`mailto:${labHead.email}`}
-                      style={{
-                        ...focusVars,
-                        "--focus-ring": "#ffffff",
-                        "--focus-offset": theme.primaryColor,
-                        background: theme.backgroundColor,
-                        color: theme.primaryColor,
-                      } as React.CSSProperties}
+                      style={
+                        {
+                          "--focus-ring": "#ffffff",
+                          "--focus-offset": theme.primaryColor,
+                          background: theme.backgroundColor,
+                          color: theme.primaryColor,
+                        } as React.CSSProperties
+                      }
                       className={`inline-flex min-h-[44px] items-center rounded-xl px-5 text-sm font-semibold no-underline shadow-lg transition hover:opacity-90 ${focusRing}`}
                     >
                       Email {labHead.name.split(" ")[0]}
@@ -376,11 +393,12 @@ const LabHead: React.FC = () => {
                   {labHead.phone && (
                     <a
                       href={`tel:${labHead.phone}`}
-                      style={{
-                        ...focusVars,
-                        "--focus-ring": "#ffffff",
-                        "--focus-offset": theme.primaryColor,
-                      } as React.CSSProperties}
+                      style={
+                        {
+                          "--focus-ring": "#ffffff",
+                          "--focus-offset": theme.primaryColor,
+                        } as React.CSSProperties
+                      }
                       className={`inline-flex min-h-[44px] items-center rounded-xl border border-white/35 px-5 text-sm font-semibold text-white no-underline transition hover:border-white/70 hover:bg-white/10 ${focusRing}`}
                     >
                       Call {labHead.phone}
@@ -403,7 +421,11 @@ const LabHead: React.FC = () => {
           className="mt-4 text-[11px] font-semibold uppercase tracking-[0.16em]"
           style={{ color: tone.muted }}
         >
-          <EditableText id="labhead.aboutTitle" defaultValue="About the Lab Head" className="inline" />
+          <EditableText
+            id="labhead.aboutTitle"
+            defaultValue="About the Lab Head"
+            className="inline"
+          />
         </h2>
 
         <div className="mt-8 grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
@@ -481,10 +503,7 @@ const LabHead: React.FC = () => {
                     <li
                       key={interest}
                       className="rounded-lg px-3 py-2 text-[13px] font-medium"
-                      style={{
-                        background: tone.surfaceMuted,
-                        color: tone.body,
-                      }}
+                      style={{ background: tone.surfaceMuted, color: tone.body }}
                     >
                       {interest}
                     </li>
@@ -708,10 +727,7 @@ const LabHead: React.FC = () => {
                         className="inline"
                       />
                     </span>
-                    <span
-                      className="mt-1 block text-xs leading-5"
-                      style={{ color: tone.muted }}
-                    >
+                    <span className="mt-1 block text-xs leading-5" style={{ color: tone.muted }}>
                       <EditableText
                         id={`labhead.cardDesc.${item.icon}`}
                         defaultValue={item.desc}
