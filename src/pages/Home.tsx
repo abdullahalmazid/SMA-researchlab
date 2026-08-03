@@ -478,7 +478,7 @@ const Home: React.FC = () => {
                     className="w-full inline-flex items-center justify-center no-underline text-sm font-black py-2.5 rounded-xl"
                     style={{
                       background:
-                        "linear-gradient(135deg, var(--color-accent), #f97316)",
+                        "linear-gradient(135deg, var(--color-accent), var(--color-secondary))",
                       color: "#1f2937",
                       boxShadow: "0 4px 12px rgba(245,158,11,0.3)",
                     }}
@@ -623,7 +623,7 @@ const Home: React.FC = () => {
             <Link
               to="/publications"
               className="no-underline font-bold text-sm px-6 py-2.5 rounded-xl"
-              style={{ color: "var(--color-secondary)", background: "#eff6ff" }}
+              style={{ color: "var(--color-secondary)", background: "var(--color-accent)" }}
             >
               <EditableText
                 id="home.publicationsCta"
