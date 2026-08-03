@@ -219,7 +219,7 @@ const Publications: React.FC = () => {
                 id="publications.hero.labLabel"
                 defaultValue={content["publications.hero.labLabel"] ?? "DASS Research Lounge"}
                 aria-label="Edit lab label"
-                className="text-xs color-var(--font-heading) font-bold tracking-widest uppercase"
+                className="text-white font-bold tracking-widest uppercase"
               />
             </div>
             <h1
