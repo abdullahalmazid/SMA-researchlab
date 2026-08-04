@@ -1,91 +1,119 @@
 import React, { useState } from "react";
 import { Link } from "react-router-dom";
+import { DEFAULT_INSTITUTION, DEFAULT_LAB_NAME, labInitial, personInitials } from "../branding";
+import { useAuth } from "../context/AuthContext";
 import { useSiteContent } from "../firebase/hooks";
+import { DESTINATIONS } from "../navigation";
 import AppIcon, { type AppIconName } from "./AppIcon";
 import EditableText from "./EditableText";
 
+const LAB_HEAD_UID = String(import.meta.env?.VITE_LAB_HEAD_UID ?? "").trim();
+
+/* Text levels, named once. The old file used 0.3 / 0.35 / 0.4 for headings and
+   legal text, which sits near 2:1 against the footer — well under 4.5:1. */
+const FG_STRONG = "text-white";
+const FG_MUTED = "text-white/[.62]";
+const FG_FAINT = "text-white/[.48]";
+
+/* Hover and focus as CSS, not eight onMouseEnter handlers mutating style.
+   Mouse events never fire for keyboard users, so the old footer had no visible
+   focus state anywhere in it. */
+const FOCUS =
+  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--color-footer)]";
+
+const ROW = `group/row flex items-center gap-2.5 rounded-[10px] px-2.5 py-2 text-[13.5px] no-underline transition ${FG_MUTED} hover:bg-white/[.08] hover:text-white ${FOCUS}`;
+
+const ROW_ICON =
+  "grid h-7 w-7 flex-none place-items-center rounded-lg bg-white/[.07] text-white/[.62] transition group-hover/row:bg-white/[.14] group-hover/row:text-[color:var(--color-accent)]";
+
+const ColumnHeading: React.FC<{ id?: string; children: React.ReactNode }> = ({ id, children }) => (
+  <h2
+    id={id}
+    className={`mb-4 flex items-center gap-2.5 text-[11px] font-extrabold uppercase tracking-[0.16em] ${FG_MUTED} after:h-px after:flex-1 after:bg-white/10 after:content-['']`}
+  >
+    {children}
+  </h2>
+);
+
 const Footer: React.FC = () => {
   const { content } = useSiteContent();
-  const [hoveredLink, setHoveredLink] = useState<string | null>(null);
+  const { role, appUser } = useAuth();
+  const [photoFailed, setPhotoFailed] = useState(false);
 
-  // Added IDs to match Navbar for synchronized editing
-  const navLinks = [
-    { to: "/", label: "Home", icon: "home" as AppIconName, id: "nav-home" },
-    {
-      to: "/about",
-      label: "About",
-      icon: "about" as AppIconName,
-      id: "nav-about",
-    },
-    {
-      to: "/collaborators",
-      label: "Collaborators",
-      icon: "collaborators" as AppIconName,
-      id: "nav-collaborators",
-    },
-    {
-      to: "/publications",
-      label: "Publications",
-      icon: "publications" as AppIconName,
-      id: "nav-publications",
-    },
-    {
-      to: "/research-ideas",
-      label: "Research Ideas",
-      icon: "ideas" as AppIconName,
-      id: "nav-research-ideas",
-    },
-    {
-      to: "/gallery",
-      label: "Gallery",
-      icon: "gallery" as AppIconName,
-      id: "nav-gallery",
-    },
-    {
-      to: "/contact",
-      label: "Contact",
-      icon: "contact" as AppIconName,
-      id: "nav-contact",
-    },
-  ];
+  /* Same source the navbar's Brand should read. Two components each holding
+     their own copy of the lab's name is how you end up with one name in the
+     header and a different one in the footer. */
+  const labName = content["branding.labName"] || DEFAULT_LAB_NAME;
+  const institution = content["branding.institution"] || DEFAULT_INSTITUTION;
 
-  const socialLinks = [
-    {
-      href: content["labhead.linkedin"],
-      label: "LinkedIn",
-      icon: "linkedin" as AppIconName,
-      color: "#ffffff",
-    },
-    {
-      href: content["labhead.scholar"],
-      label: "Scholar",
-      icon: "scholar" as AppIconName,
-      color: "#ffffff",
-    },
-    {
-      href: content["labhead.orcid"],
-      label: "ORCID",
-      icon: "orcid" as AppIconName,
-      color: "#ffffff",
-    },
-    {
-      href: content["labhead.researchgate"],
-      label: "ResearchGate",
-      icon: "researchgate" as AppIconName,
-      color: "#ffffff",
-    },
-  ].filter((s) => s.href);
+  const signedIn = role === "admin" || role === "collaborator" || role === "lab_head";
+  const isAdmin =
+    role === "admin" || appUser?.adminLevel === "primary" || appUser?.adminLevel === "moderator";
 
-  const scrollToTop = () => window.scrollTo({ top: 0, behavior: "smooth" });
+  /* Offering "Portal login" to someone already signed in is noise. The navbar
+     swaps to an account menu in that state; the footer points at the same
+     destination that menu would. */
+  const portal = !signedIn
+    ? {
+        to: "/login",
+        label: "Portal login",
+        icon: "login" as AppIconName,
+        id: "footer.portalLoginBtn",
+      }
+    : isAdmin
+      ? {
+          to: "/admin",
+          label: "Admin dashboard",
+          icon: "admin" as AppIconName,
+          id: "footer.adminDashboardBtn",
+        }
+      : {
+          to: "/collaborator-portal",
+          label: "My portal",
+          icon: "portal" as AppIconName,
+          id: "footer.myPortalBtn",
+        };
 
   const labHeadName = content["labhead.name"];
   const labHeadTitle = content["labhead.title"];
   const labHeadPhoto = content["labhead.photo"];
+  /* Falls back to the /lab-head page the navbar now links to, rather than a
+     dead /collaborators/undefined route. */
+  const labHeadHref = LAB_HEAD_UID
+    ? `/collaborators/${encodeURIComponent(LAB_HEAD_UID)}`
+    : "/lab-head";
+
+  const address = content["contact.address"];
+  const email = content["contact.email"];
+  const phone = content["contact.phone"];
+
+  const socialLinks = (
+    [
+      { href: content["labhead.linkedin"], label: "LinkedIn", icon: "linkedin" },
+      { href: content["labhead.scholar"], label: "Google Scholar", icon: "scholar" },
+      { href: content["labhead.orcid"], label: "ORCID", icon: "orcid" },
+      { href: content["labhead.researchgate"], label: "ResearchGate", icon: "researchgate" },
+    ] as { href?: string; label: string; icon: AppIconName }[]
+  ).filter((social): social is { href: string; label: string; icon: AppIconName } =>
+    Boolean(social.href),
+  );
+
+  const backToTop = () => {
+    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    window.scrollTo({ top: 0, behavior: reduced ? "auto" : "smooth" });
+    /* #main is the navbar's skip-link target, so both agree on where the top of
+       the page is. Focus has to travel with the scroll, or the next Tab drops
+       the user straight back into the footer they just left. */
+    const target =
+      document.getElementById("main") ?? document.querySelector("main") ?? document.body;
+    target.setAttribute("tabindex", "-1");
+    (target as HTMLElement).focus({ preventScroll: true });
+  };
 
   return (
-    <footer style={{ background: "var(--color-footer)" }} className="mt-16">
-      {/* ── Top accent bar ── */}
+    <footer className="mt-16" style={{ background: "var(--color-footer)" }}>
       <div
+        aria-hidden="true"
         className="h-1 w-full"
         style={{
           background:
@@ -93,423 +121,281 @@ const Footer: React.FC = () => {
         }}
       />
 
-      <div className="max-w-7xl mx-auto px-6 py-14">
-        <div className="grid grid-cols-1 md:grid-cols-12 gap-10">
-          {/* ── Column 1: Branding ── */}
-          <div className="md:col-span-4">
-            {/* Logo */}
-            <div className="flex items-center gap-3 mb-5">
-              {content["branding.logoUrl"] ? <img src={content["branding.logoUrl"]} alt="Lab logo" className="h-10 w-10 flex-shrink-0 rounded-xl object-contain" /> : <div
-                className="w-10 h-10 rounded-xl flex items-center justify-center text-lg font-black flex-shrink-0"
-                style={{
-                  background:
-                    "linear-gradient(135deg, var(--color-accent), #f97316)",
-                  color: "#1f2937",
-                  boxShadow: "0 4px 12px rgba(245,158,11,0.3)",
-                }}
-              >
-                R
-              </div>}
-              <div>
+      <div className="mx-auto max-w-7xl px-6 py-14">
+        <div className="grid grid-cols-1 gap-10 md:grid-cols-[1.15fr_1fr_1fr] md:gap-12">
+          {/* ------------------------------------------------- branding */}
+          <div>
+            <div className="mb-[18px] flex items-center gap-3">
+              {content["branding.logoUrl"] ? (
+                <img
+                  src={content["branding.logoUrl"]}
+                  alt=""
+                  className="h-11 w-11 flex-none rounded-[13px] object-contain"
+                />
+              ) : (
                 <div
-                  className="font-black text-lg leading-tight"
+                  aria-hidden="true"
+                  className="grid h-11 w-11 flex-none place-items-center rounded-[13px] text-[19px] font-black"
                   style={{
-                    color: "var(--color-accent)",
-                    fontFamily: "var(--font-heading)",
+                    background: "linear-gradient(135deg, var(--color-accent), #f97316)",
+                    color: "#1f2937",
+                    boxShadow: "0 4px 12px rgba(240,180,41,0.25)",
                   }}
                 >
-                  <EditableText
-                    id="footer.brandName"
-                    defaultValue={content["branding.labName"] || "Rahman Research Lab"}
-                    className="inline"
-                  />
+                  {/* Derived from the name. This was a literal "R" here and a
+                      literal "S" in the navbar's Brand. */}
+                  {labInitial(labName)}
                 </div>
+              )}
+              <div className="min-w-0">
                 <div
-                  className="text-xs"
-                  style={{ color: "rgba(255,255,255,0.4)" }}
+                  className="text-[19px] font-black leading-tight"
+                  style={{ color: "var(--color-accent)", fontFamily: "var(--font-heading)" }}
                 >
+                  {/* Shared id with the navbar wordmark: rename once, changes both. */}
+                  <EditableText id="branding.labName" defaultValue={labName} className="inline" />
+                </div>
+                <div className={`mt-0.5 text-[11.5px] ${FG_FAINT}`}>
                   <EditableText
                     id="footer.institution"
-                    defaultValue="Bangladesh University of Engineering and Technology"
+                    defaultValue={institution}
                     className="inline"
                   />
                 </div>
               </div>
             </div>
 
-            {/* Tagline */}
-            <p
-              className="text-sm leading-relaxed mb-6"
-              style={{
-                color: "rgba(255,255,255,0.55)",
-                maxWidth: 300,
-                lineHeight: 1.75,
-              }}
-            >
+            <p className={`mb-[22px] max-w-[32ch] text-[13.5px] leading-[1.8] ${FG_MUTED}`}>
               <EditableText
                 id="footer.tagline"
-                defaultValue="Advancing the frontiers of artificial intelligence, signal processing, and data science at BUET."
+                defaultValue={
+                  content["footer.tagline"] ??
+                  "Advancing the frontiers of artificial intelligence, signal processing and data science at BUET."
+                }
                 className="inline"
               />
             </p>
 
-            {/* Lab Head mini card */}
+            {/* The card looked clickable — rounded, bordered, shaded on hover —
+                but led nowhere. It now opens the lab head's profile. */}
             {labHeadName && (
-              <div
-                className="flex items-center gap-3 p-3 rounded-2xl mb-5"
+              <Link
+                to={labHeadHref}
+                aria-label={`View ${labHeadName}'s profile`}
+                className={`group flex items-center gap-[13px] rounded-2xl border border-white/10 px-3.5 py-3 no-underline transition hover:border-[color:var(--color-accent)]/40 hover:bg-white/10 motion-safe:hover:-translate-y-px ${FOCUS}`}
                 style={{
-                  background: "rgba(255,255,255,0.06)",
-                  border: "1px solid rgba(255,255,255,0.1)",
+                  background:
+                    "linear-gradient(180deg, rgba(255,255,255,0.075), rgba(255,255,255,0.035))",
                 }}
               >
-                {labHeadPhoto ? (
-                  <img
-                    src={labHeadPhoto}
-                    alt={labHeadName}
-                    className="rounded-xl object-cover flex-shrink-0"
-                    style={{ width: 44, height: 44 }}
-                  />
-                ) : (
-                  <div
-                    className="rounded-xl flex items-center justify-center text-white font-black flex-shrink-0"
-                    style={{
-                      width: 44,
-                      height: 44,
-                      background:
-                        "linear-gradient(135deg, var(--color-accent), var(--color-secondary))",
-                      fontSize: 16,
-                    }}
+                <span
+                  aria-hidden="true"
+                  className="grid h-[52px] w-[52px] flex-none place-items-center overflow-hidden rounded-[15px] text-[17px] font-extrabold text-white"
+                  style={{
+                    background:
+                      "linear-gradient(135deg, var(--color-accent), var(--color-secondary))",
+                    /* A ring rather than a border, so it doesn't eat into the photo. */
+                    boxShadow: "0 0 0 2px rgba(240,180,41,0.34), 0 6px 16px rgba(0,0,0,0.3)",
+                  }}
+                >
+                  {labHeadPhoto && !photoFailed ? (
+                    <img
+                      src={labHeadPhoto}
+                      /* Empty: the name sits right beside it, so alt={name} made
+                         a screen reader announce it twice. */
+                      alt=""
+                      loading="lazy"
+                      decoding="async"
+                      onError={() => setPhotoFailed(true)}
+                      className="h-full w-full object-cover"
+                    />
+                  ) : (
+                    /* charAt(0) on "Prof. Dr. Shahidur Rahman" gives "P". */
+                    personInitials(labHeadName)
+                  )}
+                </span>
+
+                <span className="min-w-0 flex-1">
+                  <span
+                    title={labHeadName}
+                    className={`block truncate text-[14.5px] font-extrabold ${FG_STRONG}`}
                   >
-                    {labHeadName.charAt(0)}
-                  </div>
-                )}
-                <div className="min-w-0">
-                  <p className="text-white font-black text-sm truncate">
                     {labHeadName}
-                  </p>
+                  </span>
                   {labHeadTitle && (
-                    <p
-                      className="text-xs truncate"
-                      style={{ color: "rgba(255,255,255,0.45)" }}
-                    >
+                    <span className={`mt-0.5 block truncate text-[11.5px] ${FG_FAINT}`}>
                       {labHeadTitle}
-                    </p>
+                    </span>
                   )}
                   <span
-                    className="inline-block text-xs font-bold px-2 py-0.5 rounded-full mt-1"
-                    style={{
-                      background: "rgba(245,158,11,0.15)",
-                      color: "var(--color-accent)",
-                    }}
+                    className="mt-[7px] inline-flex items-center gap-1.5 rounded-full py-[3px] pl-[7px] pr-[9px] text-[10px] font-extrabold uppercase tracking-[0.09em]"
+                    style={{ background: "rgba(240,180,41,0.15)", color: "var(--color-accent)" }}
                   >
+                    <span aria-hidden="true" className="h-1 w-1 rounded-full bg-current" />
                     <EditableText
                       id="footer.labDirectorLabel"
                       defaultValue="Lab Director"
                       className="inline"
                     />
                   </span>
-                </div>
-              </div>
+                </span>
+
+                <span
+                  aria-hidden="true"
+                  className={`flex-none transition group-hover:text-[color:var(--color-accent)] motion-safe:group-hover:translate-x-0.5 ${FG_FAINT}`}
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                    <path d="M9 5l7 7-7 7" strokeLinecap="round" />
+                  </svg>
+                </span>
+              </Link>
             )}
 
-            {/* Social links */}
             {socialLinks.length > 0 && (
-              <div className="flex gap-2 flex-wrap">
-                {socialLinks.map((s) => (
-                  <a
-                    key={s.label}
-                    href={s.href}
-                    target="_blank"
-                    rel="noreferrer"
-                    title={s.label}
-                    className="no-underline font-black text-white rounded-lg flex items-center justify-center transition-all"
-                    style={{
-                      background: s.color,
-                      width: 34,
-                      height: 34,
-                      fontSize: 11,
-                      boxShadow: `0 2px 8px ${s.color}40`,
-                    }}
-                    onMouseEnter={(e) => {
-                      (e.currentTarget as HTMLElement).style.transform =
-                        "translateY(-2px)";
-                      (e.currentTarget as HTMLElement).style.boxShadow =
-                        `0 6px 16px ${s.color}60`;
-                    }}
-                    onMouseLeave={(e) => {
-                      (e.currentTarget as HTMLElement).style.transform =
-                        "translateY(0)";
-                      (e.currentTarget as HTMLElement).style.boxShadow =
-                        `0 2px 8px ${s.color}40`;
-                    }}
-                  >
-                    <AppIcon name={s.icon} size={14} />
-                  </a>
+              <ul className="mt-5 flex flex-wrap gap-2">
+                {socialLinks.map((social) => (
+                  <li key={social.label}>
+                    {/* Ghost tiles. These were white icons on a white background —
+                        the tile colour came from a `color` field set to #ffffff. */}
+                    <a
+                      href={social.href}
+                      target="_blank"
+                      rel="noreferrer"
+                      aria-label={`${labHeadName ?? labName} on ${social.label}`}
+                      className={`grid h-[38px] w-[38px] place-items-center rounded-[11px] border border-white/10 bg-white/[.07] text-white/[.78] no-underline transition hover:border-[color:var(--color-accent)] hover:bg-[color:var(--color-accent)] hover:text-[#1f2937] motion-safe:hover:-translate-y-0.5 ${FOCUS}`}
+                    >
+                      <AppIcon name={social.icon} size={16} />
+                    </a>
+                  </li>
                 ))}
-              </div>
+              </ul>
             )}
           </div>
 
-          {/* ── Column 2: Navigation ── */}
-          <div className="md:col-span-4">
-            <div
-              className="text-xs font-black uppercase tracking-widest mb-5"
-              style={{ color: "rgba(255,255,255,0.3)" }}
-            >
+          {/* ---------------------------------------------- quick links */}
+          {/* Rendered from the shared NAV model, so this list can no longer fall
+              behind the navbar — /lab-head was missing here entirely. */}
+          <nav aria-labelledby="footer-links">
+            <ColumnHeading id="footer-links">
               <EditableText
                 id="footer.quickLinksTitle"
                 defaultValue="Quick Links"
                 className="inline"
               />
-            </div>
-            <div className="grid grid-cols-2 gap-x-4 gap-y-1">
-              {navLinks.map((l) => (
-                <Link
-                  key={l.to}
-                  to={l.to}
-                  className="no-underline flex items-center gap-2 py-1.5 px-2 rounded-lg text-sm transition-all"
-                  style={{
-                    color:
-                      hoveredLink === l.to ? "white" : "rgba(255,255,255,0.6)",
-                    background:
-                      hoveredLink === l.to
-                        ? "rgba(255,255,255,0.08)"
-                        : "transparent",
-                    fontWeight: hoveredLink === l.to ? 600 : 400,
-                  }}
-                  onMouseEnter={() => setHoveredLink(l.to)}
-                  onMouseLeave={() => setHoveredLink(null)}
-                >
-                  <AppIcon name={l.icon} size={13} />
-                  <EditableText
-                    id={l.label}
-                    defaultValue={l.label}
-                    className="inline"
-                  />
-                </Link>
+            </ColumnHeading>
+
+            <ul className="grid grid-cols-1 gap-x-2.5 gap-y-0.5 min-[420px]:grid-cols-2">
+              {DESTINATIONS.map((link) => (
+                <li key={link.to}>
+                  <Link to={link.to} className={ROW}>
+                    <span aria-hidden="true" className={ROW_ICON}>
+                      <AppIcon name={link.icon} size={14} />
+                    </span>
+                    <EditableText id={link.id} defaultValue={link.label} className="inline" />
+                  </Link>
+                </li>
               ))}
-            </div>
+            </ul>
 
-            {/* Portal links */}
-            <div
-              className="mt-6 pt-5"
-              style={{ borderTop: "1px solid rgba(255,255,255,0.08)" }}
+            <Link
+              to={portal.to}
+              className={`mt-4 inline-flex items-center gap-2 rounded-[10px] px-[18px] py-2.5 text-[12.5px] font-bold no-underline transition motion-safe:hover:-translate-y-px ${FOCUS}`}
+              style={{
+                background: "var(--color-accent)",
+                color: "#1f2937",
+                boxShadow: "0 2px 10px rgba(240,180,41,0.28)",
+              }}
             >
-              <div
-                className="text-xs font-black uppercase tracking-widest mb-3"
-                style={{ color: "rgba(255,255,255,0.3)" }}
-              >
-                <EditableText
-                  id="footer.portalAccessTitle"
-                  defaultValue="Portal Access"
-                  className="inline"
-                />
-              </div>
-              <Link
-                to="/login"
-                className="no-underline inline-flex items-center gap-2 text-xs font-bold px-4 py-2 rounded-lg transition-all"
-                style={{
-                  background: "var(--color-accent)",
-                  color: "#1f2937",
-                  boxShadow: "0 2px 8px rgba(245,158,11,0.3)",
-                }}
-                onMouseEnter={(e) => {
-                  (e.currentTarget as HTMLElement).style.transform =
-                    "translateY(-1px)";
-                  (e.currentTarget as HTMLElement).style.boxShadow =
-                    "0 4px 16px rgba(245,158,11,0.45)";
-                }}
-                onMouseLeave={(e) => {
-                  (e.currentTarget as HTMLElement).style.transform =
-                    "translateY(0)";
-                  (e.currentTarget as HTMLElement).style.boxShadow =
-                    "0 2px 8px rgba(245,158,11,0.3)";
-                }}
-              >
-                <AppIcon name="login" size={14} />
-                <EditableText
-                  id="footer.portalLoginBtn"
-                  defaultValue="Portal Login"
-                  className="inline"
-                />
-              </Link>
-            </div>
-          </div>
+              <AppIcon name={portal.icon} size={14} />
+              <EditableText id={portal.id} defaultValue={portal.label} className="inline" />
+            </Link>
+          </nav>
 
-          {/* ── Column 3: Contact ── */}
-          <div className="md:col-span-4">
-            <div
-              className="text-xs font-black uppercase tracking-widest mb-5"
-              style={{ color: "rgba(255,255,255,0.3)" }}
-            >
+          {/* ------------------------------------------------ get in touch */}
+          {/* Same row component as Quick Links — identical tile, hover pill and
+              rhythm. That likeness is what makes the columns read as siblings. */}
+          <div>
+            <ColumnHeading id="footer-contact">
               <EditableText
                 id="footer.getInTouchTitle"
                 defaultValue="Get In Touch"
                 className="inline"
               />
-            </div>
+            </ColumnHeading>
 
-            <div className="flex flex-col gap-4">
-              {content["contact.address"] && (
-                <div className="flex items-start gap-3">
-                  <div
-                    className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 text-sm"
-                    style={{ background: "rgba(255,255,255,0.08)" }}
-                  >
+            <address className="grid not-italic">
+              {address && (
+                <a
+                  href={`https://maps.google.com/?q=${encodeURIComponent(address)}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className={`${ROW} items-start`}
+                >
+                  <span aria-hidden="true" className={`${ROW_ICON} mt-px`}>
                     <AppIcon name="location" size={14} />
-                  </div>
-                  <p
-                    className="text-sm leading-relaxed"
-                    style={{
-                      color: "rgba(255,255,255,0.6)",
-                      whiteSpace: "pre-line",
-                    }}
-                  >
-                    {content["contact.address"]}
-                  </p>
-                </div>
+                  </span>
+                  <span className="min-w-0 whitespace-pre-line leading-relaxed">{address}</span>
+                </a>
               )}
 
-              {content["contact.email"] && (
-                <div className="flex items-center gap-3">
-                  <div
-                    className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 text-sm"
-                    style={{ background: "rgba(255,255,255,0.08)" }}
-                  >
+              {email && (
+                <a href={`mailto:${email}`} className={ROW}>
+                  <span aria-hidden="true" className={ROW_ICON}>
                     <AppIcon name="contact" size={14} />
-                  </div>
-                  <a
-                    href={`mailto:${content["contact.email"]}`}
-                    className="text-sm no-underline font-semibold transition-colors"
-                    style={{ color: "var(--color-accent)" }}
-                    onMouseEnter={(e) =>
-                      (e.currentTarget.style.color = "white")
-                    }
-                    onMouseLeave={(e) =>
-                      (e.currentTarget.style.color = "var(--color-accent)")
-                    }
-                  >
-                    {content["contact.email"]}
-                  </a>
-                </div>
+                  </span>
+                  <span className="min-w-0 break-all">{email}</span>
+                </a>
               )}
 
-              {content["contact.phone"] && (
-                <div className="flex items-center gap-3">
-                  <div
-                    className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 text-sm"
-                    style={{ background: "rgba(255,255,255,0.08)" }}
-                  >
+              {phone && (
+                <a href={`tel:${phone.replace(/\s+/g, "")}`} className={ROW}>
+                  <span aria-hidden="true" className={ROW_ICON}>
                     <AppIcon name="phone" size={14} />
-                  </div>
-                  <a
-                    href={`tel:${content["contact.phone"]}`}
-                    className="text-sm no-underline"
-                    style={{ color: "rgba(255,255,255,0.6)" }}
-                    onMouseEnter={(e) =>
-                      (e.currentTarget.style.color = "white")
-                    }
-                    onMouseLeave={(e) =>
-                      (e.currentTarget.style.color = "rgba(255,255,255,0.6)")
-                    }
-                  >
-                    {content["contact.phone"]}
-                  </a>
-                </div>
+                  </span>
+                  <span className="min-w-0">{phone}</span>
+                </a>
               )}
+            </address>
 
-              {/* Contact CTA */}
-              <Link
-                to="/contact"
-                className="no-underline inline-flex items-center gap-2 text-xs font-bold px-4 py-2 rounded-lg mt-2 transition-all"
-                style={{
-                  background: "rgba(255,255,255,0.08)",
-                  color: "rgba(255,255,255,0.7)",
-                  border: "1px solid rgba(255,255,255,0.12)",
-                  width: "fit-content",
-                }}
-                onMouseEnter={(e) => {
-                  (e.currentTarget as HTMLElement).style.background =
-                    "rgba(255,255,255,0.14)";
-                  (e.currentTarget as HTMLElement).style.color = "white";
-                }}
-                onMouseLeave={(e) => {
-                  (e.currentTarget as HTMLElement).style.background =
-                    "rgba(255,255,255,0.08)";
-                  (e.currentTarget as HTMLElement).style.color =
-                    "rgba(255,255,255,0.7)";
-                }}
-              >
-                <EditableText
-                  id="footer.sendMessageBtn"
-                  defaultValue="Send a Message →"
-                  className="inline"
-                />
-              </Link>
-            </div>
+            <Link
+              to="/contact"
+              className={`mt-4 inline-flex w-fit items-center gap-2 rounded-[10px] border border-white/10 bg-white/[.07] px-[18px] py-2.5 text-[12.5px] font-bold text-white/[.78] no-underline transition hover:bg-white/[.14] hover:text-white ${FOCUS}`}
+            >
+              <EditableText
+                id="footer.sendMessageBtn"
+                defaultValue="Send a message"
+                className="inline"
+              />
+              <span aria-hidden="true">→</span>
+            </Link>
           </div>
         </div>
       </div>
 
-      {/* ── Bottom bar ── */}
-      <div
-        className="border-t"
-        style={{ borderColor: "rgba(255,255,255,0.08)" }}
-      >
-        <div className="max-w-7xl mx-auto px-6 py-4 flex flex-col sm:flex-row items-center justify-between gap-3">
-          <p className="text-xs" style={{ color: "rgba(255,255,255,0.35)" }}>
+      {/* ------------------------------------------------------ bottom bar */}
+      <div className="border-t border-white/10">
+        <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3 px-6 py-4">
+          {/* The year sits outside the editable string. Baked into defaultValue,
+              it froze at whatever year an admin last saved the line. */}
+          <p className={`text-[11.5px] ${FG_FAINT}`}>
+            © {new Date().getFullYear()}{" "}
             <EditableText
               id="footer.copyright"
-              defaultValue={`© ${new Date().getFullYear()} Rahman Research Lab — Bangladesh University of Engineering and Technology`}
+              defaultValue={`${labName} — ${institution}`}
               className="inline"
             />
           </p>
-          <div className="flex items-center gap-4">
-            <Link
-              to="/login"
-              className="no-underline text-xs"
-              style={{ color: "rgba(255,255,255,0.3)" }}
-              onMouseEnter={(e) =>
-                (e.currentTarget.style.color = "rgba(255,255,255,0.7)")
-              }
-              onMouseLeave={(e) =>
-                (e.currentTarget.style.color = "rgba(255,255,255,0.3)")
-              }
-            >
-              <EditableText
-                id="footer.adminLink"
-                defaultValue="Admin"
-                className="inline"
-              />
-            </Link>
-            {/* Back to top */}
-            <button
-              onClick={scrollToTop}
-              className="flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-lg border-none cursor-pointer transition-all"
-              style={{
-                background: "rgba(255,255,255,0.08)",
-                color: "rgba(255,255,255,0.6)",
-                border: "1px solid rgba(255,255,255,0.12)",
-              }}
-              onMouseEnter={(e) => {
-                (e.currentTarget as HTMLElement).style.background =
-                  "var(--color-accent)";
-                (e.currentTarget as HTMLElement).style.color = "#1f2937";
-              }}
-              onMouseLeave={(e) => {
-                (e.currentTarget as HTMLElement).style.background =
-                  "rgba(255,255,255,0.08)";
-                (e.currentTarget as HTMLElement).style.color =
-                  "rgba(255,255,255,0.6)";
-              }}
-            >
-              <EditableText
-                id="footer.backToTopBtn"
-                defaultValue="↑ Back to top"
-                className="inline"
-              />
-            </button>
-          </div>
+
+          <button
+            type="button"
+            onClick={backToTop}
+            className={`inline-flex items-center gap-[7px] rounded-[10px] border border-white/10 bg-white/[.07] px-3.5 py-[7px] text-[11.5px] font-bold transition hover:border-[color:var(--color-accent)] hover:bg-[color:var(--color-accent)] hover:text-[#1f2937] ${FG_MUTED} ${FOCUS}`}
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" aria-hidden="true">
+              <path d="M12 19V5M6 11l6-6 6 6" strokeLinecap="round" />
+            </svg>
+            <EditableText id="footer.backToTopBtn" defaultValue="Back to top" className="inline" />
+          </button>
         </div>
       </div>
     </footer>
