@@ -1,13 +1,52 @@
-import React, { useState } from "react";
+import { collection, getDocs, limit, query, where } from "firebase/firestore";
+import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { DEFAULT_INSTITUTION, DEFAULT_LAB_NAME, labInitial, personInitials } from "../branding";
 import { useAuth } from "../context/AuthContext";
+import { db } from "../firebase/config";
 import { useSiteContent } from "../firebase/hooks";
 import { DESTINATIONS } from "../navigation";
 import AppIcon, { type AppIconName } from "./AppIcon";
 import EditableText from "./EditableText";
 
 const LAB_HEAD_UID = String(import.meta.env?.VITE_LAB_HEAD_UID ?? "").trim();
+
+/* ── branding fallbacks ───────────────────────────────────────────────────
+   Only used when the CMS value is empty. The name was previously hardcoded in
+   three separate spots in this file — the brand line, the copyright, and the
+   letter in the logo mark — so a rename left the old initial behind. */
+
+const DEFAULT_LAB_NAME = "DASS Research Lab";
+const DEFAULT_INSTITUTION = "Bangladesh University of Engineering and Technology";
+
+/** The mark in the logo tile. Derived, never typed by hand. */
+const labInitial = (labName: string): string =>
+  (Array.from(labName.trim().split(/\s+/)[0] ?? "")[0] ?? "").toUpperCase();
+
+const HONORIFIC = /^(dr|prof|mr|mrs|ms|md|mohd|engr)\.?$/i;
+
+/** First + last initial, honorifics skipped: "Prof. Dr. Shahidur Rahman" → SR.
+ *  charAt(0) on that string returns the P of "Prof." */
+function personInitials(name: string): string {
+  const words = name.trim().split(/\s+/).filter(Boolean);
+  const named = words.filter((word) => !HONORIFIC.test(word));
+  const source = named.length > 0 ? named : words;
+  const picked = source.length > 1 ? [source[0], source[source.length - 1]] : source.slice(0, 1);
+  return picked
+    .map((word) => Array.from(word)[0] ?? "")
+    .join("")
+    .toUpperCase();
+}
+
+/** The subset of a collaborator record the footer reads. */
+interface LabHeadDoc {
+  name?: string;
+  designation?: string;
+  photo?: string;
+  linkedin?: string;
+  scholar?: string;
+  orcid?: string;
+  researchgate?: string;
+}
 
 /* Text levels, named once. The old file used 0.3 / 0.35 / 0.4 for headings and
    legal text, which sits near 2:1 against the footer — well under 4.5:1. */
@@ -74,25 +113,68 @@ const Footer: React.FC = () => {
           id: "footer.myPortalBtn",
         };
 
-  const labHeadName = content["labhead.name"];
-  const labHeadTitle = content["labhead.title"];
-  const labHeadPhoto = content["labhead.photo"];
-  /* Falls back to the /lab-head page the navbar now links to, rather than a
-     dead /collaborators/undefined route. */
   const labHeadHref = LAB_HEAD_UID
     ? `/collaborators/${encodeURIComponent(LAB_HEAD_UID)}`
     : "/lab-head";
+
+  /**
+   * The lab head is a collaborator record, not site content. Reading only
+   * `content["labhead.*"]` meant that on any install where those keys were
+   * never filled in, `labHeadName` was undefined — and since the whole card is
+   * wrapped in `{labHeadName && …}`, it silently rendered nothing at all. No
+   * error, no empty box, just a missing block.
+   *
+   * Same query shape the navbar uses to find the signed-in user's photo:
+   * collaborators are matched on a `uid` field, not on the document id.
+   */
+  const [labHeadDoc, setLabHeadDoc] = useState<LabHeadDoc | null>(null);
+
+  useEffect(() => {
+    if (!LAB_HEAD_UID) return;
+    let live = true;
+    getDocs(query(collection(db, "collaborators"), where("uid", "==", LAB_HEAD_UID), limit(1)))
+      .then((snap) => {
+        if (live && !snap.empty) setLabHeadDoc(snap.docs[0].data() as LabHeadDoc);
+      })
+      .catch(() => {
+        /* Offline, or rules deny the read — the card falls back to whatever
+           site content has, and to nothing if that's empty too. */
+      });
+    return () => {
+      live = false;
+    };
+  }, []);
+
+  /* Site content wins where an admin has set it, so the CMS can still override
+     the profile without editing the collaborator record. */
+  const labHeadName = content["labhead.name"] || labHeadDoc?.name || "";
+  const labHeadTitle = content["labhead.title"] || labHeadDoc?.designation || "";
+  const labHeadPhoto = content["labhead.photo"] || labHeadDoc?.photo || "";
 
   const address = content["contact.address"];
   const email = content["contact.email"];
   const phone = content["contact.phone"];
 
+  /* Same fallback chain — these live on the collaborator record too, so the
+     icon row disappeared for exactly the same reason the card did. */
   const socialLinks = (
     [
-      { href: content["labhead.linkedin"], label: "LinkedIn", icon: "linkedin" },
-      { href: content["labhead.scholar"], label: "Google Scholar", icon: "scholar" },
-      { href: content["labhead.orcid"], label: "ORCID", icon: "orcid" },
-      { href: content["labhead.researchgate"], label: "ResearchGate", icon: "researchgate" },
+      {
+        href: content["labhead.linkedin"] || labHeadDoc?.linkedin,
+        label: "LinkedIn",
+        icon: "linkedin",
+      },
+      {
+        href: content["labhead.scholar"] || labHeadDoc?.scholar,
+        label: "Google Scholar",
+        icon: "scholar",
+      },
+      { href: content["labhead.orcid"] || labHeadDoc?.orcid, label: "ORCID", icon: "orcid" },
+      {
+        href: content["labhead.researchgate"] || labHeadDoc?.researchgate,
+        label: "ResearchGate",
+        icon: "researchgate",
+      },
     ] as { href?: string; label: string; icon: AppIconName }[]
   ).filter((social): social is { href: string; label: string; icon: AppIconName } =>
     Boolean(social.href),
