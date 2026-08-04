@@ -654,6 +654,15 @@ const CSS = `
 
 .rp-face{position:absolute;left:50%;top:50%;overflow:hidden;transform-style:preserve-3d;
   backface-visibility:hidden;-webkit-backface-visibility:hidden}
+
+/* Perpendicular walls INTERSECT, and CSS 3D cannot split intersecting planes —
+   it sorts each element by one depth value. Seen edge-on from inside the room,
+   a side wall still projects across the whole screen and can hit-test in front
+   of the door. So nothing on any wall is interactive except the door itself;
+   with no competing targets, sorting no longer matters. Events on the walls
+   fall through to .rp-viewport, which is what handles look-around anyway. */
+.rp-face,.rp-face *{pointer-events:none}
+.rp-exit .rp-door-btn{pointer-events:auto}
 .rp-wall{width:1800px;height:1040px;margin-left:-900px;margin-top:-520px;
   background:radial-gradient(ellipse 900px 700px at 50% 30%,rgba(255,214,170,.09),transparent 62%),
              linear-gradient(180deg,var(--wall) 0%,#232019 58%,#100e0c 100%);
@@ -741,7 +750,6 @@ const CSS = `
 .rp-door-btn{position:absolute;inset:0;z-index:7;padding:0;border:0;background:transparent;
   cursor:pointer;transform-style:preserve-3d;display:block}
 .rp-door-btn:focus-visible{outline:3px solid var(--blood-lit);outline-offset:14px}
-.rp-door-btn>*{pointer-events:none}
 
 .rp-jamb{position:absolute;inset:-22px;border:22px solid;
   border-color:#241f19 #1a1611 #14110d #1a1611;
