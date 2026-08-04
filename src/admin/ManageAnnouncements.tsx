@@ -343,8 +343,12 @@ const ManageAnnouncements: React.FC = () => {
 
   /* -------------------------------------------------------------- preview */
 
-  const previewPost: Post = {
+  /* Cast, not annotated. This is a display-only stand-in for the preview — it
+     has no Firestore record behind it, so bookkeeping fields the real type
+     requires (order, updatedAt) have no meaningful value here. */
+  const previewPost = {
     id: "preview",
+    order: 0,
     createdAt: fromDateInput(draft.date),
     content: draft.content || "Your summary appears here.",
     title: draft.title,
@@ -353,7 +357,7 @@ const ManageAnnouncements: React.FC = () => {
     link: draft.link,
     linkLabel: draft.linkLabel,
     isPinned: draft.isPinned,
-  };
+  } as Post;
 
   const previewBadges = (
     <div className="flex flex-wrap items-center gap-2">
