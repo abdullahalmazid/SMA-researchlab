@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import AppIcon, { type AppIconName } from "../components/AppIcon";
 import EditableText from "../components/EditableText";
@@ -6,12 +6,12 @@ import { useThemeContext } from "../context/ThemeContext";
 import {
   useAnnouncements,
   useCollaborators,
-  useGallery, // ── ADDED: gallery hook
+  useGallery,
   usePublications,
   useResearchIdeas,
   useSiteContent,
 } from "../firebase/hooks";
-import type { Announcement } from "../types";
+import type { Announcement, CollaboratorProfile, GalleryItem } from "../types";
 
 // ── Types ──────────────────────────────────────────────────────
 interface LabHeadData {
@@ -38,13 +38,14 @@ type AnnouncementPost = Announcement & {
   category?: string;
 };
 
-/** The old code mapped every announcement, so this column grew without limit. */
 const HOME_ANNOUNCEMENT_LIMIT = 4;
-
-/** Newer than this gets a "New" badge. */
 const ANNOUNCEMENT_NEW_DAYS = 21;
 
-/** No title on the record? Derive one from the first sentence of the summary. */
+/** Slowed from 3.5s and 5s. Nobody reads a name, role and affiliation in
+ *  three and a half seconds, and the old pace made the card unreadable. */
+const COLLAB_INTERVAL = 7000;
+const GALLERY_INTERVAL = 8000;
+
 function announcementTitle(post: AnnouncementPost): string {
   if (post.title?.trim()) return post.title.trim();
   const first = (post.content || "").split(/(?<=[.!?])\s/)[0]?.trim() ?? "";
@@ -59,6 +60,63 @@ const announcementIsNew = (iso: string) => {
   );
 };
 
+const prefersReducedMotion = () =>
+  typeof window !== "undefined" &&
+  window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+/**
+ * Autoplay that can actually be stopped.
+ *
+ * WCAG 2.2.2 requires any auto-moving content running longer than five seconds
+ * to have a pause mechanism. Hover alone doesn't satisfy it — there is no hover
+ * on touch and none while tabbing — so this also exposes an explicit toggle.
+ *
+ * Including `index` in the deps restarts the countdown after manual navigation,
+ * which is what the old resetTimer() calls were doing by hand.
+ */
+function useCarousel(length: number, intervalMs: number) {
+  const [index, setIndex] = useState(0);
+  const [paused, setPaused] = useState(prefersReducedMotion);
+
+  // An admin deleting a record shrinks the array under a live snapshot. Without
+  // this clamp the index points past the end and the render throws on undefined.
+  const safeIndex = length > 0 ? Math.min(index, length - 1) : 0;
+
+  useEffect(() => {
+    if (paused || length < 2) return;
+    const id = window.setInterval(() => {
+      setIndex((c) => (c + 1) % length);
+    }, intervalMs);
+    return () => window.clearInterval(id);
+  }, [paused, length, intervalMs, safeIndex]);
+
+  const prev = useCallback(() => setIndex((c) => (c - 1 + length) % length), [length]);
+  const next = useCallback(() => setIndex((c) => (c + 1) % length), [length]);
+
+  return { index: safeIndex, setIndex, prev, next, paused, setPaused };
+}
+
+const PauseButton: React.FC<{ paused: boolean; onToggle: () => void; label: string }> = ({
+  paused, onToggle, label,
+}) => (
+  <button
+    type="button"
+    onClick={onToggle}
+    className="hm-ctrl"
+    aria-label={paused ? `Resume ${label}` : `Pause ${label}`}
+  >
+    {paused ? (
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+        <path d="M7 4l13 8-13 8z" />
+      </svg>
+    ) : (
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+        <path d="M7 4h4v16H7zM13 4h4v16h-4z" />
+      </svg>
+    )}
+  </button>
+);
+
 // ── Main Component ─────────────────────────────────────────────
 const Home: React.FC = () => {
   const { content, loading } = useSiteContent();
@@ -67,25 +125,19 @@ const Home: React.FC = () => {
   const { collaborators } = useCollaborators();
   const { ongoing, published } = usePublications();
   const { ideas } = useResearchIdeas();
-  const { gallery } = useGallery(); // ── ADDED: gallery data
+  const { gallery } = useGallery();
   const [bannerImgErr, setBannerImgErr] = useState(false);
   const [visible, setVisible] = useState(false);
 
   /**
-   * Proper WCAG relative luminance. This previously averaged the raw 0–255
-   * channels, which is a different curve entirely — so PublicationCard (which
-   * gamma-corrects) and this page could disagree about whether the same theme
-   * colour counts as dark, and the cards would go dark while the page didn't.
-   * Threshold 0.22 matches PublicationCard.
+   * Proper WCAG relative luminance. Threshold 0.22 matches PublicationCard, so
+   * the two can't disagree about whether the same theme colour counts as dark.
    */
-  const isDarkTheme = React.useMemo(() => {
+  const isDarkTheme = useMemo(() => {
     const clean = (theme.backgroundColor ?? "").replace("#", "").trim();
     const full =
       clean.length === 3
-        ? clean
-            .split("")
-            .map((char) => char + char)
-            .join("")
+        ? clean.split("").map((char) => char + char).join("")
         : clean;
     if (full.length !== 6 || /[^0-9a-f]/i.test(full)) return false;
 
@@ -99,62 +151,37 @@ const Home: React.FC = () => {
 
   const sectionTextPrimary = isDarkTheme ? "#e5e7eb" : "#1f2937";
   const sectionTextSecondary = isDarkTheme ? "#cbd5e1" : "#374151";
-  const sectionTextMuted = isDarkTheme ? "#94a3b8" : "#9ca3af";
+  const sectionTextMuted = isDarkTheme ? "#94a3b8" : "#6b7280";
   const sectionCardBg = isDarkTheme ? "rgba(15,23,42,0.7)" : "#ffffff";
   const sectionCardBorder = isDarkTheme ? "rgba(148,163,184,0.22)" : "#e5e7eb";
   const stripBg = isDarkTheme ? "#0b1220" : "#ffffff";
   const stripBorder = isDarkTheme ? "rgba(148,163,184,0.2)" : "#e5e7eb";
 
+  // The old timeout was never cleared, so unmounting mid-delay left a pending
+  // setState on a dead component.
   useEffect(() => {
-    if (!loading) setTimeout(() => setVisible(true), 80);
+    if (loading) return;
+    const id = window.setTimeout(() => setVisible(true), 80);
+    return () => window.clearTimeout(id);
   }, [loading]);
 
   if (loading)
     return (
-      <div className="flex items-center justify-center min-h-screen">
+      <div className="flex items-center justify-center min-h-screen" role="status" aria-label="Loading">
         <div
           className="w-12 h-12 rounded-full border-4 border-t-transparent animate-spin"
-          style={{
-            borderColor: "var(--color-primary)",
-            borderTopColor: "transparent",
-          }}
+          style={{ borderColor: "var(--color-primary)", borderTopColor: "transparent" }}
         />
       </div>
     );
 
   const stats = [
-    {
-      value: collaborators.length,
-      label: content["home.statsLabel1"] ?? "Collaborators",
-      icon: "collaborators" as AppIconName,
-    },
-    {
-      value: published.length,
-      label: content["home.statsLabel2"] ?? "Publications",
-      icon: "paper" as AppIconName,
-    },
-    {
-      value: ongoing.length,
-      label: content["home.statsLabel3"] ?? "Ongoing Projects",
-      icon: "lab" as AppIconName,
-    },
-    {
-      value: ideas.length,
-      label: content["home.statsLabel4"] ?? "Research Ideas",
-      icon: "ideas" as AppIconName,
-    },
+    { value: collaborators.length, label: content["home.statsLabel1"] ?? "Collaborators", icon: "collaborators" as AppIconName },
+    { value: published.length, label: content["home.statsLabel2"] ?? "Publications", icon: "paper" as AppIconName },
+    { value: ongoing.length, label: content["home.statsLabel3"] ?? "Ongoing Projects", icon: "lab" as AppIconName },
+    { value: ideas.length, label: content["home.statsLabel4"] ?? "Research Ideas", icon: "ideas" as AppIconName },
   ];
 
-  /* Two fixes in one place.
-
-     Drafts: ManageAnnouncements can mark an announcement as hidden, and this
-     page was rendering every record the hook returned — so hiding one removed
-     it from the Announcements page and nowhere else.
-
-     Order: announcements load with orderBy("order", "asc") and each new one is
-     written with order = max + 1, which is oldest-first. The very first
-     announcement the lab ever wrote was sitting at the top of a section titled
-     Latest Updates. */
   const publishedAnnouncements = (announcements as AnnouncementPost[])
     .filter((post) => !post.isHidden)
     .sort(
@@ -183,13 +210,19 @@ const Home: React.FC = () => {
 
   const hasLabHead = !!labHead.name;
 
+  const heroLinks = [
+    { href: labHead.linkedin, icon: "linkedin" as AppIconName, label: "LinkedIn" },
+    { href: labHead.scholar, icon: "scholar" as AppIconName, label: "Google Scholar" },
+    { href: labHead.orcid, icon: "orcid" as AppIconName, label: "ORCID" },
+    { href: labHead.researchgate, icon: "researchgate" as AppIconName, label: "ResearchGate" },
+  ].filter((l) => l.href);
+
   return (
     <div style={{ opacity: visible ? 1 : 0, transition: "opacity 0.5s ease" }}>
-      {/* ══════════════════════════════════════════════════════════
-          HERO SECTION
-      ══════════════════════════════════════════════════════════ */}
-      <section className="relative overflow-hidden " style={{ minHeight: 600 }}>
-        {/* Background image */}
+      <style>{CSS}</style>
+
+      {/* ══════════════ HERO ══════════════ */}
+      <section className="relative overflow-hidden" style={{ minHeight: 600 }}>
         {content["home.bannerUrl"] && !bannerImgErr ? (
           <img
             src={content["home.bannerUrl"]}
@@ -199,13 +232,9 @@ const Home: React.FC = () => {
             style={{ filter: "brightness(0.45)" }}
           />
         ) : (
-          <div
-            className="absolute inset-0"
-            style={{ background: "var(--color-primary)" }}
-          />
+          <div className="absolute inset-0" style={{ background: "var(--color-primary)" }} />
         )}
 
-        {/* Gradient overlay — dark left, lighter right */}
         <div
           className="absolute inset-0"
           style={{
@@ -214,26 +243,21 @@ const Home: React.FC = () => {
           }}
         />
 
-        {/* Decorative dots pattern top-right */}
         <div
+          aria-hidden="true"
           className="absolute top-0 right-0 w-96 h-96 opacity-10"
           style={{
-            backgroundImage:
-              "radial-gradient(circle, rgba(255,255,255,0.6) 1px, transparent 1px)",
+            backgroundImage: "radial-gradient(circle, rgba(255,255,255,0.6) 1px, transparent 1px)",
             backgroundSize: "24px 24px",
           }}
         />
 
-        {/* Accent glow bottom-left */}
         <div
+          aria-hidden="true"
           className="absolute bottom-0 left-0 w-72 h-72 rounded-full opacity-20 blur-3xl"
-          style={{
-            background: "var(--color-accent)",
-            transform: "translate(-30%, 30%)",
-          }}
+          style={{ background: "var(--color-accent)", transform: "translate(-30%, 30%)" }}
         />
 
-        {/* Content */}
         <div className="relative z-10 max-w-7xl mx-auto px-10 lg:px-20 py-4 lg:py-5 flex flex-col lg:flex-row items-center gap-14">
           {/* ── Left: Text ── */}
           <div
@@ -244,22 +268,16 @@ const Home: React.FC = () => {
               transition: "opacity 0.7s ease 0.1s, transform 0.7s ease 0.1s",
             }}
           >
-            {/* BUET badge */}
             <div
               className="inline-flex items-center gap-2 mb-6 px-4 py-1.5 rounded-full border"
-              style={{
-                borderColor: "rgba(255,255,255,0.2)",
-                background: "rgba(255,255,255,0.06)",
-              }}
+              style={{ borderColor: "rgba(255,255,255,0.2)", background: "rgba(255,255,255,0.06)" }}
             >
-              <div
-                className="w-1.5 h-1.5 rounded-full animate-pulse"
+              <span
+                aria-hidden="true"
+                className="w-1.5 h-1.5 rounded-full motion-safe:animate-pulse"
                 style={{ background: "var(--color-accent)" }}
               />
-              <span
-                className="text-xs font-bold tracking-widest uppercase"
-                style={{ color: "rgba(255,255,255,0.7)" }}
-              >
+              <span className="text-xs font-bold tracking-widest uppercase" style={{ color: "rgba(255,255,255,0.75)" }}>
                 <EditableText
                   id="home.buetBadge"
                   tag="span"
@@ -269,8 +287,9 @@ const Home: React.FC = () => {
               </span>
             </div>
 
-            {/* Main heading */}
-            <span
+            {/* A <span> cannot contain an <h1>. These wrappers are divs now —
+                the old markup was invalid and browsers silently reparented it. */}
+            <div
               style={{
                 fontSize: "clamp(2.4rem, 5.5vw, 4rem)",
                 fontFamily: "var(--font-heading)",
@@ -282,44 +301,29 @@ const Home: React.FC = () => {
                 id="home.heroTitle"
                 tag="h1"
                 className="font-black text-white leading-none mb-5"
-                defaultValue={
-                  content["home.heroTitle"] ?? "DASS Research Lounge"
-                }
-              />
-            </span>
-
-            {/* Accent line */}
-            <div className="flex justify-center lg:justify-start mb-5">
-              <div
-                className="h-1 w-20 rounded-full"
-                style={{ background: "var(--color-accent)" }}
+                defaultValue={content["home.heroTitle"] ?? "DASS Research Lounge"}
               />
             </div>
 
-            {/* Subtitle */}
-            <span
-              style={{
-                color: "rgba(255,255,255,0.78)",
-                maxWidth: 500,
-                margin: "0 auto 2.5rem auto",
-              }}
-            >
+            <div className="flex justify-center lg:justify-start mb-5">
+              <div className="h-1 w-20 rounded-full" style={{ background: "var(--color-accent)" }} />
+            </div>
+
+            <div style={{ color: "rgba(255,255,255,0.8)", maxWidth: 500, margin: "0 auto 2.5rem auto" }}>
               <EditableText
                 id="home.heroSubtitle"
                 tag="p"
                 className="text-base lg:text-lg leading-relaxed mb-10"
                 defaultValue={
-                  content["home.heroSubtitle"] ??
-                  "Advancing the frontiers of science and technology."
+                  content["home.heroSubtitle"] ?? "Advancing the frontiers of science and technology."
                 }
               />
-            </span>
+            </div>
 
-            {/* CTA buttons */}
             <div className="flex gap-3 flex-wrap justify-center lg:justify-start">
               <Link
                 to="/research-ideas"
-                className="no-underline font-black px-7 py-3.5 rounded-xl text-sm"
+                className="hm-cta no-underline font-black px-7 py-3.5 rounded-xl text-sm"
                 style={{
                   background: "var(--color-accent)",
                   color: "#1f2937",
@@ -330,28 +334,21 @@ const Home: React.FC = () => {
                 <EditableText
                   id="home.heroCta"
                   tag="span"
-                  defaultValue={
-                    content["home.heroCta"] ?? "Explore Research Ideas"
-                  }
+                  defaultValue={content["home.heroCta"] ?? "Explore Research Ideas"}
                   className="inline"
                 />{" "}
-                →
+                <span aria-hidden="true">→</span>
               </Link>
               <Link
                 to="/about"
-                className="no-underline font-bold px-7 py-3.5 rounded-xl text-sm text-white"
+                className="hm-cta no-underline font-bold px-7 py-3.5 rounded-xl text-sm text-white"
                 style={{
                   border: "1.5px solid rgba(255,255,255,0.35)",
                   background: "rgba(255,255,255,0.08)",
                   backdropFilter: "blur(4px)",
                 }}
               >
-                <EditableText
-                  id="home.aboutButton"
-                  tag="span"
-                  defaultValue="About the Lab"
-                  className="inline"
-                />
+                <EditableText id="home.aboutButton" tag="span" defaultValue="About the Lab" className="inline" />
               </Link>
             </div>
           </div>
@@ -373,94 +370,48 @@ const Home: React.FC = () => {
                   backdropFilter: "blur(20px)",
                   WebkitBackdropFilter: "blur(20px)",
                   border: "1px solid rgba(255,255,255,0.14)",
-                  boxShadow:
-                    "0 20px 60px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.1)",
+                  boxShadow: "0 20px 60px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.1)",
                 }}
               >
-                {/* Accent top bar */}
                 <div
                   className="h-1 w-full"
-                  style={{
-                    background:
-                      "linear-gradient(90deg, var(--color-accent), var(--color-secondary))",
-                  }}
+                  style={{ background: "linear-gradient(90deg, var(--color-accent), var(--color-secondary))" }}
                 />
 
-                {/* Photo */}
                 <div className="flex justify-center pt-7 pb-4">
-                  <LabHeadAvatar
-                    photo={labHead.photo}
-                    name={labHead.name}
-                    size={220}
-                    rounded="full"
-                  />
+                  <LabHeadAvatar photo={labHead.photo} name={labHead.name} size={200} rounded="xl" />
                 </div>
 
-                {/* Info */}
                 <div className="px-6 pb-6 text-center">
                   <div
                     className="inline-block px-3 py-0.5 rounded-full text-xs font-bold mb-2"
-                    style={{
-                      background: "rgba(245,158,11,0.15)",
-                      color: "var(--color-accent)",
-                    }}
+                    style={{ background: "rgba(245,158,11,0.15)", color: "var(--color-accent)" }}
                   >
-                    <EditableText
-                      id="home.labDirectorBadge"
-                      tag="span"
-                      defaultValue="Lab Director"
-                      className="inline"
-                    />
+                    <EditableText id="home.labDirectorBadge" tag="span" defaultValue="Lab Director" className="inline" />
                   </div>
-                  <h2
-                    className="text-white font-black text-xl leading-tight"
-                    style={{ fontFamily: "var(--font-heading)" }}
-                  >
-                    <EditableText
-                      id="labhead.name"
-                      tag="span"
-                      defaultValue={labHead.name || "Dr. Syed Mithun Ali"}
-                      className="text-white font-black text-xl leading-tight"
-                    />
+
+                  <h2 className="text-white font-black text-xl leading-tight" style={{ fontFamily: "var(--font-heading)" }}>
+                    <EditableText id="labhead.name" tag="span" defaultValue={labHead.name} className="inline" />
                   </h2>
+
                   {labHead.title && (
-                    <p
-                      className="text-xs mt-1.5 font-semibold"
-                      style={{ color: "rgba(255,255,255,0.6)" }}
-                    >
-                      <EditableText
-                        id="labhead.title"
-                        tag="span"
-                        defaultValue={labHead.title || "Lab Head Title"}
-                        className="text-xs mt-1.5 font-semibold"
-                      />
+                    <p className="text-xs mt-1.5 font-semibold" style={{ color: "rgba(255,255,255,0.7)" }}>
+                      <EditableText id="labhead.title" tag="span" defaultValue={labHead.title} className="inline" />
                     </p>
                   )}
                   {labHead.department && (
-                    <p
-                      className="text-xs mt-0.5"
-                      style={{ color: "rgba(255,255,255,0.45)" }}
-                    >
-                      <EditableText
-                        id="labhead.department"
-                        tag="span"
-                        defaultValue={labHead.department || "Industrial and Production Engineering"}
-                        className="text-xs mt-0.5"
-                      />
+                    <p className="text-xs mt-0.5" style={{ color: "rgba(255,255,255,0.55)" }}>
+                      <EditableText id="labhead.department" tag="span" defaultValue={labHead.department} className="inline" />
                     </p>
                   )}
 
-                  {/* Divider */}
-                  <div
-                    className="my-4 h-px w-full"
-                    style={{ background: "rgba(255,255,255,0.1)" }}
-                  />
+                  <div className="my-4 h-px w-full" style={{ background: "rgba(255,255,255,0.1)" }} />
 
                   {labHead.shortBio && (
                     <p
                       className="text-xs leading-relaxed mb-5"
                       style={{
-                        color: "rgba(255,255,255,0.65)",
+                        color: "rgba(255,255,255,0.7)",
                         display: "-webkit-box",
                         WebkitLineClamp: 4,
                         WebkitBoxOrient: "vertical",
@@ -470,90 +421,42 @@ const Home: React.FC = () => {
                       <EditableText
                         id="labhead.shortBio"
                         tag="span"
-                        defaultValue={labHead.shortBio || "Short bio..."}
-                        className="text-xs leading-relaxed"
+                        defaultValue={labHead.shortBio}
+                        className="inline"
                         multiline
                       />
                     </p>
                   )}
 
-                  {/* Social icons row */}
-                  <div className="flex items-center justify-center gap-2 mb-4">
-                    {[
-                      {
-                        href: labHead.linkedin,
-                        icon: "linkedin" as AppIconName,
-                        label: "LinkedIn",
-                        color: "#ffffff",
-                      },
-                      {
-                        href: labHead.scholar,
-                        icon: "scholar" as AppIconName,
-                        label: "Google Scholar",
-                        color: "#ffffff",
-                      },
-                      {
-                        href: labHead.orcid,
-                        icon: "orcid" as AppIconName,
-                        label: "ORCID",
-                        color: "#ffffff",
-                      },
-                      {
-                        href: labHead.researchgate,
-                        icon: "researchgate" as AppIconName,
-                        label: "ResearchGate",
-                        color: "#ffffff",
-                      },
-                    ]
-                      .filter((l) => l.href)
-                      .map((l) => (
+                  {/* These were background:#ffffff with text-white — white icons
+                      on a white chip, invisible against the glass card. */}
+                  {heroLinks.length > 0 && (
+                    <div className="flex items-center justify-center gap-2 mb-4">
+                      {heroLinks.map((l) => (
                         <a
                           key={l.icon}
                           href={l.href}
                           target="_blank"
                           rel="noreferrer"
-                          onClick={(e) => e.stopPropagation()}
-                          className="no-underline font-black text-white rounded-lg flex items-center justify-center transition-all"
-                          aria-label={l.label}
-                          title={l.label}
-                          style={{
-                            background: l.color,
-                            width: 30,
-                            height: 30,
-                          }}
-                          onMouseEnter={(e) => {
-                            (e.currentTarget as HTMLElement).style.transform =
-                              "translateY(-2px)";
-                            (e.currentTarget as HTMLElement).style.boxShadow =
-                              "0 4px 12px rgba(0,0,0,0.2)";
-                          }}
-                          onMouseLeave={(e) => {
-                            (e.currentTarget as HTMLElement).style.transform =
-                              "translateY(0)";
-                            (e.currentTarget as HTMLElement).style.boxShadow =
-                              "none";
-                          }}
+                          className="hm-social no-underline"
+                          aria-label={`${labHead.name} on ${l.label}`}
                         >
-                          <AppIcon name={l.icon} size={13} />
+                          <AppIcon name={l.icon} size={15} />
                         </a>
                       ))}
-                  </div>
+                    </div>
+                  )}
 
                   <Link
                     to="/lab-head"
-                    className="w-full inline-flex items-center justify-center no-underline text-sm font-black py-2.5 rounded-xl"
+                    className="hm-cta w-full inline-flex items-center justify-center no-underline text-sm font-black py-2.5 rounded-xl"
                     style={{
-                      background:
-                        "linear-gradient(135deg, var(--color-accent), var(--color-secondary))",
+                      background: "linear-gradient(135deg, var(--color-accent), var(--color-secondary))",
                       color: "#1f2937",
                       boxShadow: "0 4px 12px rgba(245,158,11,0.3)",
                     }}
                   >
-                    <EditableText
-                      id="labhead.fullProfileCta"
-                      defaultValue="Full Profile →"
-                      className="font-black text-sm"
-                    />
+                    <EditableText id="labhead.fullProfileCta" defaultValue="Full Profile →" className="font-black text-sm" />
                   </Link>
                 </div>
               </div>
@@ -562,41 +465,25 @@ const Home: React.FC = () => {
         </div>
       </section>
 
-      {/* ══════════════════════════════════════════════════════════
-          STATS STRIP
-      ══════════════════════════════════════════════════════════ */}
+      {/* ══════════════ STATS ══════════════ */}
       <section style={{ background: "var(--color-primary)" }}>
         <div className="max-w-5xl mx-auto px-4 grid grid-cols-2 md:grid-cols-4">
           {stats.map((s, i) => (
             <div
               key={s.label}
               className="text-center py-6 px-4"
-              style={{
-                borderRight:
-                  i < stats.length - 1
-                    ? "1px solid rgba(255,255,255,0.1)"
-                    : "none",
-              }}
+              style={{ borderRight: i < stats.length - 1 ? "1px solid rgba(255,255,255,0.1)" : "none" }}
             >
-              <div className="mb-1 inline-flex text-white/80">
+              <div className="mb-1 inline-flex text-white/80" aria-hidden="true">
                 <AppIcon name={s.icon} size={20} />
               </div>
               <div
                 className="text-3xl font-black leading-none"
-                style={{
-                  color: "var(--color-accent)",
-                  fontFamily: "var(--font-heading)",
-                }}
+                style={{ color: "var(--color-accent)", fontFamily: "var(--font-heading)" }}
               >
                 {s.value}
               </div>
-              <div
-                className="text-xs mt-1.5 font-medium"
-                style={{
-                  color: "rgba(255,255,255,0.6)",
-                  letterSpacing: "0.5px",
-                }}
-              >
+              <div className="text-xs mt-1.5 font-medium" style={{ color: "rgba(255,255,255,0.65)", letterSpacing: "0.5px" }}>
                 {s.label}
               </div>
             </div>
@@ -604,159 +491,94 @@ const Home: React.FC = () => {
         </div>
       </section>
 
-      {/* ══════════════════════════════════════════════════════════
-          ABOUT + ANNOUNCEMENTS
-      ══════════════════════════════════════════════════════════ */}
+      {/* ══════════════ ABOUT + ANNOUNCEMENTS ══════════════ */}
       <div
         className="max-w-7xl mx-auto px-6 lg:px-8 py-20 grid grid-cols-1 lg:grid-cols-3 gap-14"
         style={{ background: "var(--color-bg)" }}
       >
-        {/* About the Lab */}
         <div className="lg:col-span-2">
           <div className="flex items-center gap-3 mb-2">
-            <div
-              className="w-1 h-8 rounded-full"
-              style={{ background: "var(--color-accent)" }}
-            />
-            <span
-              style={{
-                color: sectionTextPrimary,
-                fontFamily: "var(--font-heading)",
-              }}
-            >
+            <div className="w-1 h-8 rounded-full" style={{ background: "var(--color-accent)" }} />
+            <div style={{ color: sectionTextPrimary, fontFamily: "var(--font-heading)" }}>
               <EditableText
                 id="home.introTitle"
                 tag="h2"
                 className="font-black text-2xl"
                 defaultValue={content["home.introTitle"] ?? "About the Lab"}
               />
-            </span>
+            </div>
           </div>
-          <div
-            className="w-16 h-0.5 ml-4 mb-7 rounded"
-            style={{ background: "var(--color-accent)", opacity: 0.4 }}
-          />
+          <div className="w-16 h-0.5 ml-4 mb-7 rounded" style={{ background: "var(--color-accent)", opacity: 0.4 }} />
 
-          <span
-            style={{
-              whiteSpace: "pre-line",
-              lineHeight: 1.85,
-              color: sectionTextSecondary,
-            }}
-          >
+          <div style={{ whiteSpace: "pre-line", lineHeight: 1.85, color: sectionTextSecondary }}>
             <EditableText
               id="home.introText"
               tag="p"
               className="leading-relaxed text-base mb-8"
               defaultValue={content["home.introText"] ?? ""}
             />
-          </span>
+          </div>
 
           <div className="flex gap-3 flex-wrap">
             <Link
               to="/about"
-              className="no-underline font-bold text-sm px-6 py-2.5 rounded-xl text-white"
-              style={{
-                background: "var(--color-primary)",
-                boxShadow: "0 2px 12px rgba(30,58,95,0.25)",
-              }}
+              className="hm-cta no-underline font-bold text-sm px-6 py-2.5 rounded-xl text-white"
+              style={{ background: "var(--color-primary)", boxShadow: "0 2px 12px rgba(30,58,95,0.25)" }}
             >
-              <EditableText
-                id="home.readMore"
-                defaultValue="Read More"
-                className="font-bold text-sm"
-              />
+              <EditableText id="home.readMore" defaultValue="Read More" className="font-bold text-sm" />
             </Link>
             <Link
               to="/collaborators"
-              className="no-underline font-bold text-sm px-6 py-2.5 rounded-xl border-2"
+              className="hm-cta no-underline font-bold text-sm px-6 py-2.5 rounded-xl border-2"
               style={{
-                color: isDarkTheme
-                  ? sectionTextPrimary
-                  : "var(--color-primary)",
-                borderColor: isDarkTheme
-                  ? "rgba(148,163,184,0.45)"
-                  : "var(--color-primary)",
+                color: isDarkTheme ? sectionTextPrimary : "var(--color-primary)",
+                borderColor: isDarkTheme ? "rgba(148,163,184,0.45)" : "var(--color-primary)",
                 background: isDarkTheme ? "rgba(15,23,42,0.4)" : "transparent",
               }}
             >
-              <EditableText
-                id="home.meetTheTeam"
-                defaultValue="Meet the Team"
-                className="font-bold text-sm"
-              />
+              <EditableText id="home.meetTheTeam" defaultValue="Meet the Team" className="font-bold text-sm" />
             </Link>
             <Link
               to="/publications"
-              className="no-underline font-bold text-sm px-6 py-2.5 rounded-xl"
-              style={{ color: "var(--color-secondary)", background: "var(--color-accent)" }}
+              className="hm-cta no-underline font-bold text-sm px-6 py-2.5 rounded-xl"
+              style={{ color: "#1f2937", background: "var(--color-accent)" }}
             >
-              <EditableText
-                id="home.publicationsCta"
-                defaultValue="Publications →"
-                className="font-bold text-sm"
-              />
+              <EditableText id="home.publicationsCta" defaultValue="Publications →" className="font-bold text-sm" />
             </Link>
           </div>
         </div>
 
-        {/* Announcements */}
         <div>
           <div className="flex items-center gap-3 mb-2">
-            <div
-              className="w-1 h-8 rounded-full"
-              style={{ background: "var(--color-secondary)" }}
-            />
-            <span
-              style={{
-                color: sectionTextPrimary,
-                fontFamily: "var(--font-heading)",
-              }}
-            >
+            <div className="w-1 h-8 rounded-full" style={{ background: "var(--color-secondary)" }} />
+            <div style={{ color: sectionTextPrimary, fontFamily: "var(--font-heading)" }}>
               <EditableText
                 id="home.announcementsTitle"
                 tag="h2"
                 className="font-black text-xl"
-                defaultValue={
-                  content["home.announcementsTitle"] ?? "Latest Updates"
-                }
+                defaultValue={content["home.announcementsTitle"] ?? "Latest Updates"}
               />
-            </span>
+            </div>
           </div>
-          <div
-            className="w-12 h-0.5 ml-4 mb-6 rounded"
-            style={{ background: "var(--color-secondary)", opacity: 0.3 }}
-          />
+          <div className="w-12 h-0.5 ml-4 mb-6 rounded" style={{ background: "var(--color-secondary)", opacity: 0.3 }} />
 
           <div className="flex flex-col gap-3">
             {latestAnnouncements.length === 0 ? (
-              <div
-                className="text-center py-8 rounded-xl border-2 border-dashed"
-                style={{ borderColor: sectionCardBorder }}
-              >
+              <div className="text-center py-8 rounded-xl border-2 border-dashed" style={{ borderColor: sectionCardBorder }}>
                 <p className="text-sm" style={{ color: sectionTextMuted }}>
-                  <EditableText
-                    id="home.noAnnouncements"
-                    defaultValue="No announcements yet."
-                    className="text-sm"
-                  />
+                  <EditableText id="home.noAnnouncements" defaultValue="No announcements yet." className="text-sm" />
                 </p>
               </div>
             ) : (
               latestAnnouncements.map((a, idx) => (
-                /* Links to the Announcements page with the drawer already open.
-                   That page reads ?a= on mount, so one click from here lands on
-                   the full text — and Back returns here. */
                 <Link
                   key={a.id}
                   to={`/announcements?a=${encodeURIComponent(a.id)}`}
-                  className="no-underline block rounded-xl p-4 transition-all motion-safe:hover:-translate-y-0.5"
+                  className="hm-note no-underline block rounded-xl p-4"
                   style={{
                     background: sectionCardBg,
                     border: `1px solid ${sectionCardBorder}`,
-                    borderLeft: `3px solid ${
-                      a.isPinned ? "var(--color-accent)" : "var(--color-secondary)"
-                    }`,
+                    borderLeft: `3px solid ${a.isPinned ? "var(--color-accent)" : "var(--color-secondary)"}`,
                     boxShadow: "0 2px 10px rgba(0,0,0,0.05)",
                     opacity: visible ? 1 : 0,
                     transform: visible ? "translateX(0)" : "translateX(16px)",
@@ -767,10 +589,7 @@ const Home: React.FC = () => {
                     {a.isPinned && (
                       <span
                         className="text-[9.5px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded"
-                        style={{
-                          background: "rgba(245,158,11,0.15)",
-                          color: "var(--color-accent)",
-                        }}
+                        style={{ background: "rgba(245,158,11,0.15)", color: "var(--color-accent)" }}
                       >
                         Pinned
                       </span>
@@ -779,35 +598,21 @@ const Home: React.FC = () => {
                       <span
                         className="text-[9.5px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded"
                         style={{
-                          background:
-                            "color-mix(in srgb, var(--color-secondary) 15%, transparent)",
+                          background: "color-mix(in srgb, var(--color-secondary) 15%, transparent)",
                           color: "var(--color-secondary)",
                         }}
                       >
                         New
                       </span>
                     )}
-                    <span
-                      className="text-xs font-medium ml-auto"
-                      style={{ color: sectionTextMuted }}
-                    >
+                    <span className="text-xs font-medium ml-auto" style={{ color: sectionTextMuted }}>
                       {new Date(a.createdAt).toLocaleDateString("en-US", {
-                        year: "numeric",
-                        month: "short",
-                        day: "numeric",
+                        year: "numeric", month: "short", day: "numeric",
                       })}
                     </span>
                   </div>
 
-                  {/* The title carries the announcement now — this section used
-                      to be a wall of undifferentiated summary text. */}
-                  <p
-                    className="font-bold text-sm leading-snug"
-                    style={{
-                      color: sectionTextPrimary,
-                      fontFamily: "var(--font-heading)",
-                    }}
-                  >
+                  <p className="font-bold text-sm leading-snug" style={{ color: sectionTextPrimary, fontFamily: "var(--font-heading)" }}>
                     {announcementTitle(a)}
                   </p>
 
@@ -830,353 +635,166 @@ const Home: React.FC = () => {
             {publishedAnnouncements.length > latestAnnouncements.length && (
               <Link
                 to="/announcements"
-                className="no-underline text-xs font-bold text-center py-2.5 rounded-xl border transition-all"
-                style={{
-                  color: "var(--color-secondary)",
-                  borderColor: sectionCardBorder,
-                }}
+                className="hm-cta no-underline text-xs font-bold text-center py-2.5 rounded-xl border"
+                style={{ color: "var(--color-secondary)", borderColor: sectionCardBorder }}
               >
-                <EditableText
-                  id="home.viewAllAnnouncements"
-                  defaultValue="View all announcements →"
-                  className="font-bold text-xs"
-                />
+                <EditableText id="home.viewAllAnnouncements" defaultValue="View all announcements →" className="font-bold text-xs" />
               </Link>
             )}
           </div>
         </div>
       </div>
 
-      {/* ══════════════════════════════════════════════════════════
-          QUICK LINKS STRIP
-      ══════════════════════════════════════════════════════════ */}
-      <div
-        className="border-t border-b"
-        style={{ borderColor: stripBorder, background: stripBg }}
-      >
+      {/* ══════════════ QUICK LINKS ══════════════ */}
+      <div className="border-t border-b" style={{ borderColor: stripBorder, background: stripBg }}>
         <div className="max-w-6xl mx-auto px-6 py-10 grid grid-cols-1 sm:grid-cols-3 gap-6">
           {[
-            {
-              to: "/collaborators",
-              icon: "handshake" as AppIconName,
-              title: "Collaborators",
-              desc: "Meet the researchers behind our work.",
-              color: "var(--color-primary)",
-            },
-            {
-              to: "/publications",
-              icon: "publications" as AppIconName,
-              title: "Publications",
-              desc: "Explore our published and ongoing research.",
-              color: "var(--color-secondary)",
-            },
-            {
-              to: "/research-ideas",
-              icon: "ideas" as AppIconName,
-              title: "Research Ideas",
-              desc: "Discover open research questions and collaborate.",
-              color: "#f59e0b",
-            },
+            { to: "/collaborators", icon: "handshake" as AppIconName, title: "Collaborators", desc: "Meet the researchers behind our work.", color: "var(--color-primary)" },
+            { to: "/publications", icon: "publications" as AppIconName, title: "Publications", desc: "Explore our published and ongoing research.", color: "var(--color-secondary)" },
+            { to: "/research-ideas", icon: "ideas" as AppIconName, title: "Research Ideas", desc: "Discover open research questions and collaborate.", color: "var(--color-accent)" },
           ].map((item) => (
+            /* Hover is CSS now, not onMouseEnter style mutation — so it also
+               responds to keyboard focus and respects reduced motion. */
             <Link
               key={item.to}
               to={item.to}
-              className="no-underline group flex items-start gap-4 p-5 rounded-2xl border transition-all"
-              style={{ borderColor: stripBorder }}
-              onMouseEnter={(e) => {
-                (e.currentTarget as HTMLElement).style.borderColor = item.color;
-                (e.currentTarget as HTMLElement).style.boxShadow =
-                  `0 4px 20px rgba(0,0,0,0.07)`;
-                (e.currentTarget as HTMLElement).style.transform =
-                  "translateY(-2px)";
-              }}
-              onMouseLeave={(e) => {
-                (e.currentTarget as HTMLElement).style.borderColor =
-                  stripBorder;
-                (e.currentTarget as HTMLElement).style.boxShadow = "none";
-                (e.currentTarget as HTMLElement).style.transform =
-                  "translateY(0)";
-              }}
+              className="hm-quick no-underline flex items-start gap-4 p-5 rounded-2xl border"
+              style={{ borderColor: stripBorder, ["--hm-accent" as string]: item.color }}
             >
-              <div
-                className="w-11 h-11 rounded-xl flex items-center justify-center text-xl flex-shrink-0"
-                style={{ background: `${item.color}15` }}
+              <span
+                className="w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0"
+                style={{ background: `color-mix(in srgb, ${item.color} 12%, transparent)`, color: item.color }}
               >
                 <AppIcon name={item.icon} size={20} />
-              </div>
-              <div>
-                <p className="font-black text-sm" style={{ color: item.color }}>
-                  {item.title}
-                </p>
-                <p
-                  className="text-xs mt-0.5 leading-relaxed"
-                  style={{ color: sectionTextMuted }}
-                >
-                  {item.desc}
-                </p>
-              </div>
+              </span>
+              <span>
+                <span className="block font-black text-sm" style={{ color: item.color }}>{item.title}</span>
+                <span className="block text-xs mt-0.5 leading-relaxed" style={{ color: sectionTextMuted }}>{item.desc}</span>
+              </span>
             </Link>
           ))}
         </div>
       </div>
 
-      {/* ══════════════════════════════════════════════════════════
-          ── ADDED: TEAM + GALLERY COMBINED SECTION ──
-          Two equal columns side by side.
-          Left = one collaborator at a time. Right = gallery slideshow.
-          Remove this entire block if not needed.
-      ══════════════════════════════════════════════════════════ */}
       {(collaborators.length > 0 || gallery.length > 0) && (
-        <TeamAndGallery
-          collaborators={collaborators}
-          gallery={gallery}
-          isDarkTheme={isDarkTheme}
-        />
+        <TeamAndGallery collaborators={collaborators} gallery={gallery} isDarkTheme={isDarkTheme} />
       )}
     </div>
   );
 };
 
 // ══════════════════════════════════════════════════════════════
-// ── ADDED: TEAM + GALLERY — SINGLE COMBINED SECTION ──
-// Two equal columns: left = one collaborator at a time,
-// right = gallery slideshow. Both same height, same card style.
-// Remove this entire block if not needed.
+// TEAM + GALLERY
 // ══════════════════════════════════════════════════════════════
 const TeamAndGallery: React.FC<{
-  collaborators: any[];
-  gallery: any[];
+  collaborators: CollaboratorProfile[];
+  gallery: GalleryItem[];
   isDarkTheme: boolean;
 }> = ({ collaborators, gallery, isDarkTheme }) => {
-  // ── Collaborator state ──
-  const [collabIdx, setCollabIdx] = useState(0);
-  const collabTimer = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  const resetCollabTimer = () => {
-    if (collabTimer.current) clearInterval(collabTimer.current);
-    if (collaborators.length < 2) return;
-    collabTimer.current = setInterval(() => {
-      setCollabIdx((c) => (c + 1) % collaborators.length);
-    }, 3500);
-  };
-
-  useEffect(() => {
-    resetCollabTimer();
-    return () => {
-      if (collabTimer.current) clearInterval(collabTimer.current);
-    };
-  }, [collaborators.length]);
-
-  const prevCollab = () => {
-    setCollabIdx((c) => (c - 1 + collaborators.length) % collaborators.length);
-    resetCollabTimer();
-  };
-  const nextCollab = () => {
-    setCollabIdx((c) => (c + 1) % collaborators.length);
-    resetCollabTimer();
-  };
-
-  // ── Gallery state ──
-  const [galleryIdx, setGalleryIdx] = useState(0);
+  const collabs = useCarousel(collaborators.length, COLLAB_INTERVAL);
+  const shots = useCarousel(gallery.length, GALLERY_INTERVAL);
   const [imgErr, setImgErr] = useState<Record<number, boolean>>({});
-  const galleryTimer = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const resetGalleryTimer = () => {
-    if (galleryTimer.current) clearInterval(galleryTimer.current);
-    if (gallery.length < 2) return;
-    galleryTimer.current = setInterval(() => {
-      setGalleryIdx((c) => (c + 1) % gallery.length);
-    }, 5000);
-  };
-
-  useEffect(() => {
-    resetGalleryTimer();
-    return () => {
-      if (galleryTimer.current) clearInterval(galleryTimer.current);
-    };
-  }, [gallery.length]);
-
-  const prevGallery = () => {
-    setGalleryIdx((c) => (c - 1 + gallery.length) % gallery.length);
-    resetGalleryTimer();
-  };
-  const nextGallery = () => {
-    setGalleryIdx((c) => (c + 1) % gallery.length);
-    resetGalleryTimer();
-  };
-
-  const collab = collaborators[collabIdx];
-  const galleryItem = gallery[galleryIdx];
+  // Clamped by useCarousel, so these can't be undefined while the array is
+  // non-empty — which is what used to crash when an admin deleted a record.
+  const collab = collaborators[collabs.index];
+  const shot = gallery[shots.index];
 
   const headingText = isDarkTheme ? "#e5e7eb" : "var(--color-primary)";
-  const softText = isDarkTheme ? "#cbd5e1" : "#6b7280";
-  const mutedText = isDarkTheme ? "#94a3b8" : "#9ca3af";
+  const softText = isDarkTheme ? "#cbd5e1" : "#4b5563";
+  const mutedText = isDarkTheme ? "#94a3b8" : "#6b7280";
   const sectionBorder = isDarkTheme ? "rgba(148,163,184,0.2)" : "#f0f0f0";
   const cardBg = isDarkTheme
     ? "linear-gradient(160deg, rgba(15,23,42,0.95) 60%, rgba(17,24,39,0.95) 100%)"
     : "linear-gradient(160deg, rgba(255,255,255,0.97) 60%, rgba(235,240,255,0.95) 100%)";
 
-  // Shared card height so both columns are equal
   const CARD_HEIGHT = 420;
 
   return (
     <section
-      style={{
-        background: "var(--color-bg)",
-        borderTop: `1px solid ${sectionBorder}`,
-      }}
+      style={{ background: "var(--color-bg)", borderTop: `1px solid ${sectionBorder}` }}
       className="py-16 px-6"
     >
       <div className="max-w-6xl mx-auto">
-        {/* Section heading row */}
         <div className="flex items-center gap-3 mb-10">
           <div
             className="w-1 h-8 rounded-full"
-            style={{
-              background:
-                "linear-gradient(180deg, var(--color-accent), var(--color-secondary))",
-            }}
+            style={{ background: "linear-gradient(180deg, var(--color-accent), var(--color-secondary))" }}
           />
           <div>
-            <h2
-              className="font-black text-2xl"
-              style={{
-                color: headingText,
-                fontFamily: "var(--font-heading)",
-              }}
-            >
-              <EditableText
-                id="home.teamGalleryHeader"
-                tag="span"
-                defaultValue="Our Team & Gallery"
-                className="inline"
-              />
+            <h2 className="font-black text-2xl" style={{ color: headingText, fontFamily: "var(--font-heading)" }}>
+              <EditableText id="home.teamGalleryHeader" tag="span" defaultValue="Our Team & Gallery" className="inline" />
             </h2>
             <div
               className="h-0.5 mt-1 rounded-full"
               style={{
                 width: "60%",
-                background:
-                  "linear-gradient(90deg, var(--color-accent), var(--color-navbar), transparent)",
+                background: "linear-gradient(90deg, var(--color-accent), var(--color-navbar), transparent)",
               }}
             />
           </div>
         </div>
 
-        {/* Two equal columns */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* ── LEFT: Collaborator card ── */}
-          {collaborators.length > 0 && (
-            <div className="flex flex-col">
-              {/* Sub-header */}
+          {/* ── LEFT: Collaborator ── */}
+          {collaborators.length > 0 && collab && (
+            <div
+              className="flex flex-col"
+              onMouseEnter={() => collabs.setPaused(true)}
+              onMouseLeave={() => collabs.setPaused(prefersReducedMotion())}
+              onFocusCapture={() => collabs.setPaused(true)}
+            >
               <div className="flex items-center justify-between mb-4">
                 <p className="text-sm font-bold" style={{ color: headingText }}>
-                  <EditableText
-                    id="home.ourCollaboratorsHeader"
-                    defaultValue="✦ Our Collaborators"
-                    className="text-sm font-bold"
-                  />
+                  <EditableText id="home.ourCollaboratorsHeader" defaultValue="✦ Our Collaborators" className="text-sm font-bold" />
                 </p>
                 <div className="flex gap-2">
-                  {[prevCollab, nextCollab].map((fn, i) => (
-                    <button
-                      key={i}
-                      onClick={fn}
-                      disabled={collaborators.length < 2}
-                      className="w-8 h-8 rounded-lg flex items-center justify-center text-base font-bold cursor-pointer transition-all"
-                      style={{
-                        background:
-                          "linear-gradient(135deg, var(--color-accent), var(--color-navbar))",
-                        color: "white",
-                        border: "none",
-                        boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
-                      }}
-                      aria-label={
-                        i === 0 ? "Previous collaborator" : "Next collaborator"
-                      }
-                    >
-                      {i === 0 ? "‹" : "›"}
-                    </button>
-                  ))}
+                  {collaborators.length > 1 && (
+                    <PauseButton
+                      paused={collabs.paused}
+                      onToggle={() => collabs.setPaused((p) => !p)}
+                      label="collaborator slideshow"
+                    />
+                  )}
+                  <button type="button" onClick={collabs.prev} disabled={collaborators.length < 2} className="hm-ctrl" aria-label="Previous collaborator">‹</button>
+                  <button type="button" onClick={collabs.next} disabled={collaborators.length < 2} className="hm-ctrl" aria-label="Next collaborator">›</button>
                 </div>
               </div>
 
-              {/* Rotating gradient border wrapper */}
-              <div
-                className="rotating-border"
-                style={{
-                  borderRadius: "1.25rem",
-                  padding: "3px",
-                  height: CARD_HEIGHT,
-                }}
-              >
+              <div className="rotating-border" style={{ borderRadius: "1.25rem", padding: 3, height: CARD_HEIGHT }}>
                 <Link
                   to="/collaborators"
-                  className="no-underline flex flex-col items-center justify-center text-center"
+                  className="hm-slide no-underline flex flex-col items-center justify-center text-center"
                   style={{
                     borderRadius: "calc(1.25rem - 3px)",
                     height: "100%",
                     overflow: "hidden",
-                    transition: "transform 0.3s, box-shadow 0.3s",
                     background: cardBg,
                     boxShadow: "0 4px 24px rgba(0,0,0,0.07)",
                     backdropFilter: "blur(8px)",
                   }}
-                  onMouseEnter={(e) => {
-                    (e.currentTarget as HTMLElement).style.transform =
-                      "translateY(-3px)";
-                    (e.currentTarget as HTMLElement).style.boxShadow =
-                      "0 16px 40px rgba(0,0,0,0.13)";
-                  }}
-                  onMouseLeave={(e) => {
-                    (e.currentTarget as HTMLElement).style.transform =
-                      "translateY(0)";
-                    (e.currentTarget as HTMLElement).style.boxShadow =
-                      "0 4px 24px rgba(0,0,0,0.07)";
-                  }}
                 >
-                  {/* Accent top bar */}
                   <div
-                    className="w-full h-1.5"
-                    style={{
-                      background:
-                        "linear-gradient(90deg, var(--color-accent), var(--color-primary))",
-                      flexShrink: 0,
-                    }}
+                    className="w-full h-1.5 flex-shrink-0"
+                    style={{ background: "linear-gradient(90deg, var(--color-accent), var(--color-primary))" }}
                   />
 
                   <div className="flex flex-col items-center justify-center flex-1 px-8 py-8">
-                    {/* Avatar with glow ring */}
                     <div
                       style={{
                         borderRadius: "8%",
-                        padding: "3px",
+                        padding: 3,
                         display: "inline-block",
-                        background:
-                          "linear-gradient(135deg, var(--color-accent), var(--color-navbar))",
-                        boxShadow:
-                          "0 0 24px rgba(99,102,241,0.25), 0 0 48px rgba(99,102,241,0.1)",
+                        background: "linear-gradient(135deg, var(--color-accent), var(--color-navbar))",
+                        boxShadow: "0 0 24px rgba(99,102,241,0.25), 0 0 48px rgba(99,102,241,0.1)",
                       }}
                     >
-                      <div
-                        style={{
-                          borderRadius: "8%",
-                          overflow: "hidden",
-                          lineHeight: 0,
-                        }}
-                      >
-                        <CollabAvatar
-                          photo={collab.photo}
-                          name={collab.name}
-                          size={200}
-                        />
+                      <div style={{ borderRadius: "8%", overflow: "hidden", lineHeight: 0 }}>
+                        <CollabAvatar photo={collab.photo ?? ""} name={collab.name} size={180} />
                       </div>
                     </div>
 
-                    <h3
-                      className="font-black text-xl mt-5 leading-tight"
-                      style={{ color: headingText }}
-                    >
+                    <h3 className="font-black text-xl mt-5 leading-tight" style={{ color: headingText }}>
                       {collab.name}
                     </h3>
 
@@ -1185,8 +803,7 @@ const TeamAndGallery: React.FC<{
                         className="text-sm font-semibold mt-2 px-4 py-1 rounded-full"
                         style={{
                           color: "white",
-                          background:
-                            "linear-gradient(90deg, var(--color-accent), var(--color-navbar))",
+                          background: "linear-gradient(90deg, var(--color-accent), var(--color-navbar))",
                           boxShadow: "0 2px 10px rgba(99,102,241,0.3)",
                         }}
                       >
@@ -1195,16 +812,14 @@ const TeamAndGallery: React.FC<{
                     )}
 
                     {collab.affiliation && (
-                      <p
-                        className="text-sm mt-2 font-medium inline-flex items-center gap-1.5"
-                        style={{ color: mutedText }}
-                      >
-                        <AppIcon name="building" size={14} />{" "}
-                        {collab.affiliation}
+                      <p className="text-sm mt-2 font-medium inline-flex items-center gap-1.5" style={{ color: mutedText }}>
+                        <AppIcon name="building" size={14} /> {collab.affiliation}
                       </p>
                     )}
 
-                    {collab.shortBio && (
+                    {/* Was collab.shortBio — a field CollaboratorProfile does not
+                        have, so the bio never rendered. It is `bio`. */}
+                    {collab.bio && (
                       <p
                         className="text-xs mt-4 leading-relaxed"
                         style={{
@@ -1216,11 +831,10 @@ const TeamAndGallery: React.FC<{
                           maxWidth: 280,
                         }}
                       >
-                        {collab.shortBio}
+                        {collab.bio}
                       </p>
                     )}
 
-                    {/* Pagination pill */}
                     <div
                       className="mt-5 px-4 py-1 rounded-full text-xs font-bold"
                       style={{
@@ -1229,32 +843,16 @@ const TeamAndGallery: React.FC<{
                         border: "1px solid rgba(99,102,241,0.2)",
                       }}
                     >
-                      {collabIdx + 1} / {collaborators.length}
+                      {collabs.index + 1} / {collaborators.length}
                     </div>
                   </div>
                 </Link>
               </div>
 
-              {/* View all link */}
               <div className="text-center mt-3">
                 <Link
                   to="/collaborators"
-                  className="no-underline text-xs font-bold px-4 py-1.5 rounded-full transition-all"
-                  style={{
-                    color: "var(--color-secondary)",
-                    border: "1px solid var(--color-secondary)",
-                  }}
-                  onMouseEnter={(e) => {
-                    (e.currentTarget as HTMLElement).style.background =
-                      "var(--color-secondary)";
-                    (e.currentTarget as HTMLElement).style.color = "white";
-                  }}
-                  onMouseLeave={(e) => {
-                    (e.currentTarget as HTMLElement).style.background =
-                      "transparent";
-                    (e.currentTarget as HTMLElement).style.color =
-                      "var(--color-secondary)";
-                  }}
+                  className="hm-pill no-underline text-xs font-bold px-4 py-1.5 rounded-full"
                 >
                   <EditableText
                     id="home.viewAllCollaborators"
@@ -1266,176 +864,111 @@ const TeamAndGallery: React.FC<{
             </div>
           )}
 
-          {/* ── RIGHT: Gallery slideshow ── */}
-          {gallery.length > 0 && (
-            <div className="flex flex-col">
-              {/* Sub-header */}
+          {/* ── RIGHT: Gallery ── */}
+          {gallery.length > 0 && shot && (
+            <div
+              className="flex flex-col"
+              onMouseEnter={() => shots.setPaused(true)}
+              onMouseLeave={() => shots.setPaused(prefersReducedMotion())}
+              onFocusCapture={() => shots.setPaused(true)}
+            >
               <div className="flex items-center justify-between mb-4">
                 <p className="text-sm font-bold" style={{ color: headingText }}>
-                  <EditableText
-                    id="home.galleryHeader"
-                    defaultValue="✦ Gallery"
-                    className="text-sm font-bold"
-                  />
+                  <EditableText id="home.galleryHeader" defaultValue="✦ Gallery" className="text-sm font-bold" />
                 </p>
                 <div className="flex items-center gap-2">
-                  {[prevGallery, nextGallery].map((fn, i) => (
-                    <button
-                      key={i}
-                      onClick={fn}
-                      disabled={gallery.length < 2}
-                      className="w-8 h-8 rounded-lg flex items-center justify-center text-base font-bold cursor-pointer"
-                      style={{
-                        background:
-                          "linear-gradient(135deg, var(--color-accent), var(--color-navbar))",
-                        color: "white",
-                        border: "none",
-                        boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
-                      }}
-                      aria-label={i === 0 ? "Previous image" : "Next image"}
-                    >
-                      {i === 0 ? "‹" : "›"}
-                    </button>
-                  ))}
-                  <Link
-                    to="/gallery"
-                    className="no-underline text-xs font-bold px-3 py-1.5 rounded-lg"
-                    style={{
-                      background:
-                        "linear-gradient(135deg, var(--color-accent), var(--color-navbar))",
-                      color: "white",
-                      boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
-                    }}
-                  >
-                    <EditableText
-                      id="home.galleryAllCta"
-                      defaultValue="All →"
-                      className="text-xs font-bold"
-                    />
+                  {gallery.length > 1 && (
+                    <PauseButton paused={shots.paused} onToggle={() => shots.setPaused((p) => !p)} label="gallery slideshow" />
+                  )}
+                  <button type="button" onClick={shots.prev} disabled={gallery.length < 2} className="hm-ctrl" aria-label="Previous image">‹</button>
+                  <button type="button" onClick={shots.next} disabled={gallery.length < 2} className="hm-ctrl" aria-label="Next image">›</button>
+                  <Link to="/gallery" className="hm-ctrl hm-ctrl-wide no-underline">
+                    <EditableText id="home.galleryAllCta" defaultValue="All →" className="text-xs font-bold" />
                   </Link>
                 </div>
               </div>
 
-              {/* Rotating gradient border wrapper */}
-              <div
-                className="rotating-border"
-                style={{
-                  borderRadius: "1.25rem",
-                  padding: "3px",
-                  height: CARD_HEIGHT,
-                }}
-              >
-                {/* Inner container — must be relative for absolute children */}
-                <div
-                  className="relative w-full h-full overflow-hidden"
-                  style={{ borderRadius: "calc(1.25rem - 3px)" }}
-                >
-                  {/* Image with Ken Burns zoom */}
-                  {galleryItem.imageUrl && !imgErr[galleryIdx] ? (
+              <div className="rotating-border" style={{ borderRadius: "1.25rem", padding: 3, height: CARD_HEIGHT }}>
+                <div className="relative w-full h-full overflow-hidden" style={{ borderRadius: "calc(1.25rem - 3px)" }}>
+                  {shot.imageUrl && !imgErr[shots.index] ? (
                     <img
-                      key={galleryIdx}
-                      src={galleryItem.imageUrl}
-                      alt={galleryItem.title}
-                      onError={() =>
-                        setImgErr((e) => ({ ...e, [galleryIdx]: true }))
-                      }
+                      key={shots.index}
+                      src={shot.imageUrl}
+                      alt={shot.title}
+                      loading="lazy"
+                      onError={() => setImgErr((e) => ({ ...e, [shots.index]: true }))}
                       className="ken-burns w-full h-full object-cover"
                     />
                   ) : (
-                    <div
-                      className="w-full h-full flex items-center justify-center"
-                      style={{ background: "#f3f4f6" }}
-                    >
+                    <div className="w-full h-full flex items-center justify-center" style={{ background: "#f3f4f6" }}>
                       <AppIcon name="gallery" size={42} />
                     </div>
                   )}
 
-                  {/* Dark gradient overlay */}
                   <div
+                    aria-hidden="true"
                     className="absolute inset-0"
                     style={{
-                      background:
-                        "linear-gradient(to top, rgba(0,0,0,0.80) 0%, rgba(0,0,0,0.2) 50%, transparent 100%)",
+                      background: "linear-gradient(to top, rgba(0,0,0,0.80) 0%, rgba(0,0,0,0.2) 50%, transparent 100%)",
                       zIndex: 1,
                     }}
                   />
-
-                  {/* Top gradient for badge readability */}
                   <div
+                    aria-hidden="true"
                     className="absolute inset-x-0 top-0"
-                    style={{
-                      height: "80px",
-                      background:
-                        "linear-gradient(to bottom, rgba(0,0,0,0.35), transparent)",
-                      zIndex: 1,
-                    }}
+                    style={{ height: 80, background: "linear-gradient(to bottom, rgba(0,0,0,0.35), transparent)", zIndex: 1 }}
                   />
 
-                  {/* Caption — glassmorphism */}
-                  <div
-                    className="absolute bottom-0 left-0 right-0 px-6 pb-5 pt-8"
-                    style={{ zIndex: 2 }}
-                  >
-                    <h3 className="text-white font-black text-lg leading-tight mb-1 drop-shadow">
-                      {galleryItem.title}
-                    </h3>
-                    {galleryItem.description && (
+                  <div className="absolute bottom-0 left-0 right-0 px-6 pb-5 pt-8" style={{ zIndex: 2 }}>
+                    <h3 className="text-white font-black text-lg leading-tight mb-1 drop-shadow">{shot.title}</h3>
+                    {shot.description && (
                       <p
                         className="text-xs mt-1"
                         style={{
-                          color: "rgba(255,255,255,0.75)",
+                          color: "rgba(255,255,255,0.8)",
                           display: "-webkit-box",
                           WebkitLineClamp: 2,
                           WebkitBoxOrient: "vertical",
                           overflow: "hidden",
                         }}
                       >
-                        {galleryItem.description}
+                        {shot.description}
                       </p>
                     )}
                   </div>
 
-                  {/* Counter badge */}
                   <div
                     className="absolute top-4 right-4 text-xs font-bold px-3 py-1 rounded-full"
                     style={{
-                      background:
-                        "linear-gradient(135deg, var(--color-accent), var(--color-secondary))",
+                      background: "linear-gradient(135deg, var(--color-accent), var(--color-secondary))",
                       color: "white",
                       boxShadow: "0 2px 10px rgba(0,0,0,0.3)",
                       zIndex: 2,
                     }}
                   >
-                    {galleryIdx + 1} / {gallery.length}
+                    {shots.index + 1} / {gallery.length}
                   </div>
                 </div>
               </div>
 
-              {/* Dot indicators */}
-              {gallery.length <= 20 && (
+              {gallery.length > 1 && gallery.length <= 20 && (
                 <div className="flex justify-center gap-1.5 mt-3">
-                  {gallery.map((_, i) => (
+                  {gallery.map((item, i) => (
                     <button
-                      key={i}
-                      onClick={() => {
-                        setGalleryIdx(i);
-                        resetGalleryTimer();
-                      }}
-                      className="rounded-full border-none cursor-pointer transition-all"
-                      style={{
-                        width: i === galleryIdx ? 24 : 8,
-                        height: 8,
-                        background:
-                          i === galleryIdx
-                            ? "linear-gradient(90deg, var(--color-accent), var(--color-secondary))"
-                            : "#d1d5db",
-                        padding: 0,
-                        boxShadow:
-                          i === galleryIdx
-                            ? "0 0 8px rgba(99,102,241,0.5)"
-                            : "none",
-                      }}
+                      key={item.id ?? i}
+                      type="button"
+                      onClick={() => shots.setIndex(i)}
+                      className="hm-dot"
                       aria-label={`Go to image ${i + 1}`}
+                      aria-current={i === shots.index}
+                      style={{
+                        width: i === shots.index ? 24 : 8,
+                        background:
+                          i === shots.index
+                            ? "linear-gradient(90deg, var(--color-accent), var(--color-secondary))"
+                            : "#cbd5e1",
+                        boxShadow: i === shots.index ? "0 0 8px rgba(99,102,241,0.5)" : "none",
+                      }}
                     />
                   ))}
                 </div>
@@ -1448,55 +981,39 @@ const TeamAndGallery: React.FC<{
   );
 };
 
-// ── ADDED: Small avatar helper used inside TeamAndGallery ──
-const CollabAvatar: React.FC<{
-  photo: string;
-  name: string;
-  size: number;
-}> = ({ photo, name, size }) => {
-  const [err, setErr] = useState(false);
-  const initials = name
-    .split(" ")
-    .map((w) => w[0])
-    .slice(0, 2)
-    .join("")
-    .toUpperCase();
+// ══════════════════════════════════════════════════════════════
+// AVATARS
+// ══════════════════════════════════════════════════════════════
+const initialsOf = (name: string) =>
+  name.split(" ").map((w) => w[0]).filter(Boolean).slice(0, 2).join("").toUpperCase();
 
+const CollabAvatar: React.FC<{ photo: string; name: string; size: number }> = ({ photo, name, size }) => {
+  const [err, setErr] = useState(false);
   if (photo && !err) {
     return (
       <img
         src={photo}
-        alt={name}
+        alt=""
+        loading="lazy"
         onError={() => setErr(true)}
-        style={{
-          width: size,
-          height: size,
-          borderRadius: "8%",
-          objectFit: "cover",
-          border: "1px solid #f0f0f0",
-        }}
+        style={{ width: size, height: size, borderRadius: "8%", objectFit: "cover", display: "block" }}
       />
     );
   }
   return (
     <div
+      aria-hidden="true"
       className="flex items-center justify-center text-white font-black"
       style={{
-        width: size,
-        height: size,
-        borderRadius: "50%",
-        background: "var(--color-secondary)",
-        fontSize: size * 0.3,
+        width: size, height: size, borderRadius: "8%",
+        background: "var(--color-secondary)", fontSize: size * 0.3,
       }}
     >
-      {initials}
+      {initialsOf(name)}
     </div>
   );
 };
 
-// ══════════════════════════════════════════════════════════════
-// LAB HEAD AVATAR
-// ══════════════════════════════════════════════════════════════
 const LabHeadAvatar: React.FC<{
   photo: string;
   name: string;
@@ -1504,27 +1021,24 @@ const LabHeadAvatar: React.FC<{
   rounded?: "full" | "xl";
 }> = ({ photo, name, size, rounded = "full" }) => {
   const [err, setErr] = useState(false);
-  const initials = name
-    .split(" ")
-    .map((w) => w[0])
-    .slice(0, 2)
-    .join("")
-    .toUpperCase();
-
+  // The photo branch used to hardcode 5%, so rounded="full" did nothing.
   const borderRadius = rounded === "full" ? "50%" : "16px";
 
   if (photo && !err) {
     return (
       <img
         src={photo}
-        alt={name}
+        alt=""
         onError={() => setErr(true)}
         style={{
           width: size,
           height: size,
-          borderRadius: "5%",
+          borderRadius,
           objectFit: "cover",
-          border: "1px solid var(--color-primary, --color-secondary)",
+          display: "block",
+          // Was var(--color-primary, --color-secondary) — an invalid fallback,
+          // so this border never rendered at all.
+          border: "3px solid rgba(255,255,255,0.3)",
           boxShadow: "0 8px 32px rgba(0,0,0,0.3)",
         }}
       />
@@ -1532,298 +1046,71 @@ const LabHeadAvatar: React.FC<{
   }
   return (
     <div
+      aria-hidden="true"
       className="flex items-center justify-center text-white font-black"
       style={{
-        width: size,
-        height: size,
-        borderRadius,
+        width: size, height: size, borderRadius,
         background: "var(--color-secondary)",
         fontSize: size * 0.3,
         border: "3px solid rgba(255,255,255,0.3)",
         boxShadow: "0 8px 32px rgba(0,0,0,0.3)",
       }}
     >
-      {initials}
+      {initialsOf(name)}
     </div>
   );
 };
 
-// ══════════════════════════════════════════════════════════════
-// LAB HEAD MODAL
-//
-// NOTE: nothing renders this — there's no state that opens it and no import
-// elsewhere. Roughly 200 lines of dead code. Left in place because you haven't
-// said whether it's wanted; safe to delete outright if it isn't.
-// ══════════════════════════════════════════════════════════════
-const LabHeadModal: React.FC<{
-  labHead: LabHeadData;
-  isDarkTheme: boolean;
-  onClose: () => void;
-}> = ({ labHead, isDarkTheme, onClose }) => {
-  const interests = labHead.researchInterests
-    ? labHead.researchInterests
-        .split(",")
-        .map((s) => s.trim())
-        .filter(Boolean)
-    : [];
+/* ══════════════════════════════════════════════════════════════
+ * Styles — hover and focus in CSS rather than inline handlers, so
+ * keyboard users get the same affordances and motion can be opted out of.
+ * ══════════════════════════════════════════════════════════════ */
 
-  const links = [
-    { href: labHead.linkedin, label: "LinkedIn", color: "#ffffff" },
-    { href: labHead.scholar, label: "Google Scholar", color: "#ffffff" },
-    { href: labHead.orcid, label: "ORCID", color: "#ffffff" },
-    { href: labHead.researchgate, label: "ResearchGate", color: "#ffffff" },
-  ].filter((l) => l.href);
+const CSS = `
+.hm-cta{transition:transform .2s ease,box-shadow .2s ease,filter .2s ease}
+.hm-cta:hover{filter:brightness(1.06)}
+.hm-cta:focus-visible{outline:2px solid var(--color-accent);outline-offset:3px}
+@media (prefers-reduced-motion:no-preference){.hm-cta:hover{transform:translateY(-2px)}}
 
-  const modalSurface = isDarkTheme ? "#0f172a" : "#ffffff";
-  const modalBodyBorder = isDarkTheme ? "rgba(148,163,184,0.2)" : "#f3f4f6";
-  const softPanelBg = isDarkTheme ? "rgba(15,23,42,0.65)" : "#f9fafb";
-  const softPanelBorder = isDarkTheme ? "rgba(148,163,184,0.2)" : "#f0f0f0";
-  const softHeading = isDarkTheme ? "#cbd5e1" : "#9ca3af";
-  const softText = isDarkTheme ? "#e2e8f0" : "#4b5563";
+.hm-social{display:grid;place-items:center;width:34px;height:34px;border-radius:9px;
+  color:#fff;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.22);
+  transition:background .2s ease,transform .2s ease}
+.hm-social:hover{background:rgba(255,255,255,.24)}
+.hm-social:focus-visible{outline:2px solid #fff;outline-offset:2px}
+@media (prefers-reduced-motion:no-preference){.hm-social:hover{transform:translateY(-2px)}}
 
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto p-4"
-      style={{ background: "rgba(0,0,0,0.65)", backdropFilter: "blur(4px)" }}
-      onClick={onClose}
-    >
-      <div
-        className="rounded-3xl w-full max-w-5xl my-8 overflow-hidden shadow-2xl"
-        style={{
-          background: modalSurface,
-          boxShadow: "0 40px 80px rgba(0,0,0,0.35)",
-        }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* ── Header ── */}
-        <div
-          className="relative"
-          style={{ background: "var(--color-primary)" }}
-        >
-          {/* Decorative dots */}
-          <div
-            className="absolute inset-0 opacity-10"
-            style={{
-              backgroundImage:
-                "radial-gradient(circle, rgba(255,255,255,0.5) 1px, transparent 1px)",
-              backgroundSize: "20px 20px",
-            }}
-          />
+.hm-note{transition:transform .2s ease,box-shadow .2s ease}
+.hm-note:focus-visible{outline:2px solid var(--color-secondary);outline-offset:2px}
+@media (prefers-reduced-motion:no-preference){.hm-note:hover{transform:translateY(-2px)}}
 
-          {/* Accent bar */}
-          <div
-            className="h-1 w-full"
-            style={{
-              background:
-                "linear-gradient(90deg, var(--color-accent), var(--color-secondary), var(--color-accent))",
-            }}
-          />
+.hm-quick{transition:border-color .2s ease,box-shadow .2s ease,transform .2s ease}
+.hm-quick:hover{border-color:var(--hm-accent)!important;box-shadow:0 4px 20px rgba(0,0,0,.08)}
+.hm-quick:focus-visible{outline:2px solid var(--hm-accent);outline-offset:2px}
+@media (prefers-reduced-motion:no-preference){.hm-quick:hover{transform:translateY(-2px)}}
 
-          {/* Close button */}
-          <div className="flex justify-end px-5 pt-4 relative z-10">
-            <button
-              onClick={onClose}
-              className="flex items-center justify-center w-8 h-8 rounded-full text-white text-lg font-bold"
-              style={{ background: "rgba(255,255,255,0.1)" }}
-            >
-              ×
-            </button>
-          </div>
+.hm-ctrl{display:grid;place-items:center;width:34px;height:34px;border:0;border-radius:9px;
+  font-size:16px;font-weight:700;line-height:1;color:#fff;cursor:pointer;
+  background:linear-gradient(135deg,var(--color-accent),var(--color-navbar));
+  box-shadow:0 2px 8px rgba(0,0,0,.15);transition:filter .2s ease}
+.hm-ctrl:hover{filter:brightness(1.1)}
+.hm-ctrl:disabled{opacity:.4;cursor:not-allowed}
+.hm-ctrl:focus-visible{outline:2px solid var(--color-secondary);outline-offset:2px}
+.hm-ctrl-wide{width:auto;padding:0 12px;font-size:12px}
 
-          {/* ===== SPLIT HEADER ===== */}
-          <div className="relative z-10 grid grid-cols-1 md:grid-cols-3 gap-0 px-20 pb-10">
-            {/* LEFT: PROFILE */}
+.hm-slide{transition:transform .3s ease,box-shadow .3s ease}
+.hm-slide:focus-visible{outline:2px solid var(--color-secondary);outline-offset:3px}
+@media (prefers-reduced-motion:no-preference){
+  .hm-slide:hover{transform:translateY(-3px);box-shadow:0 16px 40px rgba(0,0,0,.13)!important}
+}
 
-            <div className="md:col-span-1 flex flex-col items-center text-center pt-4">
-              {/* ROTATING BORDER WRAPPER */}
-              <div
-                className="rotating-border"
-                style={{
-                  borderRadius: "1.25rem",
-                  padding: "4px",
-                }}
-              >
-                {/* INNER CONTAINER (clips properly) */}
-                <div
-                  style={{
-                    borderRadius: "1.1rem",
-                    overflow: "hidden",
-                    filter: "drop-shadow(0 8px 24px rgba(0,0,0,0.4))",
-                  }}
-                >
-                  <LabHeadAvatar
-                    photo={labHead.photo}
-                    name={labHead.name}
-                    size={220}
-                    rounded="xl"
-                  />
-                </div>
-              </div>
+.hm-pill{color:var(--color-secondary);border:1px solid var(--color-secondary);
+  transition:background .2s ease,color .2s ease}
+.hm-pill:hover{background:var(--color-secondary);color:#fff}
+.hm-pill:focus-visible{outline:2px solid var(--color-secondary);outline-offset:2px}
 
-              <div
-                className="inline-flex items-center gap-1.5 mt-4 px-3 py-1 rounded-full text-xs font-bold"
-                style={{
-                  background: "rgba(245,158,11,0.2)",
-                  color: "var(--color-accent)",
-                }}
-              >
-                ● Lab Director
-              </div>
-
-              <h2 className="text-white font-black text-xl mt-3 leading-tight">
-                {labHead.name}
-              </h2>
-
-              {labHead.title && (
-                <p className="text-sm mt-1 font-semibold text-white/80">
-                  {labHead.title}
-                </p>
-              )}
-
-              {labHead.department && (
-                <p className="text-xs mt-1 text-white/60">
-                  {labHead.department}
-                </p>
-              )}
-            </div>
-
-            {/* RIGHT: ABOUT */}
-            <div className="md:col-span-2 mt-6 md:mt-0 md:pl-8">
-              {(labHead.fullBio || labHead.shortBio) && (
-                <div
-                  className="bg-white/10 rounded-2xl p-5 backdrop-blur-sm"
-                  style={{ border: "1px solid rgba(255,255,255,0.1)" }}
-                >
-                  <h3 className="font-black text-xs text-white/60 uppercase tracking-widest mb-3">
-                    About
-                  </h3>
-                  <p className="text-white text-sm leading-relaxed whitespace-pre-line">
-                    {labHead.fullBio || labHead.shortBio}
-                  </p>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* ── Body ── */}
-        <div
-          className="p-7 flex flex-col gap-6 border-t"
-          style={{ borderColor: modalBodyBorder }}
-        >
-          {/* Research Interests */}
-          {interests.length > 0 && (
-            <div>
-              <h3
-                className="font-black text-xs uppercase tracking-widest mb-3"
-                style={{ color: softHeading }}
-              >
-                Research Interests
-              </h3>
-              <div className="flex flex-wrap gap-2">
-                {interests.map((r) => (
-                  <span
-                    key={r}
-                    className="text-xs px-3 py-1.5 rounded-full font-semibold"
-                    style={{
-                      background: "var(--color-primary)",
-                      color: "white",
-                      opacity: 0.85,
-                    }}
-                  >
-                    {r}
-                  </span>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Contact + Links */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-            {(labHead.email || labHead.phone) && (
-              <div
-                className="rounded-2xl p-5"
-                style={{
-                  background: softPanelBg,
-                  border: `1px solid ${softPanelBorder}`,
-                }}
-              >
-                <h3
-                  className="font-black text-xs uppercase tracking-widest mb-3"
-                  style={{ color: softHeading }}
-                >
-                  Contact
-                </h3>
-                <div className="flex flex-col gap-2">
-                  {labHead.email && (
-                    <a
-                      href={`mailto:${labHead.email}`}
-                      className="text-xs font-semibold flex items-center gap-2"
-                      style={{ color: "var(--color-secondary)" }}
-                    >
-                      <AppIcon name="contact" size={13} /> {labHead.email}
-                    </a>
-                  )}
-                  {labHead.phone && (
-                    <p
-                      className="text-xs inline-flex items-center gap-1.5"
-                      style={{ color: softText }}
-                    >
-                      <AppIcon name="phone" size={13} /> {labHead.phone}
-                    </p>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {links.length > 0 && (
-              <div
-                className="rounded-2xl p-5"
-                style={{
-                  background: softPanelBg,
-                  border: `1px solid ${softPanelBorder}`,
-                }}
-              >
-                <h3
-                  className="font-black text-xs uppercase tracking-widest mb-3"
-                  style={{ color: softHeading }}
-                >
-                  Academic Profiles
-                </h3>
-                <div className="flex flex-wrap gap-2">
-                  {links.map((l) => (
-                    <a
-                      key={l.label}
-                      href={l.href}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="text-xs px-3 py-1.5 rounded-lg text-white font-bold"
-                      style={{ background: l.color }}
-                    >
-                      {l.label} ↗
-                    </a>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Close button */}
-          <button
-            onClick={onClose}
-            className="w-full text-sm font-black py-3 rounded-xl text-white"
-            style={{
-              background:
-                "linear-gradient(135deg, var(--color-primary), var(--color-secondary))",
-              boxShadow: "0 4px 16px rgba(30,58,95,0.3)",
-            }}
-          >
-            Close Profile
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-};
+.hm-dot{height:8px;padding:0;border:0;border-radius:99px;cursor:pointer;
+  transition:width .25s ease,background .25s ease}
+.hm-dot:focus-visible{outline:2px solid var(--color-secondary);outline-offset:3px}
+`;
 
 export default Home;
