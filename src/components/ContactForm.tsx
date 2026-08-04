@@ -1,5 +1,5 @@
-import { addDoc, collection } from "firebase/firestore";
-import React, { useState } from "react";
+import { addDoc, collection, serverTimestamp } from "firebase/firestore";
+import React, { useRef, useState } from "react";
 import { useThemeContext } from "../context/ThemeContext";
 import { db } from "../firebase/config";
 import { useSiteContent } from "../firebase/hooks";
@@ -17,6 +17,11 @@ const ContactForm: React.FC = () => {
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [error, setError] = useState("");
+
+  /* Free bot filters. Neither stops a determined attacker — App Check does
+     that — but both cost nothing and catch the lazy ones before Firestore. */
+  const honeypotRef = useRef<HTMLInputElement>(null);
+  const startedAt = useRef(Date.now());
 
   const hexToRgb = (hex: string) => {
     const clean = (hex ?? "").replace("#", "").trim();
@@ -47,22 +52,57 @@ const ContactForm: React.FC = () => {
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!form.name || !form.email || !form.message) {
-      setError("Please fill all required fields.");
+    if (submitting) return;
+
+    // Hidden from people, irresistible to bots.
+    if (honeypotRef.current?.value) return;
+    // Nobody writes a message in under three seconds.
+    if (Date.now() - startedAt.current < 3000) return;
+
+    const name = form.name.trim();
+    const email = form.email.trim().toLowerCase();
+    const message = form.message.trim();
+
+    /* These three checks mirror the Firestore rules exactly. Without that,
+       a value the rules reject fails server-side and the person only sees
+       "Failed to send message" with no idea which field was wrong. */
+    if (!name || !email || !message) {
+      setError("Name, email and message are all needed.");
       return;
     }
+    if (name.length < 2) {
+      setError("That name looks too short.");
+      return;
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) {
+      setError("That doesn't look like an email address.");
+      return;
+    }
+    if (message.length < 20) {
+      setError("A little more detail — one full sentence at least.");
+      return;
+    }
+
     setSubmitting(true);
     setError("");
     try {
       await addDoc(collection(db, "contactMessages"), {
-        ...form,
+        name,
+        email,
+        subject: form.subject.trim(),
+        message,
         isRead: false,
+        // Kept for whatever already reads it.
         submittedAt: new Date().toISOString(),
+        // The server clock. A client timestamp is trivially forged and can't
+        // be trusted for ordering, so the rules pin this to request.time.
+        createdAt: serverTimestamp(),
       });
       setSubmitted(true);
       setForm({ name: "", email: "", subject: "", message: "" });
+      startedAt.current = Date.now();
     } catch {
-      setError("Failed to send message. Please try again.");
+      setError("Failed to send message. Please check your connection and try again.");
     } finally {
       setSubmitting(false);
     }
@@ -144,17 +184,28 @@ const ContactForm: React.FC = () => {
 
   return (
     <form onSubmit={submit} className="flex flex-col gap-4">
+      {/* Hidden from people, irresistible to bots. */}
+      <div aria-hidden="true" style={{ position: "absolute", left: -9999 }}>
+        <label>
+          Company
+          <input ref={honeypotRef} tabIndex={-1} autoComplete="off" />
+        </label>
+      </div>
+
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div>
           <label
             className="block text-xs font-semibold mb-1.5"
             style={{ color: labelText }}
+            htmlFor="cf-name"
           >
             Name *
           </label>
           <input
+            id="cf-name"
             type="text"
             required
+            autoComplete="name"
             value={form.name}
             onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))}
             className={inputClass}
@@ -166,12 +217,15 @@ const ContactForm: React.FC = () => {
           <label
             className="block text-xs font-semibold mb-1.5"
             style={{ color: labelText }}
+            htmlFor="cf-email"
           >
             Email *
           </label>
           <input
+            id="cf-email"
             type="email"
             required
+            autoComplete="email"
             value={form.email}
             onChange={(e) => setForm((p) => ({ ...p, email: e.target.value }))}
             className={inputClass}
@@ -185,11 +239,14 @@ const ContactForm: React.FC = () => {
         <label
           className="block text-xs font-semibold mb-1.5"
           style={{ color: labelText }}
+          htmlFor="cf-subject"
         >
           Subject
         </label>
         <input
+          id="cf-subject"
           type="text"
+          maxLength={200}
           value={form.subject}
           onChange={(e) => setForm((p) => ({ ...p, subject: e.target.value }))}
           className={inputClass}
@@ -202,12 +259,15 @@ const ContactForm: React.FC = () => {
         <label
           className="block text-xs font-semibold mb-1.5"
           style={{ color: labelText }}
+          htmlFor="cf-message"
         >
           Message *
         </label>
         <textarea
+          id="cf-message"
           required
           rows={5}
+          maxLength={5000}
           value={form.message}
           onChange={(e) => setForm((p) => ({ ...p, message: e.target.value }))}
           className={inputClass}
@@ -217,7 +277,7 @@ const ContactForm: React.FC = () => {
       </div>
 
       {error && (
-        <p className="text-sm" style={{ color: "var(--color-accent)" }}>
+        <p role="alert" className="text-sm" style={{ color: "var(--color-accent)" }}>
           {error}
         </p>
       )}
