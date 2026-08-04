@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { cld, downscaleImage, formatBytes } from "../cloudinary";
+import { cld, downscaleImage, formatBytes } from "../cloudinary.ts";
 import type { CloudinaryUploadResult } from "../types";
 import AppIcon from "./AppIcon";
 
