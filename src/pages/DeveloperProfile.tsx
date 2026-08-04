@@ -1,15 +1,21 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { createPortal } from "react-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 
 /* ══════════════════════════════════════════════════════
  * CONFIG
  * ══════════════════════════════════════════════════════ */
 
-const EXIT_URL = "/";
+/** Fallback when there is no history to go back to. */
+const HOME_URL = "/";
 /** Your photo. Anything square-ish works; it gets mirrored and cooled. */
 const PORTRAIT = "https://i.pravatar.cc/500?img=68";
 /** Must equal the `perspective` value on .rp-viewport in the stylesheet. */
 const EYE = 900;
+
+/* Rope simulation. REST is the hanging length; K is spring stiffness and
+   DAMP the energy retained per frame — 0.965 gives a long, lazy swing. */
+const ROPE = { anchorX: 120, rest: 78, k: 0.045, damp: 0.965, maxLen: 155, pullToFire: 38 };
 
 const SKILLS: [string, number][] = [
   ["SAM internals & fine-tuning", 9],
@@ -46,13 +52,11 @@ const TURNS: [string, number][] = [
   ["DOOR", 90],
 ];
 
-/** Dolly limits. Outside the box you need thousands of px of pull-back; inside
- *  you must never be able to reach a wall. */
 const LIMITS = { outside: [-3400, -1400], inside: [-460, 360] } as const;
 const ISO = { rotY: -38, rotX: -26, zoom: -2650 };
 
 /* ══════════════════════════════════════════════════════
- * Blood drips — deterministic, so they don't reshuffle on re-render
+ * Decorative bits — deterministic so they don't reshuffle on re-render
  * ══════════════════════════════════════════════════════ */
 
 const Drips: React.FC<{ count: number }> = ({ count }) => (
@@ -93,11 +97,13 @@ const Scratches: React.FC<{ seed: number }> = ({ seed }) => (
 
 const DeveloperProfile: React.FC = () => {
   const navigate = useNavigate();
+  const location = useLocation();
 
   const rootRef = useRef<HTMLDivElement>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
   const roomRef = useRef<HTMLDivElement>(null);
-  const cordLineRef = useRef<HTMLDivElement>(null);
+  const ropePathRef = useRef<SVGPathElement>(null);
+  const knobRef = useRef<HTMLButtonElement>(null);
 
   const [lit, setLit] = useState(false);
   const [flicker, setFlicker] = useState(false);
@@ -107,23 +113,39 @@ const DeveloperProfile: React.FC = () => {
   const [looked, setLooked] = useState(false);
   const [facing, setFacing] = useState(0);
 
-  /* Camera lives in refs, not state — it updates every frame and must never
+  /* Camera and rope live in refs — they update every frame and must never
      trigger a React render. */
   const cam = useRef({
     rotY: ISO.rotY, rotX: ISO.rotX, zoom: ISO.zoom,
     tY: ISO.rotY, tX: ISO.rotX, tZoom: ISO.zoom,
     velY: 0, flying: false, mode: "outside" as "outside" | "inside",
   });
+  const rope = useRef({
+    x: 0, y: ROPE.rest, vx: 0, vy: 0,
+    dragging: false, grabX: 0, grabY: 0, fromX: 0, fromY: 0, peak: 0, moved: 0,
+  });
   const litRef = useRef(false);
   const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
-
-  const later = (fn: () => void, ms: number) => {
-    timers.current.push(setTimeout(fn, ms));
-  };
+  const later = (fn: () => void, ms: number) => { timers.current.push(setTimeout(fn, ms)); };
 
   const reduce =
     typeof window !== "undefined" &&
     window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  /* ── page takeover: escape the app layout, stop the body scrolling ──
+     The route renders inside your Navbar/Footer wrapper, so position:fixed
+     alone still leaves the footer as a competing sibling. */
+  useEffect(() => {
+    const body = document.body;
+    const prevOverflow = body.style.overflow;
+    const prevOverscroll = body.style.overscrollBehavior;
+    body.style.overflow = "hidden";
+    body.style.overscrollBehavior = "none";
+    return () => {
+      body.style.overflow = prevOverflow;
+      body.style.overscrollBehavior = prevOverscroll;
+    };
+  }, []);
 
   const clampZoom = useCallback((v: number) => {
     const [lo, hi] = LIMITS[cam.current.mode];
@@ -138,17 +160,76 @@ const DeveloperProfile: React.FC = () => {
         `rotateX(${c.rotX.toFixed(2)}deg) rotateY(${c.rotY.toFixed(2)}deg)`;
     }
     // Specular tracks the camera, so the highlight slides across the glass as
-    // you turn. This is what makes it read as a mirror rather than a picture.
+    // you turn. That motion is what reads as a mirror rather than a picture.
     const spec = 50 + Math.sin((c.rotY * Math.PI) / 180) * 46;
     rootRef.current?.style.setProperty("--rp-spec", `${spec.toFixed(1)}%`);
   }, []);
 
-  /* ── render loop ─────────────────────────────────── */
+  /* ── light ───────────────────────────────────────── */
+  const lightUp = useCallback(() => {
+    if (litRef.current) return;
+    litRef.current = true;
+    setLit(true);
+  }, []);
+
+  const toggleLight = useCallback(() => {
+    if (litRef.current) {
+      litRef.current = false;
+      setLit(false);
+      setFlicker(false);
+      return;
+    }
+    if (reduce) return lightUp();
+    let n = 0;
+    const flick = () => {
+      n += 1;
+      setFlicker(n % 2 === 0);
+      if (n < 9) later(flick, 55 + Math.random() * 130);
+      else { setFlicker(false); lightUp(); }
+    };
+    later(flick, 60);
+  }, [lightUp, reduce]);
+
+  /* ── render loop: camera + rope ──────────────────── */
   useEffect(() => {
     let raf = 0;
     const dragging = { on: false };
 
-    const loop = () => {
+    const drawRope = (t: number) => {
+      const r = rope.current;
+
+      if (!r.dragging) {
+        // Spring back toward the rest point, losing a little energy each frame.
+        r.vx += -r.x * ROPE.k;
+        r.vy += (ROPE.rest - r.y) * ROPE.k;
+        r.vx *= ROPE.damp;
+        r.vy *= ROPE.damp;
+        // A whisper of drift so the rope is never perfectly still.
+        r.vx += Math.sin(t / 1700) * 0.006;
+        r.x += r.vx;
+        r.y += r.vy;
+      }
+
+      const ax = ROPE.anchorX;
+      const ex = ax + r.x;
+      const ey = r.y;
+      const dist = Math.hypot(r.x, r.y);
+      // Slack rope sags; a taut rope straightens. That relationship is the
+      // whole trick — a fixed curve reads as a drawn line, not a rope.
+      const sag = Math.max(0, ROPE.rest - dist) * 0.85 + 9;
+      const cx = ax + r.x * 0.42;
+      const cy = ey * 0.5 + sag;
+
+      ropePathRef.current?.setAttribute("d", `M${ax} 0 Q${cx.toFixed(1)} ${cy.toFixed(1)} ${ex.toFixed(1)} ${ey.toFixed(1)}`);
+
+      if (knobRef.current) {
+        const angle = (Math.atan2(ex - cx, ey - cy) * 180) / Math.PI;
+        knobRef.current.style.transform =
+          `translate(${(ex - ax).toFixed(1)}px, ${ey.toFixed(1)}px) rotate(${(-angle).toFixed(1)}deg)`;
+      }
+    };
+
+    const loop = (t: number) => {
       const c = cam.current;
       if (!c.flying) {
         if (!dragging.on) {
@@ -161,6 +242,9 @@ const DeveloperProfile: React.FC = () => {
         c.zoom += (c.tZoom - c.zoom) * 0.1;
         apply();
       }
+
+      if (!reduce) drawRope(t);
+
       const cur = ((c.rotY % 360) + 360) % 360;
       let best = 0, bestD = 999;
       TURNS.forEach(([, deg]) => {
@@ -169,13 +253,18 @@ const DeveloperProfile: React.FC = () => {
         if (d < bestD) { bestD = d; best = deg; }
       });
       setFacing((f) => (f === best ? f : best));
+
       raf = requestAnimationFrame(loop);
     };
 
     apply();
+    if (reduce) {
+      ropePathRef.current?.setAttribute("d", `M${ROPE.anchorX} 0 Q${ROPE.anchorX} ${ROPE.rest / 2} ${ROPE.anchorX} ${ROPE.rest}`);
+      knobRef.current?.style.setProperty("transform", `translate(0px, ${ROPE.rest}px)`);
+    }
     raf = requestAnimationFrame(loop);
 
-    /* ── drag ── */
+    /* ── camera drag ── */
     const vp = viewportRef.current!;
     let lastX = 0, lastY = 0;
     const pts = new Map<number, PointerEvent>();
@@ -194,18 +283,13 @@ const DeveloperProfile: React.FC = () => {
 
     const onMove = (e: PointerEvent) => {
       if (pts.has(e.pointerId)) pts.set(e.pointerId, e);
-
       if (pts.size === 2) {
         const [a, b] = [...pts.values()];
         const d = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
-        if (!pinchStart) {
-          pinchStart = d; pinchZoom = cam.current.tZoom; dragging.on = false;
-        } else {
-          cam.current.tZoom = clampZoom(pinchZoom + (d - pinchStart) * 2.2);
-        }
+        if (!pinchStart) { pinchStart = d; pinchZoom = cam.current.tZoom; dragging.on = false; }
+        else cam.current.tZoom = clampZoom(pinchZoom + (d - pinchStart) * 2.2);
         return;
       }
-
       if (!dragging.on) return;
       const dx = e.clientX - lastX, dy = e.clientY - lastY;
       lastX = e.clientX; lastY = e.clientY;
@@ -224,13 +308,13 @@ const DeveloperProfile: React.FC = () => {
       try { vp.releasePointerCapture(e.pointerId); } catch { /* already released */ }
     };
 
-    /* Wheel must be a native non-passive listener — React's onWheel cannot
+    /* Wheel must be native and non-passive — React's onWheel cannot
        preventDefault, so the page would scroll behind the room. */
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
       if (cam.current.flying) return;
-      // Normalise: line-mode wheels report ~3, pixel-mode ~100. Without this
-      // the same gesture zooms at wildly different rates per browser.
+      // Line-mode wheels report ~3, pixel-mode ~100. Unnormalised, the same
+      // gesture zooms at wildly different rates per browser.
       const unit = e.deltaMode === 1 ? 33 : e.deltaMode === 2 ? 400 : 1;
       cam.current.tZoom = clampZoom(cam.current.tZoom - e.deltaY * unit * 0.55);
     };
@@ -263,35 +347,78 @@ const DeveloperProfile: React.FC = () => {
       window.removeEventListener("keydown", onKey);
       stash.forEach(clearTimeout);
     };
-  }, [apply, clampZoom]);
+  }, [apply, clampZoom, reduce]);
+
+  /* ── rope drag: free in both axes ────────────────── */
+  const ropeDown = (e: React.PointerEvent) => {
+    e.stopPropagation();
+    e.preventDefault();
+    const r = rope.current;
+    r.dragging = true;
+    r.grabX = e.clientX; r.grabY = e.clientY;
+    r.fromX = r.x; r.fromY = r.y;
+    r.peak = r.y; r.moved = 0;
+    r.vx = 0; r.vy = 0;
+
+    const move = (ev: PointerEvent) => {
+      if (!r.dragging) return;
+      ev.preventDefault();
+      const dx = ev.clientX - r.grabX;
+      const dy = ev.clientY - r.grabY;
+      r.moved = Math.max(r.moved, Math.hypot(dx, dy));
+
+      let nx = r.fromX + dx;
+      let ny = r.fromY + dy;
+      // The rope cannot stretch past its length, and it cannot push upward.
+      const len = Math.hypot(nx, ny);
+      if (len > ROPE.maxLen) { nx *= ROPE.maxLen / len; ny *= ROPE.maxLen / len; }
+      if (ny < 18) ny = 18;
+
+      // Velocity comes from the hand, so releasing mid-swing throws the rope.
+      r.vx = nx - r.x;
+      r.vy = ny - r.y;
+      r.x = nx;
+      r.y = ny;
+      r.peak = Math.max(r.peak, ny);
+    };
+
+    const up = () => {
+      if (!r.dragging) return;
+      r.dragging = false;
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", up);
+      // A real pull, or a plain click for anyone who doesn't think to drag.
+      if (r.peak - ROPE.rest > ROPE.pullToFire || r.moved < 6) toggleLight();
+    };
+
+    window.addEventListener("pointermove", move, { passive: false });
+    window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", up);
+  };
 
   /* ── camera moves ────────────────────────────────── */
-  const flyTo = useCallback(
-    (toY: number, toX: number, toZ: number, ms: number) => {
-      const c = cam.current;
-      if (reduce) {
-        c.rotY = c.tY = toY; c.rotX = c.tX = toX; c.zoom = c.tZoom = toZ;
-        apply();
-        return;
-      }
-      c.flying = true;
-      const fY = c.rotY, fX = c.rotX, fZ = c.zoom, t0 = performance.now();
-      const ease = (t: number) =>
-        t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
-
-      const step = (now: number) => {
-        const p = Math.min(1, (now - t0) / ms), e = ease(p);
-        c.rotY = fY + (toY - fY) * e;
-        c.rotX = fX + (toX - fX) * e;
-        c.zoom = fZ + (toZ - fZ) * e;
-        apply();
-        if (p < 1) requestAnimationFrame(step);
-        else { c.tY = toY; c.tX = toX; c.tZoom = toZ; c.flying = false; }
-      };
-      requestAnimationFrame(step);
-    },
-    [apply, reduce],
-  );
+  const flyTo = useCallback((toY: number, toX: number, toZ: number, ms: number) => {
+    const c = cam.current;
+    if (reduce) {
+      c.rotY = c.tY = toY; c.rotX = c.tX = toX; c.zoom = c.tZoom = toZ;
+      apply();
+      return;
+    }
+    c.flying = true;
+    const fY = c.rotY, fX = c.rotX, fZ = c.zoom, t0 = performance.now();
+    const ease = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
+    const step = (now: number) => {
+      const p = Math.min(1, (now - t0) / ms), e = ease(p);
+      c.rotY = fY + (toY - fY) * e;
+      c.rotX = fX + (toX - fX) * e;
+      c.zoom = fZ + (toZ - fZ) * e;
+      apply();
+      if (p < 1) requestAnimationFrame(step);
+      else { c.tY = toY; c.tX = toX; c.tZoom = toZ; c.flying = false; }
+    };
+    requestAnimationFrame(step);
+  }, [apply, reduce]);
 
   const enterRoom = useCallback(() => {
     if (cam.current.mode === "inside") return;
@@ -313,74 +440,18 @@ const DeveloperProfile: React.FC = () => {
     cam.current.velY = 0;
   }, [enterRoom]);
 
-  /* ── light ───────────────────────────────────────── */
-  const lightUp = useCallback(() => {
-    if (litRef.current) return;
-    litRef.current = true;
-    setLit(true);
-  }, []);
-
-  const toggleLight = useCallback(() => {
-    if (litRef.current) {
-      litRef.current = false;
-      setLit(false);
-      setFlicker(false);
-      return;
-    }
-    if (reduce) return lightUp();
-    let n = 0;
-    const flick = () => {
-      n += 1;
-      setFlicker(n % 2 === 0);
-      if (n < 9) later(flick, 55 + Math.random() * 130);
-      else { setFlicker(false); lightUp(); }
-    };
-    later(flick, 60);
-  }, [lightUp, reduce]);
-
-  /* ── cord ────────────────────────────────────────── */
-  const pull = useRef({ on: false, startY: 0, dist: 0 });
-
-  const cordDown = (e: React.PointerEvent) => {
-    e.stopPropagation();
-    e.preventDefault();
-    pull.current = { on: true, startY: e.clientY, dist: 0 };
-    const line = cordLineRef.current;
-    if (line) line.style.transition = "none";
-
-    const move = (ev: PointerEvent) => {
-      if (!pull.current.on) return;
-      ev.preventDefault();
-      pull.current.dist = Math.max(0, Math.min(100, ev.clientY - pull.current.startY));
-      if (line) line.style.height = `${64 + pull.current.dist}px`;
-    };
-    const up = () => {
-      if (!pull.current.on) return;
-      pull.current.on = false;
-      window.removeEventListener("pointermove", move);
-      window.removeEventListener("pointerup", up);
-      window.removeEventListener("pointercancel", up);
-      if (line) {
-        line.style.transition = "height .55s cubic-bezier(.5,2.4,.4,1)";
-        line.style.height = "64px";
-      }
-      // A pull or a plain click both work — nobody should have to discover
-      // that this particular 14px element needs dragging.
-      if (pull.current.dist > 40 || pull.current.dist < 6) toggleLight();
-      pull.current.dist = 0;
-    };
-    window.addEventListener("pointermove", move, { passive: false });
-    window.addEventListener("pointerup", up);
-    window.addEventListener("pointercancel", up);
-  };
-
   /* ── door ────────────────────────────────────────── */
   const openDoor = () => {
     if (leaving) return;
     setLeaving(true);
-    turnTo(90);                       // face the door so the swing is visible
+    turnTo(90);                                   // face the door so the swing shows
     later(() => setWhiteout(true), 900);
-    later(() => navigate(EXIT_URL), 2300);
+    later(() => {
+      // Back to wherever they came from. location.key is "default" only when
+      // this page was opened directly, with no history to return to.
+      if (location.key === "default") navigate(HOME_URL);
+      else navigate(-1);
+    }, 2300);
   };
 
   const cls = [
@@ -392,7 +463,7 @@ const DeveloperProfile: React.FC = () => {
     looked && "rp-looked",
   ].filter(Boolean).join(" ");
 
-  return (
+  const ui = (
     <div className={cls} ref={rootRef}>
       <style>{CSS}</style>
 
@@ -406,7 +477,6 @@ const DeveloperProfile: React.FC = () => {
       <div className="rp-viewport" ref={viewportRef}>
         <div className="rp-room" ref={roomRef}>
 
-          {/* ── who ── */}
           <section className="rp-face rp-wall rp-front">
             <div className="rp-panel">
               <p className="rp-eyebrow">YOU FOUND A SECRET PAGE</p>
@@ -421,7 +491,6 @@ const DeveloperProfile: React.FC = () => {
             <Scratches seed={0} /><div className="rp-skirt" /><div className="rp-dim" />
           </section>
 
-          {/* ── skills ── */}
           <section className="rp-face rp-wall rp-right">
             <div className="rp-panel">
               <h2 className="rp-head rp-blood">what I know<Drips count={9} /></h2>
@@ -441,7 +510,6 @@ const DeveloperProfile: React.FC = () => {
             <Scratches seed={1} /><div className="rp-skirt" /><div className="rp-dim" />
           </section>
 
-          {/* ── work ── */}
           <section className="rp-face rp-wall rp-back">
             <div className="rp-panel">
               <h2 className="rp-head rp-blood">what I&rsquo;m building<Drips count={11} /></h2>
@@ -458,16 +526,20 @@ const DeveloperProfile: React.FC = () => {
             <Scratches seed={2} /><div className="rp-skirt" /><div className="rp-dim" />
           </section>
 
-          {/* ── the way out ── */}
           <section className="rp-face rp-wall rp-left rp-exit">
             <div className="rp-panel">
+              {/* One button covers the whole door. The jamb, doorway and slab
+                  are decorative siblings with pointer-events disabled — as
+                  clickable layers they sat over the handle and ate the click. */}
               <div className="rp-door">
                 <span className="rp-sign rp-blood">the way out</span>
-                <div className="rp-jamb" />
-                <div className="rp-doorway" />
-                <div className="rp-slab"><i /><i /></div>
-                <button className="rp-handle" onClick={openDoor} aria-label="Open the door and leave" />
-                <span className="rp-handle-hint">TURN THE HANDLE</span>
+                <button className="rp-door-btn" onClick={openDoor} aria-label="Open the door and go back">
+                  <span className="rp-jamb" />
+                  <span className="rp-doorway" />
+                  <span className="rp-slab"><i /><i /></span>
+                  <span className="rp-handle" />
+                  <span className="rp-handle-hint">TURN THE HANDLE</span>
+                </button>
               </div>
 
               <div className="rp-mirror">
@@ -497,7 +569,8 @@ const DeveloperProfile: React.FC = () => {
         </div>
       </div>
 
-      {/* ── lamp ── */}
+      {/* ── lamp: rope is an SVG curve driven by a spring, so it can be
+              dragged in any direction and swings back on release ── */}
       <div className="rp-lamp">
         <div className="rp-wire" />
         <div className="rp-shade" />
@@ -509,11 +582,15 @@ const DeveloperProfile: React.FC = () => {
         >
           <span className="rp-bulb" />
         </button>
-        <div className="rp-cord">
-          <div className="rp-cord-line" ref={cordLineRef} />
+
+        <div className="rp-rig">
+          <svg className="rp-rope" viewBox="0 0 240 200" aria-hidden="true">
+            <path ref={ropePathRef} d="M120 0 Q120 48 120 78" />
+          </svg>
           <button
+            ref={knobRef}
             className="rp-knob-hit"
-            onPointerDown={cordDown}
+            onPointerDown={ropeDown}
             onKeyDown={(e) => {
               if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleLight(); }
             }}
@@ -533,11 +610,7 @@ const DeveloperProfile: React.FC = () => {
 
       <nav className="rp-hud">
         {TURNS.map(([label, deg]) => (
-          <button
-            key={label}
-            className={facing === deg ? "rp-on" : undefined}
-            onClick={() => turnTo(deg)}
-          >
+          <button key={label} className={facing === deg ? "rp-on" : undefined} onClick={() => turnTo(deg)}>
             {label}
           </button>
         ))}
@@ -550,11 +623,14 @@ const DeveloperProfile: React.FC = () => {
       <div className={`rp-whiteout${whiteout ? " rp-on" : ""}`} />
     </div>
   );
+
+  /* Portalled to <body>: the route renders inside your Navbar/Footer layout,
+     and position:fixed does not lift it out of that stacking context. */
+  return typeof document === "undefined" ? ui : createPortal(ui, document.body);
 };
 
 /* ══════════════════════════════════════════════════════
- * Styles. Everything is scoped under .rp so this page cannot
- * leak into the rest of the app.
+ * Styles, scoped under .rp so nothing leaks into the app
  * ══════════════════════════════════════════════════════ */
 
 const CSS = `
@@ -565,13 +641,12 @@ const CSS = `
   --wall:#2b2825; --rp-spec:50%;
   --scrawl:'Rock Salt',cursive; --hand:'Caveat',cursive;
   --mono:'JetBrains Mono',ui-monospace,monospace;
-  position:fixed;inset:0;overflow:hidden;background:#050403;
+  position:fixed;inset:0;z-index:2147483000;overflow:hidden;background:#050403;
   font-family:var(--mono);color:#c9c2b8;user-select:none;-webkit-font-smoothing:antialiased;
 }
 .rp *{margin:0;padding:0;box-sizing:border-box}
 
-/* PERSPECTIVE here must equal the EYE constant in the component. Translating
-   the room forward by that amount puts its centre at the camera. */
+/* perspective MUST equal the EYE constant in the component */
 .rp-viewport{position:absolute;inset:0;perspective:900px;perspective-origin:50% 50%;
   cursor:grab;touch-action:none}
 .rp-viewport.rp-dragging{cursor:grabbing}
@@ -585,7 +660,7 @@ const CSS = `
   box-shadow:inset 0 0 200px rgba(0,0,0,.95)}
 .rp-horiz{width:1800px;height:1800px;margin-left:-900px;margin-top:-900px}
 
-/* rotateX(90deg) maps local +Z to world UP, so that pair is the FLOOR. */
+/* rotateX(90deg) maps local +Z to world UP, so that pair is the FLOOR */
 .rp-front{transform:rotateY(0deg) translateZ(-900px)}
 .rp-right{transform:rotateY(90deg) translateZ(-900px)}
 .rp-back {transform:rotateY(180deg) translateZ(-900px)}
@@ -602,18 +677,18 @@ const CSS = `
              radial-gradient(ellipse 220px 280px at 90% 16%,rgba(0,0,0,.45),transparent 70%),
              radial-gradient(ellipse 170px 460px at 66% 100%,rgba(0,0,0,.55),transparent 72%)}
 
-/* Darkness is an overlay, never filter:brightness — a filter forces its own
-   render group and can flatten the element out of the 3D context. */
+/* darkness is an overlay, never filter:brightness — a filter forces its own
+   render group and can flatten the element out of the 3D context */
 .rp-dim{position:absolute;inset:0;z-index:9;pointer-events:none;background:#050403;
   opacity:.92;transition:opacity 1.8s ease}
 .rp-lit .rp-dim{opacity:0}
 .rp-lit .rp-floor .rp-dim{opacity:.12}
 
-.rp-skirt{position:absolute;left:0;right:0;bottom:0;height:58px;z-index:4;
+.rp-skirt{position:absolute;left:0;right:0;bottom:0;height:58px;z-index:4;pointer-events:none;
   transform:translateZ(14px);background:linear-gradient(180deg,#1d1a16,#0b0a08);
   box-shadow:0 -6px 18px rgba(0,0,0,.7)}
 .rp-scratch{position:absolute;background:rgba(255,255,255,.05);height:1px;
-  transform-origin:left;z-index:4}
+  transform-origin:left;z-index:4;pointer-events:none}
 
 .rp-panel{position:absolute;inset:0 130px 58px 130px;z-index:5;
   display:flex;flex-direction:column;justify-content:center}
@@ -657,9 +732,17 @@ const CSS = `
 
 /* ── exit wall ── */
 .rp-exit .rp-panel{flex-direction:row;align-items:center;gap:90px;justify-content:center}
-
 .rp-door{position:relative;width:420px;height:760px;flex-shrink:0;
   transform-style:preserve-3d;transform:translateZ(18px)}
+.rp-sign{position:absolute;left:50%;top:-96px;transform:translateX(-50%);
+  font-family:var(--scrawl);font-size:34px;white-space:nowrap;pointer-events:none}
+
+/* the ONLY interactive element on the door */
+.rp-door-btn{position:absolute;inset:0;z-index:7;padding:0;border:0;background:transparent;
+  cursor:pointer;transform-style:preserve-3d;display:block}
+.rp-door-btn:focus-visible{outline:3px solid var(--blood-lit);outline-offset:14px}
+.rp-door-btn>*{pointer-events:none}
+
 .rp-jamb{position:absolute;inset:-22px;border:22px solid;
   border-color:#241f19 #1a1611 #14110d #1a1611;
   box-shadow:0 0 60px rgba(0,0,0,.9),inset 0 0 40px rgba(0,0,0,.8)}
@@ -677,23 +760,20 @@ const CSS = `
   box-shadow:inset 0 0 22px rgba(0,0,0,.55),0 1px 0 rgba(255,255,255,.03)}
 .rp-slab i:nth-of-type(1){left:44px;right:44px;top:52px;height:280px}
 .rp-slab i:nth-of-type(2){left:44px;right:44px;bottom:52px;height:300px}
-.rp-handle{position:absolute;right:34px;top:50%;margin-top:-26px;z-index:6;
-  width:54px;height:54px;border-radius:50%;border:0;cursor:pointer;padding:0;
+.rp-handle{position:absolute;right:34px;top:50%;margin-top:-26px;z-index:8;
+  width:54px;height:54px;border-radius:50%;display:block;
   background:radial-gradient(circle at 34% 30%,#f3e2b4,#9c8248 45%,#4e3f21);
   box-shadow:0 0 0 5px #1a1611,0 8px 22px rgba(0,0,0,.85),inset 0 -4px 8px rgba(0,0,0,.5);
   transform:translateZ(20px);transition:transform .3s ease,box-shadow .3s ease}
-.rp-handle:hover{transform:translateZ(28px) scale(1.08);
+.rp-door-btn:hover .rp-handle{transform:translateZ(28px) scale(1.08);
   box-shadow:0 0 0 5px #1a1611,0 0 34px rgba(243,226,180,.5),0 8px 22px rgba(0,0,0,.85)}
-.rp-handle:focus-visible{outline:3px solid var(--blood-lit);outline-offset:6px}
 .rp-handle-hint{position:absolute;right:-6px;top:calc(50% + 46px);width:150px;text-align:center;
-  font-size:13px;letter-spacing:.24em;color:#6a615a;pointer-events:none;opacity:0;transition:opacity .3s}
-.rp-door:hover .rp-handle-hint{opacity:1}
-.rp-sign{position:absolute;left:50%;top:-96px;transform:translateX(-50%);
-  font-family:var(--scrawl);font-size:34px;white-space:nowrap}
+  font-size:13px;letter-spacing:.24em;color:#6a615a;opacity:0;transition:opacity .3s;z-index:8}
+.rp-door-btn:hover .rp-handle-hint{opacity:1}
 
 /* ── mirror ── */
 .rp-mirror{position:relative;width:400px;height:560px;flex-shrink:0;
-  transform-style:preserve-3d;transform:translateZ(16px)}
+  transform-style:preserve-3d;transform:translateZ(16px);pointer-events:none}
 .rp-mframe{position:absolute;inset:-26px;border-radius:6px;
   background:linear-gradient(140deg,#4a3f2a,#2a2318 40%,#57492f 70%,#221c12);
   box-shadow:0 26px 60px rgba(0,0,0,.9),inset 0 2px 3px rgba(255,235,180,.14),
@@ -712,17 +792,17 @@ const CSS = `
   transform:scaleX(-1) rotate(-1deg);display:flex;align-items:flex-start;
   justify-content:center;padding-top:38px;filter:blur(1.6px)}
 .rp-lit .rp-ghost{opacity:1}
-/* Highlight position is driven by camera angle in JS. */
-.rp-spec{position:absolute;inset:0;pointer-events:none;mix-blend-mode:screen;
+/* highlight position is driven by camera angle in JS */
+.rp-spec{position:absolute;inset:0;mix-blend-mode:screen;
   background:linear-gradient(104deg,transparent calc(var(--rp-spec) - 26%),
     rgba(226,240,255,.11) calc(var(--rp-spec) - 7%),
     rgba(255,255,255,.2) var(--rp-spec),
     rgba(226,240,255,.09) calc(var(--rp-spec) + 7%),
     transparent calc(var(--rp-spec) + 26%))}
-.rp-smudge{position:absolute;inset:0;pointer-events:none;opacity:.5;filter:blur(3px);
+.rp-smudge{position:absolute;inset:0;opacity:.5;filter:blur(3px);
   background:radial-gradient(ellipse 120px 90px at 24% 74%,rgba(200,220,235,.05),transparent 70%),
              radial-gradient(ellipse 80px 140px at 80% 28%,rgba(200,220,235,.045),transparent 70%)}
-.rp-crack{position:absolute;left:62%;top:18%;width:2px;height:190px;pointer-events:none;
+.rp-crack{position:absolute;left:62%;top:18%;width:2px;height:190px;
   background:linear-gradient(180deg,transparent,rgba(255,255,255,.22),transparent);
   transform:rotate(9deg);box-shadow:0 0 8px rgba(255,255,255,.14)}
 .rp-crack::before,.rp-crack::after{content:'';position:absolute;width:1px;background:rgba(255,255,255,.15)}
@@ -751,23 +831,29 @@ const CSS = `
   border-color:#ffe9b0;animation:rpBreathe 4.2s ease-in-out infinite;
   box-shadow:0 0 90px 30px rgba(255,190,110,.3),0 0 200px 70px rgba(255,170,80,.12)}
 @keyframes rpBreathe{0%,100%{filter:brightness(1)}50%{filter:brightness(1.12)}}
-.rp-cord{display:flex;flex-direction:column;align-items:center;margin-left:34px;
-  transform-origin:top center;animation:rpSwing 4.4s ease-in-out infinite}
-@keyframes rpSwing{0%,100%{transform:rotate(0)}25%{transform:rotate(1.4deg)}75%{transform:rotate(-1.4deg)}}
-.rp-cord-line{width:1.5px;height:64px;background:linear-gradient(180deg,#2a2723,#4a453e);
-  transition:height .55s cubic-bezier(.5,2.4,.4,1)}
-.rp-knob-hit{padding:16px 20px;margin:-16px -20px;cursor:grab;touch-action:none;
-  background:transparent;border:0;display:block}
+
+/* rope rig: the SVG is the rope, the knob is absolutely placed at its end */
+.rp-rig{position:relative;width:240px;height:200px;margin-left:68px;margin-top:-6px;
+  pointer-events:none}
+.rp-rope{position:absolute;inset:0;width:240px;height:200px;overflow:visible}
+.rp-rope path{fill:none;stroke:#4a453e;stroke-width:1.8;stroke-linecap:round;
+  filter:drop-shadow(0 1px 2px rgba(0,0,0,.9))}
+.rp-lit .rp-rope path{stroke:#6b6459}
+.rp-knob-hit{position:absolute;left:calc(120px - 21px);top:-13px;
+  padding:13px 21px;border:0;background:transparent;cursor:grab;touch-action:none;
+  pointer-events:auto;display:block;will-change:transform}
+.rp-knob-hit:active{cursor:grabbing}
 .rp-knob-hit:focus-visible{outline:2px solid var(--blood-lit);outline-offset:2px}
-.rp-knob{display:block;width:14px;height:26px;border-radius:99px;pointer-events:none;
-  background:linear-gradient(180deg,#8a1220,#4a0810);border:1.5px solid #2c060b;
-  box-shadow:0 4px 12px rgba(0,0,0,.8)}
+.rp-knob{display:block;width:14px;height:30px;border-radius:99px;pointer-events:none;
+  background:linear-gradient(180deg,#a3182a,#8a1220 40%,#4a0810);
+  border:1.5px solid #2c060b;box-shadow:0 4px 12px rgba(0,0,0,.8),
+  inset 0 2px 3px rgba(255,255,255,.12)}
 
 /* ── HUD ── */
 .rp-msg{position:absolute;left:50%;transform:translateX(-50%);z-index:50;white-space:nowrap;
   font-size:11px;letter-spacing:.34em;color:#6a615a;pointer-events:none;transition:opacity .6s ease}
 .rp-enter-msg{top:50%;margin-top:-6px}
-.rp-cord-msg{top:272px;opacity:0}
+.rp-cord-msg{top:300px;opacity:0}
 .rp-inside .rp-cord-msg{opacity:1;animation:rpPulse 2.6s ease-in-out infinite}
 .rp-lit .rp-cord-msg{opacity:0;animation:none}
 .rp-look-msg{bottom:86px;opacity:0}
