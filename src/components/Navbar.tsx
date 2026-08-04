@@ -1,1500 +1,568 @@
 import { collection, getDocs, query, where } from "firebase/firestore";
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useId, useRef, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { db } from "../firebase/config";
+import { useSiteContent } from "../firebase/hooks";
 import AppIcon, { type AppIconName } from "./AppIcon";
 import EditableText from "./EditableText";
-import { useSiteContent } from "../firebase/hooks";
 
-// Persist navbar position in localStorage
-const STORAGE_KEY = "rl_nav_position";
-type NavPosition = "left" | "top" | "bottom";
+/* ══════════════════════════════════════════════════════
+ * Navigation model
+ *
+ * Eight flat links became five entries. Eight is past the point where
+ * people scan a bar and start hunting through it.
+ *
+ * NOTE ON CMS IDS: the old desktop bar used `id={l.label}` while the mobile
+ * menus used `id={l.id}`, so editing a label in one place wrote to a different
+ * Firestore document than the other and the two silently disagreed. Everything
+ * now uses the stable `id`. Any label you previously edited on desktop lives
+ * under its label string ("Research Ideas") and will need re-entering once.
+ * ══════════════════════════════════════════════════════ */
+
+interface NavChild {
+  to: string;
+  label: string;
+  desc: string;
+  icon: AppIconName;
+  id: string;
+}
+interface NavGroup {
+  label: string;
+  id: string;
+  to?: string;
+  icon?: AppIconName;
+  children?: NavChild[];
+}
+
+const NAV: NavGroup[] = [
+  { label: "Home", id: "nav-home", to: "/", icon: "home" },
+  {
+    label: "About",
+    id: "nav-about-group",
+    children: [
+      { to: "/about", label: "The lab", desc: "Mission, history and facilities", icon: "building", id: "nav-about" },
+      { to: "/lab-head", label: "Lab head", desc: "Leadership and research direction", icon: "admin", id: "nav-lab-head" },
+    ],
+  },
+  {
+    label: "Research",
+    id: "nav-research-group",
+    children: [
+      { to: "/publications", label: "Publications", desc: "Published papers and ongoing work", icon: "publications", id: "nav-publications" },
+      { to: "/research-ideas", label: "Research ideas", desc: "Open questions to collaborate on", icon: "ideas", id: "nav-research-ideas" },
+      { to: "/gallery", label: "Gallery", desc: "Photographs from the lab", icon: "gallery", id: "nav-gallery" },
+    ],
+  },
+  { label: "People", id: "nav-collaborators", to: "/collaborators", icon: "collaborators" },
+  { label: "Contact", id: "nav-contact", to: "/contact", icon: "contact" },
+];
+
+/** Five labelled tabs at ~78px. The old bar squeezed nine icon-only cells into
+ *  390px — about 43px each, with no text to tell them apart. */
+const TABS: { to: string; label: string; icon: AppIconName; id: string }[] = [
+  { to: "/", label: "Home", icon: "home", id: "nav-home" },
+  { to: "/publications", label: "Papers", icon: "publications", id: "nav-publications" },
+  { to: "/collaborators", label: "People", icon: "collaborators", id: "nav-collaborators" },
+  { to: "/research-ideas", label: "Ideas", icon: "ideas", id: "nav-research-ideas" },
+];
+
+const SECONDARY: { to: string; label: string; icon: AppIconName; id: string }[] = [
+  { to: "/about", label: "About the lab", icon: "building", id: "nav-about" },
+  { to: "/lab-head", label: "Lab head", icon: "admin", id: "nav-lab-head" },
+  { to: "/gallery", label: "Gallery", icon: "gallery", id: "nav-gallery" },
+  { to: "/contact", label: "Contact", icon: "contact", id: "nav-contact" },
+];
+
+/* ══════════════════════════════════════════════════════
+ * Shared pieces
+ * ══════════════════════════════════════════════════════ */
+
+const Brand: React.FC<{ logo: string; compact?: boolean }> = ({ logo, compact }) => (
+  <Link to="/" className="flex shrink-0 items-center gap-2.5 no-underline">
+    <span
+      className={`grid shrink-0 place-items-center rounded-lg font-bold text-slate-900 ${compact ? "h-7 w-7 text-xs" : "h-8 w-8 text-sm"}`}
+      style={{
+        background: logo
+          ? `#fff url(${logo}) center/contain no-repeat`
+          : "linear-gradient(135deg, var(--color-accent), #f97316)",
+      }}
+    >
+      {logo ? "" : "S"}
+    </span>
+    <span
+      className={`font-bold tracking-tight ${compact ? "text-sm" : "text-[17px]"}`}
+      style={{ color: "var(--color-accent)", fontFamily: "var(--font-heading)" }}
+    >
+      <EditableText id="navbar.labTitle" defaultValue="Syed's Lab" className="inline" />
+    </span>
+  </Link>
+);
+
+const AvatarCircle: React.FC<{ photo: string; initials: string; size: number }> = ({
+  photo, initials, size,
+}) => {
+  const [err, setErr] = useState(false);
+  if (photo && !err) {
+    return (
+      <img
+        src={photo}
+        alt=""
+        onError={() => setErr(true)}
+        style={{ width: size, height: size, borderRadius: "50%", objectFit: "cover", display: "block", flexShrink: 0 }}
+      />
+    );
+  }
+  return (
+    <span
+      aria-hidden="true"
+      className="grid shrink-0 place-items-center rounded-full font-bold text-white"
+      style={{
+        width: size, height: size, fontSize: size * 0.36,
+        background: "linear-gradient(135deg, var(--color-accent), var(--color-secondary))",
+      }}
+    >
+      {initials}
+    </span>
+  );
+};
+
+/**
+ * Closes on outside click and on Escape, and returns focus to its trigger —
+ * the old dropdowns did neither, so Escape left you stranded mid-page.
+ */
+function useDismissable(open: boolean, close: () => void) {
+  const wrap = useRef<HTMLDivElement>(null);
+  const trigger = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (!wrap.current?.contains(e.target as Node)) close();
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") { close(); trigger.current?.focus(); }
+    };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open, close]);
+
+  return { wrap, trigger };
+}
+
+/* ══════════════════════════════════════════════════════
+ * Navbar
+ * ══════════════════════════════════════════════════════ */
 
 const Navbar: React.FC = () => {
   const { role, logout, appUser } = useAuth();
-  const hasAdminAccess = role === "admin" || appUser?.adminLevel === "primary" || appUser?.adminLevel === "moderator";
   const { content } = useSiteContent();
-  const brandLogoUrl = content["branding.logoUrl"] ?? "";
   const location = useLocation();
-  const [menuOpen, setMenuOpen] = useState(false);
-  const [moreMenuOpen, setMoreMenuOpen] = useState(false);
-  const [dropdownOpen, setDropdownOpen] = useState(false);
-  const [positionPickerOpen, setPositionPickerOpen] = useState(false);
-  const [collaboratorPhoto, setCollaboratorPhoto] = useState<string>("");
+  const logo = content["branding.logoUrl"] ?? "";
+
+  const [openGroup, setOpenGroup] = useState<string | null>(null);
+  const [userOpen, setUserOpen] = useState(false);
+  const [sheetOpen, setSheetOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
-  const [navPosition, setNavPosition] = useState<NavPosition>(() => {
-    const saved = localStorage.getItem(STORAGE_KEY) as NavPosition | null;
-    if (saved === "left" || saved === "top" || saved === "bottom") {
-      return saved;
-    }
-    return window.innerWidth < 1024 ? "bottom" : "top";
-  });
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const sidebarDropdownRef = useRef<HTMLDivElement>(null);
-  const topbarDropdownRef = useRef<HTMLDivElement>(null);
-  const sidebarPositionRef = useRef<HTMLDivElement>(null);
-  const topbarPositionRef = useRef<HTMLDivElement>(null);
-  const mobilePositionRef = useRef<HTMLDivElement>(null);
-  const mobileMoreRef = useRef<HTMLDivElement>(null);
+  const [photo, setPhoto] = useState("");
 
-  const isLeft = navPosition === "left";
-  const isTop = navPosition === "top";
-  const isBottom = navPosition === "bottom";
+  const menuId = useId();
+  const signedIn = role === "admin" || role === "collaborator" || role === "lab_head";
+  const isAdmin =
+    role === "admin" || appUser?.adminLevel === "primary" || appUser?.adminLevel === "moderator";
 
-  // Updated IDs to be simple strings (without collection prefix) to fix Firebase error
-  const navLinks = [
-    { to: "/", label: "Home", icon: "home" as AppIconName, id: "nav-home" },
-    {
-      to: "/about",
-      label: "About",
-      icon: "about" as AppIconName,
-      id: "nav-about",
-    },
-    {
-      to: "/lab-head",
-      label: "Lab Head",
-      icon: "admin" as AppIconName,
-      id: "nav-lab-head",
-    },
-    {
-      to: "/collaborators",
-      label: "Collaborators",
-      icon: "collaborators" as AppIconName,
-      id: "nav-collaborators",
-    },
-    {
-      to: "/publications",
-      label: "Publications",
-      icon: "publications" as AppIconName,
-      id: "nav-publications",
-    },
-    {
-      to: "/research-ideas",
-      label: "Research Ideas",
-      icon: "ideas" as AppIconName,
-      id: "nav-research-ideas",
-    },
-    {
-      to: "/gallery",
-      label: "Gallery",
-      icon: "gallery" as AppIconName,
-      id: "nav-gallery",
-    },
-    {
-      to: "/contact",
-      label: "Contact",
-      icon: "contact" as AppIconName,
-      id: "nav-contact",
-    },
-  ];
-
-  const isActive = (path: string) =>
-    path === "/"
-      ? location.pathname === "/"
-      : location.pathname.startsWith(path);
-
-  const applyNavPosition = (next: NavPosition) => {
-    setNavPosition(next);
-    localStorage.setItem(STORAGE_KEY, next);
-    setPositionPickerOpen(false);
-    setMenuOpen(false);
-    setMoreMenuOpen(false);
-  };
+  const isActive = useCallback(
+    (path: string) => (path === "/" ? location.pathname === "/" : location.pathname.startsWith(path)),
+    [location.pathname],
+  );
+  const groupActive = (g: NavGroup) =>
+    g.to ? isActive(g.to) : Boolean(g.children?.some((c) => isActive(c.to)));
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 8);
-    window.addEventListener("scroll", onScroll);
+    window.addEventListener("scroll", onScroll, { passive: true });
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
 
   useEffect(() => {
-    if (role !== "collaborator" && role !== "lab_head" || !appUser?.uid) return;
-    getDocs(
-      query(collection(db, "collaborators"), where("uid", "==", appUser.uid)),
-    )
+    if ((role !== "collaborator" && role !== "lab_head") || !appUser?.uid) return;
+    let live = true;
+    getDocs(query(collection(db, "collaborators"), where("uid", "==", appUser.uid)))
       .then((snap) => {
-        if (!snap.empty) setCollaboratorPhoto(snap.docs[0].data().photo ?? "");
+        if (live && !snap.empty) setPhoto(snap.docs[0].data().photo ?? "");
       })
-      .catch(() => {});
+      .catch(() => { /* avatar falls back to initials */ });
+    return () => { live = false; };
   }, [role, appUser?.uid]);
 
+  // Close everything on navigation.
   useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      const target = e.target as Node;
-      if (
-        !sidebarDropdownRef.current?.contains(target) &&
-        !topbarDropdownRef.current?.contains(target)
-      )
-        setDropdownOpen(false);
-
-      if (
-        !sidebarPositionRef.current?.contains(target) &&
-        !topbarPositionRef.current?.contains(target) &&
-        !mobilePositionRef.current?.contains(target)
-      ) {
-        setPositionPickerOpen(false);
-      }
-
-      if (!mobileMoreRef.current?.contains(target)) {
-        setMoreMenuOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, []);
-
-  useEffect(() => {
-    setDropdownOpen(false);
-    setMenuOpen(false);
-    setMoreMenuOpen(false);
-    setPositionPickerOpen(false);
+    setOpenGroup(null);
+    setUserOpen(false);
+    setSheetOpen(false);
   }, [location.pathname]);
 
+  // Lock the page behind the mobile sheet only while it is open.
   useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        setMenuOpen(false);
-        setMoreMenuOpen(false);
-        setDropdownOpen(false);
-        setPositionPickerOpen(false);
-      }
-    };
-    document.addEventListener("keydown", handler);
-    return () => document.removeEventListener("keydown", handler);
-  }, []);
+    if (!sheetOpen) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => { document.body.style.overflow = prev; };
+  }, [sheetOpen]);
 
-  useEffect(() => {
-    document.body.style.overflow = menuOpen ? "hidden" : "";
-    return () => {
-      document.body.style.overflow = "";
-    };
-  }, [menuOpen]);
-
-  // Keep global layout in sync so desktop content is pushed by sidebar width.
-  useEffect(() => {
-    const body = document.body;
-    if (isLeft) {
-      body.classList.add("nav-vertical");
-      body.style.setProperty(
-        "--app-sidebar-width",
-        sidebarCollapsed ? "64px" : "220px",
-      );
-    } else {
-      body.classList.remove("nav-vertical");
-      body.style.setProperty("--app-sidebar-width", "0px");
-    }
-
-    if (isTop) {
-      body.classList.add("nav-mobile-top");
-    } else {
-      body.classList.remove("nav-mobile-top");
-    }
-
-    if (isBottom) {
-      body.classList.add("nav-bottom-mobile");
-    } else {
-      body.classList.remove("nav-bottom-mobile");
-    }
-
-    return () => {
-      body.classList.remove("nav-vertical");
-      body.classList.remove("nav-mobile-top");
-      body.classList.remove("nav-bottom-mobile");
-      body.style.setProperty("--app-sidebar-width", "0px");
-    };
-  }, [isLeft, isTop, isBottom, sidebarCollapsed]);
+  const groupBox = useDismissable(openGroup !== null, () => setOpenGroup(null));
+  const userBox = useDismissable(userOpen, () => setUserOpen(false));
+  const sheetBox = useDismissable(sheetOpen, () => setSheetOpen(false));
 
   const initials = appUser?.name
-    ? appUser.name
-        .split(" ")
-        .map((w: string) => w[0])
-        .slice(0, 2)
-        .join("")
-        .toUpperCase()
+    ? appUser.name.split(" ").map((w: string) => w[0]).filter(Boolean).slice(0, 2).join("").toUpperCase()
     : "?";
-  const avatarPhoto = (role === "collaborator" || role === "lab_head") ? collaboratorPhoto : "";
-
-  // ── LEFT SIDEBAR MODE ──────────────────────────────────────
-  if (isLeft) {
-    return (
-      <>
-        <style>{`
-          @keyframes dropdownFade {
-            from { opacity:0; transform:translateY(-8px) scale(0.97); }
-            to   { opacity:1; transform:translateY(0) scale(1); }
-          }
-          .sidebar-tooltip {
-            position: absolute;
-            left: 56px;
-            background: #1e293b;
-            color: white;
-            font-size: 12px;
-            font-weight: 700;
-            padding: 4px 10px;
-            border-radius: 8px;
-            white-space: nowrap;
-            pointer-events: none;
-            opacity: 0;
-            transition: opacity 0.15s ease;
-            z-index: 999;
-          }
-          .sidebar-icon-btn:hover .sidebar-tooltip { opacity: 1; }
-        `}</style>
-
-        {/* Fixed vertical sidebar */}
-        <aside
-          className="fixed top-0 left-0 h-screen z-50 flex flex-col hidden lg:flex"
-          style={{
-            width: sidebarCollapsed ? 64 : 220,
-            background: "var(--color-navbar)",
-            boxShadow: "4px 0 24px rgba(0,0,0,0.15)",
-            transition: "width 0.3s cubic-bezier(0.4,0,0.2,1)",
-            overflow: "visible",
-          }}
-        >
-          {/* Header */}
-          <div
-            className="flex items-center justify-between px-3 py-4 flex-shrink-0"
-            style={{
-              borderBottom: "1px solid rgba(255,255,255,0.1)",
-              minHeight: 64,
-            }}
-          >
-            {!sidebarCollapsed && (
-              <Link
-                to="/"
-                className="flex items-center gap-2 no-underline flex-1 min-w-0"
-              >
-                <div
-                  className="w-7 h-7 rounded-lg flex items-center justify-center text-xs font-black flex-shrink-0"
-                  style={{
-                    background: brandLogoUrl ? `white url(${brandLogoUrl}) center/contain no-repeat` : "linear-gradient(135deg, var(--color-accent), #f97316)",
-                    color: "#1f2937",
-                  }}
-                >
-                  {brandLogoUrl ? "" : "R"}
-                </div>
-                <span
-                  style={{
-                    color: "var(--color-accent)",
-                    fontFamily: "var(--font-heading)",
-                    fontSize: 15,
-                  }}
-                  className="font-black truncate"
-                >
-                  {/* Fixed ID: removed collection prefix */}
-                  <EditableText
-                    id="navbar.labTitle"
-                    defaultValue="Syed's Lab"
-                    className="inline"
-                  />
-                </span>
-              </Link>
-            )}
-            {sidebarCollapsed && (
-              <Link to="/" className="mx-auto no-underline">
-                <div
-                  className="w-8 h-8 rounded-lg flex items-center justify-center text-sm font-black"
-                  style={{
-                    background: brandLogoUrl ? `white url(${brandLogoUrl}) center/contain no-repeat` : "linear-gradient(135deg, var(--color-accent), #f97316)",
-                    color: "#1f2937",
-                  }}
-                >
-                  {brandLogoUrl ? "" : "R"}
-                </div>
-              </Link>
-            )}
-            {!sidebarCollapsed && (
-              <button
-                onClick={() => setSidebarCollapsed(true)}
-                className="flex-shrink-0 w-7 h-7 rounded-lg flex items-center justify-center border-none cursor-pointer ml-2"
-                style={{
-                  background: "rgba(255,255,255,0.1)",
-                  color: "white",
-                  fontSize: 13,
-                }}
-                title="Collapse sidebar"
-              >
-                ‹
-              </button>
-            )}
-          </div>
-
-          {/* Expand button when collapsed */}
-          {sidebarCollapsed && (
-            <button
-              onClick={() => setSidebarCollapsed(false)}
-              className="mx-auto mt-2 w-8 h-8 rounded-lg flex items-center justify-center border-none cursor-pointer flex-shrink-0"
-              style={{
-                background: "rgba(255,255,255,0.1)",
-                color: "white",
-                fontSize: 13,
-              }}
-              title="Expand sidebar"
-            >
-              ›
-            </button>
-          )}
-
-          {/* Nav links */}
-          <nav
-            className="flex-1 py-3 overflow-y-auto"
-            style={{ scrollbarWidth: "none" }}
-          >
-            {navLinks.map((l) => {
-              const active = isActive(l.to);
-              return (
-                <Link
-                  key={l.to}
-                  to={l.to}
-                  className="sidebar-icon-btn relative flex items-center gap-3 mx-2 px-2 py-2.5 rounded-xl mb-1 no-underline transition-all"
-                  style={{
-                    background: active
-                      ? "rgba(255,255,255,0.12)"
-                      : "transparent",
-                    color: active
-                      ? "var(--color-accent)"
-                      : "rgba(255,255,255,0.75)",
-                    fontWeight: active ? 700 : 500,
-                    fontSize: 13.5,
-                    borderLeft: active
-                      ? "3px solid var(--color-accent)"
-                      : "3px solid transparent",
-                    justifyContent: sidebarCollapsed ? "center" : "flex-start",
-                  }}
-                >
-                  <AppIcon name={l.icon} size={17} style={{ flexShrink: 0 }} />
-                  {!sidebarCollapsed && (
-                    <EditableText
-                      id={l.label}
-                      defaultValue={l.label}
-                      className="truncate"
-                    />
-                  )}
-                  {sidebarCollapsed && (
-                    <span className="sidebar-tooltip">{l.label}</span>
-                  )}
-                </Link>
-              );
-            })}
-          </nav>
-
-          {/* Bottom: position picker + user */}
-          <div
-            className="flex-shrink-0 px-2 py-3"
-            style={{ borderTop: "1px solid rgba(255,255,255,0.1)" }}
-          >
-            <div className="relative mb-2" ref={sidebarPositionRef}>
-              <button
-                onClick={() => setPositionPickerOpen((o) => !o)}
-                className="sidebar-icon-btn relative w-full flex items-center gap-3 px-2 py-2.5 rounded-xl border-none cursor-pointer transition-all"
-                style={{
-                  background: positionPickerOpen
-                    ? "rgba(255,255,255,0.14)"
-                    : "rgba(255,255,255,0.06)",
-                  color: "rgba(255,255,255,0.82)",
-                  fontSize: 13,
-                  justifyContent: sidebarCollapsed ? "center" : "flex-start",
-                }}
-              >
-                <AppIcon name="switch" size={15} style={{ flexShrink: 0 }} />
-                {!sidebarCollapsed && <span>Navigation Position</span>}
-                {sidebarCollapsed && (
-                  <span className="sidebar-tooltip">Navigation Position</span>
-                )}
-              </button>
-              {positionPickerOpen && (
-                <div
-                  className="absolute rounded-2xl overflow-hidden"
-                  style={{
-                    bottom: "100%",
-                    left: sidebarCollapsed ? 68 : 0,
-                    width: 250,
-                    background: "white",
-                    boxShadow: "0 -8px 40px rgba(0,0,0,0.18)",
-                    border: "1px solid #e5e7eb",
-                    animation: "dropdownFade 0.18s ease",
-                    marginBottom: 8,
-                    zIndex: 120,
-                  }}
-                >
-                  <NavPositionPicker
-                    navPosition={navPosition}
-                    setNavPosition={applyNavPosition}
-                  />
-                </div>
-              )}
-            </div>
-
-            {/* User / login */}
-            {role === "admin" || role === "collaborator" || role === "lab_head" ? (
-              <div className="relative" ref={sidebarDropdownRef}>
-                <button
-                  onClick={() => setDropdownOpen((o) => !o)}
-                  className="sidebar-icon-btn relative w-full flex items-center gap-2 px-2 py-2 rounded-xl border-none cursor-pointer"
-                  style={{
-                    background: dropdownOpen
-                      ? "rgba(255,255,255,0.12)"
-                      : "transparent",
-                    justifyContent: sidebarCollapsed ? "center" : "flex-start",
-                  }}
-                >
-                  <AvatarCircle
-                    photo={avatarPhoto}
-                    initials={initials}
-                    size={30}
-                  />
-                  {!sidebarCollapsed && (
-                    <div className="flex-1 text-left min-w-0">
-                      <p className="text-white text-xs font-black truncate">
-                        {appUser?.name?.split(" ")[0]}
-                      </p>
-                      <p
-                        className="text-xs truncate"
-                        style={{
-                          color: "rgba(255,255,255,0.45)",
-                          fontSize: 10,
-                        }}
-                      >
-                        {role}
-                      </p>
-                    </div>
-                  )}
-                  {sidebarCollapsed && (
-                    <span className="sidebar-tooltip">{appUser?.name}</span>
-                  )}
-                </button>
-                {dropdownOpen && (
-                  <div
-                    className="absolute rounded-2xl overflow-hidden"
-                    style={{
-                      bottom: "100%",
-                      left: sidebarCollapsed ? 68 : 0,
-                      width: 260,
-                      background: "white",
-                      boxShadow: "0 -8px 40px rgba(0,0,0,0.18)",
-                      border: "1px solid #e5e7eb",
-                      animation: "dropdownFade 0.18s ease",
-                      marginBottom: 8,
-                    }}
-                  >
-                    <UserDropdownContent
-                      appUser={appUser}
-                      role={role}
-                      avatarPhoto={avatarPhoto}
-                      initials={initials}
-                      onClose={() => setDropdownOpen(false)}
-                      onLogout={() => {
-                        logout();
-                        setDropdownOpen(false);
-                      }}
-                    />
-                  </div>
-                )}
-              </div>
-            ) : (
-              <Link
-                to="/login"
-                className="sidebar-icon-btn relative no-underline flex items-center gap-2 px-2 py-2.5 rounded-xl font-bold text-xs"
-                style={{
-                  background: "var(--color-accent)",
-                  color: "#1f2937",
-                  justifyContent: sidebarCollapsed ? "center" : "flex-start",
-                }}
-              >
-                <AppIcon name="login" size={15} />
-                {!sidebarCollapsed && <span>Portal Login</span>}
-                {sidebarCollapsed && (
-                  <span className="sidebar-tooltip">Portal Login</span>
-                )}
-              </Link>
-            )}
-          </div>
-        </aside>
-
-        {/* Mobile navbar stays horizontal */}
-        <HorizontalNav
-          navLinks={navLinks}
-          isActive={isActive}
-          role={role}
-          appUser={appUser}
-          avatarPhoto={avatarPhoto}
-          initials={initials}
-          scrolled={scrolled}
-          menuOpen={menuOpen}
-          setMenuOpen={setMenuOpen}
-          dropdownOpen={dropdownOpen}
-          setDropdownOpen={setDropdownOpen}
-          dropdownRef={topbarDropdownRef}
-          positionPickerRef={topbarPositionRef}
-          mobilePositionRef={mobilePositionRef}
-          mobileMoreRef={mobileMoreRef}
-          logout={logout}
-          navPosition={navPosition}
-          setNavPosition={applyNavPosition}
-          moreMenuOpen={moreMenuOpen}
-          setMoreMenuOpen={setMoreMenuOpen}
-          positionPickerOpen={positionPickerOpen}
-          setPositionPickerOpen={setPositionPickerOpen}
-          className="lg:hidden"
-        />
-      </>
-    );
-  }
-
-  // ── TOP/BOTTOM BAR MODES ───────────────────────────────────
-  return (
-    <HorizontalNav
-      navLinks={navLinks}
-      isActive={isActive}
-      role={role}
-      appUser={appUser}
-      avatarPhoto={avatarPhoto}
-      initials={initials}
-      scrolled={scrolled}
-      menuOpen={menuOpen}
-      setMenuOpen={setMenuOpen}
-      dropdownOpen={dropdownOpen}
-      setDropdownOpen={setDropdownOpen}
-      dropdownRef={topbarDropdownRef}
-      positionPickerRef={topbarPositionRef}
-      mobilePositionRef={mobilePositionRef}
-      mobileMoreRef={mobileMoreRef}
-      logout={logout}
-      navPosition={navPosition}
-      setNavPosition={applyNavPosition}
-      moreMenuOpen={moreMenuOpen}
-      setMoreMenuOpen={setMoreMenuOpen}
-      positionPickerOpen={positionPickerOpen}
-      setPositionPickerOpen={setPositionPickerOpen}
-    />
-  );
-};
-
-// ── Horizontal Navbar ──────────────────────────────────────────
-const HorizontalNav: React.FC<{
-  navLinks: { to: string; label: string; icon: AppIconName; id: string }[];
-  isActive: (p: string) => boolean;
-  role: any;
-  appUser: any;
-  avatarPhoto: string;
-  initials: string;
-  scrolled: boolean;
-  menuOpen: boolean;
-  setMenuOpen: (v: boolean | ((o: boolean) => boolean)) => void;
-  dropdownOpen: boolean;
-  setDropdownOpen: (v: boolean | ((o: boolean) => boolean)) => void;
-  dropdownRef: React.RefObject<HTMLDivElement>;
-  positionPickerRef: React.RefObject<HTMLDivElement>;
-  mobilePositionRef: React.RefObject<HTMLDivElement>;
-  mobileMoreRef: React.RefObject<HTMLDivElement>;
-  logout: () => void;
-  navPosition: NavPosition;
-  setNavPosition: (v: NavPosition) => void;
-  moreMenuOpen: boolean;
-  setMoreMenuOpen: (v: boolean | ((o: boolean) => boolean)) => void;
-  positionPickerOpen: boolean;
-  setPositionPickerOpen: (v: boolean | ((o: boolean) => boolean)) => void;
-  className?: string;
-}> = ({
-  navLinks,
-  isActive,
-  role,
-  appUser,
-  avatarPhoto,
-  initials,
-  scrolled,
-  menuOpen,
-  setMenuOpen,
-  dropdownOpen,
-  setDropdownOpen,
-  dropdownRef,
-  positionPickerRef,
-  mobilePositionRef,
-  mobileMoreRef,
-  logout,
-  navPosition,
-  setNavPosition,
-  moreMenuOpen,
-  setMoreMenuOpen,
-  positionPickerOpen,
-  setPositionPickerOpen,
-  className = "",
-}) => {
-  const { content } = useSiteContent();
-  const brandLogoUrl = content["branding.logoUrl"] ?? "";
-  const isIconMobileMode = navPosition === "top" || navPosition === "bottom";
-  const mobileIconPlacement = navPosition === "bottom" ? "bottom" : "top";
+  const avatar = role === "collaborator" || role === "lab_head" ? photo : "";
+  const roleLabel =
+    appUser?.adminLevel === "primary" ? "Primary Administrator"
+    : appUser?.adminLevel === "moderator" ? "Moderator Administrator"
+    : role === "admin" ? "Administrator"
+    : role === "lab_head" ? "Lab Head"
+    : "Collaborator";
 
   return (
     <>
-      <style>{`
-        @keyframes fadeIn { from{opacity:0} to{opacity:1} }
-        @keyframes dropdownFade { from{opacity:0;transform:translateY(-8px) scale(0.97)} to{opacity:1;transform:translateY(0) scale(1)} }
-        .nav-link-pill { transition: color 0.15s, background 0.15s; }
-        .nav-link-pill:hover { background: rgba(255,255,255,0.1) !important; }
-        .hamburger-line { display:block; width:22px; height:2px; border-radius:99px; background:white; transition:transform 0.3s ease, opacity 0.3s ease, width 0.3s ease; transform-origin:center; }
-      `}</style>
+      <style>{CSS}</style>
 
+      <a href="#main" className="nv-skip">Skip to content</a>
+
+      {/* ══ desktop ══ */}
       <nav
-        className={`${className} ${isIconMobileMode ? "hidden lg:block" : ""}`.trim()}
+        aria-label="Main"
+        className="sticky top-0 z-[100] hidden lg:block"
         style={{
           background: "var(--color-navbar)",
-          position: "sticky",
-          top: 0,
-          zIndex: 100,
-          boxShadow: scrolled
-            ? "0 4px 24px rgba(0,0,0,0.18)"
-            : "0 2px 8px rgba(0,0,0,0.1)",
-          transition: "box-shadow 0.3s ease",
+          boxShadow: scrolled ? "0 4px 24px rgba(0,0,0,.18)" : "0 1px 0 rgba(255,255,255,.06)",
+          transition: "box-shadow .3s ease",
         }}
       >
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-16">
-            <Link
-              to="/"
-              className="flex items-center gap-2 no-underline flex-shrink-0"
-            >
-              <div
-                className="w-8 h-8 rounded-lg flex items-center justify-center text-sm font-black"
-                style={{
-                  background: brandLogoUrl ? `white url(${brandLogoUrl}) center/contain no-repeat` : "linear-gradient(135deg, var(--color-accent), #f97316)",
-                  color: "#1f2937",
-                  boxShadow: "0 2px 8px rgba(245,158,11,0.4)",
-                }}
-              >
-                {brandLogoUrl ? "" : "R"}
-              </div>
-              <span
-                style={{
-                  color: "var(--color-accent)",
-                  fontFamily: "var(--font-heading)",
-                }}
-                className="text-xl font-black tracking-tight"
-              >
-                {/* Fixed ID: removed collection prefix */}
-                <EditableText
-                  id="navbar.labTitle"
-                  defaultValue="Syed's Lab"
-                  className="inline"
-                />
-              </span>
-            </Link>
+        <div className="mx-auto flex h-16 max-w-7xl items-center gap-8 px-6 lg:px-8">
+          <Brand logo={logo} />
 
-            <div className="hidden lg:flex items-center gap-1.5">
-              {navLinks.map((l) => (
-                <Link
-                  key={l.to}
-                  to={l.to}
-                  className="nav-link-pill no-underline px-3 py-2 rounded-lg text-sm whitespace-nowrap"
-                  style={{
-                    color: isActive(l.to)
-                      ? "var(--color-accent)"
-                      : "rgba(255,255,255,0.82)",
-                    fontWeight: isActive(l.to) ? 700 : 500,
-                    background: isActive(l.to)
-                      ? "rgba(255,255,255,0.1)"
-                      : "transparent",
-                    borderBottom: isActive(l.to)
-                      ? "2px solid var(--color-accent)"
-                      : "2px solid transparent",
-                  }}
-                >
-                  <EditableText
-                    id={l.label}
-                    defaultValue={l.label}
-                    className="inline"
-                  />
-                </Link>
-              ))}
-            </div>
+          <div className="flex flex-1 items-center gap-0.5" ref={groupBox.wrap}>
+            {NAV.map((g) => {
+              const active = groupActive(g);
 
-            <div className="hidden lg:flex items-center gap-2">
-              <div className="relative" ref={positionPickerRef}>
-                <button
-                  onClick={() => setPositionPickerOpen((o) => !o)}
-                  title="Navigation Position"
-                  aria-label="Navigation Position"
-                  className="w-10 h-10 rounded-lg flex items-center justify-center border-none cursor-pointer transition-all"
-                  style={{
-                    background: positionPickerOpen
-                      ? "rgba(255,255,255,0.18)"
-                      : "rgba(255,255,255,0.08)",
-                    color: "rgba(255,255,255,0.85)",
-                    fontSize: 12,
-                  }}
-                >
-                  <AppIcon name="switch" size={14} />
-                </button>
-                {positionPickerOpen && (
-                  <div
-                    className="absolute right-0 mt-2 rounded-2xl overflow-hidden"
-                    style={{
-                      width: 260,
-                      background: "white",
-                      boxShadow: "0 20px 60px rgba(0,0,0,0.18)",
-                      border: "1px solid #e5e7eb",
-                      zIndex: 220,
-                      animation: "dropdownFade 0.18s ease",
-                    }}
+              if (!g.children) {
+                return (
+                  <Link
+                    key={g.id}
+                    to={g.to!}
+                    aria-current={active ? "page" : undefined}
+                    className="nv-link"
+                    data-active={active || undefined}
                   >
-                    <NavPositionPicker
-                      navPosition={navPosition}
-                      setNavPosition={setNavPosition}
-                    />
-                  </div>
-                )}
-              </div>
+                    <EditableText id={g.id} defaultValue={g.label} className="inline" />
+                  </Link>
+                );
+              }
 
-              {!role && (
-                <Link
-                  to="/login"
-                  className="no-underline text-sm font-semibold px-3.5 py-2 rounded-xl whitespace-nowrap flex items-center gap-2"
-                  style={{
-                    color: "#1f2937",
-                    background: "var(--color-accent)",
-                    boxShadow: "0 2px 8px rgba(245,158,11,0.35)",
-                  }}
-                >
-                  <AppIcon name="login" size={14} /> Portal Login
-                </Link>
-              )}
-
-              {(role === "admin" || role === "collaborator" || role === "lab_head") && (
-                <div className="relative" ref={dropdownRef}>
+              const open = openGroup === g.id;
+              return (
+                <div key={g.id} className="relative">
                   <button
-                    onClick={() => setDropdownOpen((o) => !o)}
-                    className="flex items-center rounded-full border-none cursor-pointer p-1"
-                    style={{
-                      background: dropdownOpen
-                        ? "rgba(255,255,255,0.18)"
-                        : "rgba(255,255,255,0.08)",
-                      border: "1.5px solid rgba(255,255,255,0.25)",
-                    }}
-                    title={appUser?.name ?? "Profile"}
+                    type="button"
+                    ref={open ? groupBox.trigger : undefined}
+                    onClick={() => setOpenGroup(open ? null : g.id)}
+                    aria-expanded={open}
+                    aria-haspopup="true"
+                    aria-controls={`${menuId}-${g.id}`}
+                    className="nv-link nv-trigger"
+                    data-active={active || undefined}
                   >
-                    <AvatarCircle
-                      photo={avatarPhoto}
-                      initials={initials}
-                      size={32}
-                    />
+                    <EditableText id={g.id} defaultValue={g.label} className="inline" />
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                         strokeWidth="2.5" aria-hidden="true"
+                         style={{ transform: open ? "rotate(180deg)" : "none", transition: "transform .2s" }}>
+                      <path d="m6 9 6 6 6-6" />
+                    </svg>
                   </button>
-                  {dropdownOpen && (
-                    <div
-                      className="absolute right-0 mt-2 rounded-2xl overflow-hidden"
-                      style={{
-                        width: 280,
-                        background: "white",
-                        boxShadow: "0 20px 60px rgba(0,0,0,0.18)",
-                        border: "1px solid #e5e7eb",
-                        zIndex: 200,
-                        animation: "dropdownFade 0.18s ease",
-                      }}
-                    >
-                      <UserDropdownContent
-                        appUser={appUser}
-                        role={role}
-                        avatarPhoto={avatarPhoto}
-                        initials={initials}
-                        onClose={() => setDropdownOpen(false)}
-                        onLogout={() => {
-                          logout();
-                          setDropdownOpen(false);
-                        }}
-                      />
+
+                  {open && (
+                    <div id={`${menuId}-${g.id}`} className="nv-panel" role="menu">
+                      {g.children.map((c) => (
+                        <Link key={c.id} to={c.to} role="menuitem" className="nv-panel-item">
+                          <span className="nv-panel-icon"><AppIcon name={c.icon} size={16} /></span>
+                          <span className="min-w-0">
+                            <span className="block text-[13.5px] font-semibold text-slate-900">
+                              <EditableText id={c.id} defaultValue={c.label} className="inline" />
+                            </span>
+                            <span className="mt-0.5 block text-[12px] leading-5 text-slate-500">{c.desc}</span>
+                          </span>
+                        </Link>
+                      ))}
                     </div>
                   )}
                 </div>
-              )}
-            </div>
+              );
+            })}
+          </div>
 
-            <div className="flex lg:hidden items-center gap-2">
-              {(role === "admin" || role === "collaborator" || role === "lab_head") && (
-                <AvatarCircle
-                  photo={avatarPhoto}
-                  initials={initials}
-                  size={32}
-                />
-              )}
-              {!isIconMobileMode && (
+          <div className="flex shrink-0 items-center gap-2">
+            {!signedIn && (
+              <Link to="/login" className="nv-cta">
+                <AppIcon name="login" size={14} /> Portal login
+              </Link>
+            )}
+
+            {signedIn && (
+              <div className="relative" ref={userBox.wrap}>
                 <button
-                  onClick={() => setMenuOpen((o) => !o)}
-                  className="flex flex-col items-center justify-center gap-1.5 w-10 h-10 rounded-xl border-none cursor-pointer"
-                  style={{ background: "rgba(255,255,255,0.1)" }}
+                  type="button"
+                  ref={userBox.trigger}
+                  onClick={() => setUserOpen((o) => !o)}
+                  aria-expanded={userOpen}
+                  aria-haspopup="true"
+                  className="grid h-10 w-10 place-items-center rounded-full border border-white/20 bg-white/5 transition hover:bg-white/15"
+                  aria-label={appUser?.name ? `Account menu for ${appUser.name}` : "Account menu"}
                 >
-                  <span
-                    className="hamburger-line"
-                    style={{
-                      transform: menuOpen
-                        ? "translateY(6px) rotate(45deg)"
-                        : "none",
-                    }}
-                  />
-                  <span
-                    className="hamburger-line"
-                    style={{
-                      opacity: menuOpen ? 0 : 1,
-                      width: menuOpen ? "0" : "22px",
-                    }}
-                  />
-                  <span
-                    className="hamburger-line"
-                    style={{
-                      transform: menuOpen
-                        ? "translateY(-6px) rotate(-45deg)"
-                        : "none",
-                    }}
-                  />
+                  <AvatarCircle photo={avatar} initials={initials} size={30} />
                 </button>
-              )}
-            </div>
+
+                {userOpen && (
+                  <div className="nv-user-panel" role="menu">
+                    <div className="px-5 pb-4 pt-5" style={{ background: "var(--color-primary)" }}>
+                      <div className="flex items-center gap-3">
+                        <AvatarCircle photo={avatar} initials={initials} size={46} />
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-bold text-white">{appUser?.name ?? "User"}</p>
+                          <p className="mt-0.5 truncate text-xs text-white/60">{appUser?.email}</p>
+                          <span
+                            className="mt-1.5 inline-block rounded-full px-2 py-0.5 text-[11px] font-semibold"
+                            style={{
+                              background: isAdmin ? "var(--color-accent)" : "rgba(255,255,255,.15)",
+                              color: isAdmin ? "#1f2937" : "#fff",
+                            }}
+                          >
+                            {roleLabel}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="py-2">
+                      {isAdmin && <MenuLink to="/admin" icon="admin" label="Admin dashboard" />}
+                      {(role === "collaborator" || role === "lab_head") && (
+                        <MenuLink to="/collaborator-portal" icon="portal" label="My portal" />
+                      )}
+                      <MenuLink to="/" icon="website" label="View website" />
+                    </div>
+
+                    <div className="border-t border-slate-100 px-3 pb-3 pt-2">
+                      <button type="button" onClick={logout} className="nv-signout">
+                        <AppIcon name="logout" size={15} /> Sign out
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
       </nav>
 
-      {isIconMobileMode && (
-        <MobileIconUnifiedBar
-          navLinks={navLinks}
-          isActive={isActive}
-          placement={mobileIconPlacement}
-          moreMenuOpen={moreMenuOpen}
-          onToggleMore={() => setMoreMenuOpen((o) => !o)}
-          moreRef={mobileMoreRef}
-        />
-      )}
-
-      {menuOpen && !isIconMobileMode && (
-        <div
-          className="fixed inset-0 z-40 lg:hidden"
-          style={{
-            background: "rgba(0,0,0,0.55)",
-            backdropFilter: "blur(4px)",
-            animation: "fadeIn 0.2s ease",
-          }}
-          onClick={() => setMenuOpen(false)}
-        />
-      )}
-
-      {isIconMobileMode && moreMenuOpen && (
-        <div
-          ref={mobileMoreRef}
-          className="fixed right-3 z-50 lg:hidden rounded-2xl overflow-hidden"
-          style={{
-            width: 260,
-            top: mobileIconPlacement === "top" ? 60 : undefined,
-            bottom: mobileIconPlacement === "bottom" ? 74 : undefined,
-            background: "white",
-            boxShadow: "0 20px 60px rgba(0,0,0,0.22)",
-            border: "1px solid #e5e7eb",
-            animation: "dropdownFade 0.18s ease",
-          }}
-        >
-          <div className="p-2">
-            {navLinks.map((l) => {
-              const active = isActive(l.to);
-              return (
-                <Link
-                  key={`more-${l.to}`}
-                  to={l.to}
-                  onClick={() => setMoreMenuOpen(false)}
-                  className="no-underline w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold"
-                  style={{
-                    color: active ? "#065f46" : "#374151",
-                    background: active ? "#ecfdf5" : "transparent",
-                  }}
-                >
-                  <AppIcon name={l.icon} size={16} />
-                  <EditableText
-                    id={l.id}
-                    defaultValue={l.label}
-                    className="inline"
-                  />
-                </Link>
-              );
-            })}
-
-            {(role === "admin" || role === "collaborator" || role === "lab_head") && (
-              <Link
-                to={(role === "admin" || appUser?.adminLevel === "primary" || appUser?.adminLevel === "moderator") ? "/admin" : "/collaborator-portal"}
-                onClick={() => setMoreMenuOpen(false)}
-                className="no-underline w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold text-gray-700"
-                onMouseEnter={(e) =>
-                  (e.currentTarget.style.background = "#f3f4f6")
-                }
-                onMouseLeave={(e) =>
-                  (e.currentTarget.style.background = "transparent")
-                }
-              >
-                <AppIcon
-                  name={(role === "admin" || appUser?.adminLevel === "primary" || appUser?.adminLevel === "moderator") ? "admin" : "portal"}
-                  size={16}
-                />
-                Portal Dashboard
-              </Link>
-            )}
-
-            {!role && (
-              <Link
-                to="/login"
-                onClick={() => setMoreMenuOpen(false)}
-                className="no-underline w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold"
-                style={{
-                  color: "#1f2937",
-                  background: "#fef3c7",
-                }}
-              >
-                <AppIcon name="login" size={16} />
-                Portal Login
-              </Link>
-            )}
-
-            <div className="relative" ref={mobilePositionRef}>
-              <button
-                onClick={() => setPositionPickerOpen((o) => !o)}
-                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl border-none cursor-pointer text-left"
-                style={{
-                  background: positionPickerOpen ? "#eff6ff" : "transparent",
-                  color: positionPickerOpen ? "#1d4ed8" : "#374151",
-                  fontSize: 14,
-                  fontWeight: 600,
-                }}
-              >
-                <AppIcon name="switch" size={15} /> Navigation Position
-              </button>
-              {positionPickerOpen && (
-                <div
-                  className="mt-2 rounded-2xl overflow-hidden"
-                  style={{
-                    background: "white",
-                    boxShadow: "0 20px 60px rgba(0,0,0,0.18)",
-                    border: "1px solid #e5e7eb",
-                    animation: "dropdownFade 0.18s ease",
-                  }}
-                >
-                  <NavPositionPicker
-                    navPosition={navPosition}
-                    setNavPosition={setNavPosition}
-                  />
-                </div>
-              )}
-            </div>
-
-            {(role === "admin" || role === "collaborator" || role === "lab_head") && (
-              <button
-                onClick={() => {
-                  logout();
-                  setMoreMenuOpen(false);
-                }}
-                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-bold cursor-pointer border-none text-left"
-                style={{
-                  background: "#fee2e2",
-                  color: "#991b1b",
-                  marginTop: 6,
-                }}
-              >
-                <AppIcon name="logout" size={15} /> Sign Out
-              </button>
-            )}
-          </div>
-        </div>
-      )}
-
-      {!isIconMobileMode && (
-        <div
-          className="fixed top-0 right-0 h-full z-50 lg:hidden flex flex-col"
-          style={{
-            width: "min(320px, 85vw)",
-            background: "var(--color-primary)",
-            transform: menuOpen ? "translateX(0)" : "translateX(100%)",
-            transition: "transform 0.32s cubic-bezier(0.4,0,0.2,1)",
-            overflowY: "auto",
-          }}
-        >
-          <div
-            className="flex items-center justify-between px-5 py-4 flex-shrink-0"
-            style={{ borderBottom: "1px solid rgba(255,255,255,0.1)" }}
+      {/* ══ mobile: slim brand bar ══ */}
+      <div
+        className="sticky top-0 z-[100] flex h-14 items-center justify-between px-4 lg:hidden"
+        style={{
+          background: "var(--color-navbar)",
+          boxShadow: scrolled ? "0 2px 14px rgba(0,0,0,.22)" : "none",
+        }}
+      >
+        <Brand logo={logo} compact />
+        {signedIn ? (
+          <button
+            type="button"
+            onClick={() => setSheetOpen(true)}
+            className="grid h-9 w-9 place-items-center rounded-full border border-white/20"
+            aria-label="Account and more"
           >
-            <Link
-              to="/"
-              className="flex items-center gap-2 no-underline"
-              onClick={() => setMenuOpen(false)}
-            >
-              <div
-                className="w-7 h-7 rounded-lg flex items-center justify-center text-xs font-black"
-                style={{
-                  background: brandLogoUrl ? `white url(${brandLogoUrl}) center/contain no-repeat` : "linear-gradient(135deg, var(--color-accent), #f97316)",
-                  color: "#1f2937",
-                }}
-              >
-                {brandLogoUrl ? "" : "R"}
-              </div>
-              <span
-                style={{
-                  color: "var(--color-accent)",
-                  fontFamily: "var(--font-heading)",
-                }}
-                className="font-black"
-              >
-                {/* Fixed ID: removed collection prefix */}
-                <EditableText
-                  id="navbar.labTitle"
-                  defaultValue="Syed's Lab"
-                  className="inline"
-                />
-              </span>
+            <AvatarCircle photo={avatar} initials={initials} size={26} />
+          </button>
+        ) : (
+          <Link to="/login" className="rounded-lg px-3 py-1.5 text-[12.5px] font-semibold text-slate-900 no-underline"
+                style={{ background: "var(--color-accent)" }}>
+            Login
+          </Link>
+        )}
+      </div>
+
+      {/* ══ mobile: labelled tab bar ══ */}
+      <nav aria-label="Main" className="nv-tabs lg:hidden">
+        {TABS.map((t) => {
+          const active = isActive(t.to);
+          return (
+            <Link key={t.id} to={t.to} className="nv-tab" data-active={active || undefined}
+                  aria-current={active ? "page" : undefined}>
+              <AppIcon name={t.icon} size={20} />
+              <span><EditableText id={t.id} defaultValue={t.label} className="inline" /></span>
             </Link>
-            <button
-              onClick={() => setMenuOpen(false)}
-              className="w-8 h-8 rounded-full flex items-center justify-center border-none cursor-pointer text-white text-lg"
-              style={{ background: "rgba(255,255,255,0.1)" }}
-            >
-              ×
-            </button>
-          </div>
+          );
+        })}
+        <button
+          type="button"
+          ref={sheetBox.trigger}
+          onClick={() => setSheetOpen(true)}
+          className="nv-tab"
+          data-active={SECONDARY.some((s) => isActive(s.to)) || undefined}
+          aria-expanded={sheetOpen}
+        >
+          <AppIcon name="switch" size={20} />
+          <span>More</span>
+        </button>
+      </nav>
 
-          {(role === "admin" || role === "collaborator" || role === "lab_head") && appUser && (
-            <div
-              className="mx-4 mt-4 rounded-2xl p-4"
-              style={{ background: "rgba(255,255,255,0.08)" }}
-            >
-              <div className="flex items-center gap-3">
-                <AvatarCircle
-                  photo={avatarPhoto}
-                  initials={initials}
-                  size={44}
-                />
-                <div className="flex-1 min-w-0">
-                  <p className="text-white font-black text-sm truncate">
-                    {appUser.name}
-                  </p>
-                  <p
-                    className="text-xs truncate"
-                    style={{ color: "rgba(255,255,255,0.5)" }}
-                  >
-                    {appUser.email}
-                  </p>
-                  <span
-                    className="inline-block mt-1 text-xs font-bold px-2 py-0.5 rounded-full"
-                    style={{
-                      background:
-                        (role === "admin" || appUser?.adminLevel === "primary" || appUser?.adminLevel === "moderator")
-                          ? "var(--color-accent)"
-                          : "rgba(255,255,255,0.15)",
-                      color: (role === "admin" || appUser?.adminLevel === "primary" || appUser?.adminLevel === "moderator") ? "#1f2937" : "white",
-                    }}
-                  >
-                    {appUser?.adminLevel === "moderator" ? "Moderator Administrator" : role === "admin" || appUser?.adminLevel === "primary" ? "Primary Administrator" : role === "lab_head" ? "Lab Head" : "Collaborator"}
-                  </span>
+      {/* ══ mobile sheet ══
+          Rendered only while open. The old drawer stayed in the DOM at
+          translateX(100%), so its links kept receiving Tab focus off-screen. */}
+      {sheetOpen && (
+        <>
+          <div className="nv-scrim lg:hidden" onClick={() => setSheetOpen(false)} />
+          <div className="nv-sheet lg:hidden" role="dialog" aria-modal="true" aria-label="More" ref={sheetBox.wrap}>
+            <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-slate-300" />
+
+            {signedIn && appUser && (
+              <div className="mb-4 flex items-center gap-3 rounded-2xl bg-slate-50 p-4">
+                <AvatarCircle photo={avatar} initials={initials} size={42} />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-bold text-slate-900">{appUser.name}</p>
+                  <p className="truncate text-xs text-slate-500">{appUser.email}</p>
                 </div>
               </div>
-            </div>
-          )}
+            )}
 
-          <div className="flex-1 px-4 py-4">
-            <p
-              className="text-xs font-black uppercase tracking-widest mb-3 px-2"
-              style={{ color: "rgba(255,255,255,0.3)" }}
-            >
-              Navigation
-            </p>
-            {navLinks.map((l) => {
-              const active = isActive(l.to);
-              return (
-                <Link
-                  key={l.to}
-                  to={l.to}
-                  onClick={() => setMenuOpen(false)}
-                  className="no-underline flex items-center gap-3 px-3 py-3 rounded-xl mb-1"
-                  style={{
-                    background: active
-                      ? "rgba(255,255,255,0.12)"
-                      : "transparent",
-                    color: active
-                      ? "var(--color-accent)"
-                      : "rgba(255,255,255,0.8)",
-                    fontWeight: active ? 700 : 500,
-                    fontSize: 14,
-                    borderLeft: active
-                      ? "3px solid var(--color-accent)"
-                      : "3px solid transparent",
-                  }}
-                >
-                  <AppIcon name={l.icon} size={16} />
-                  <EditableText
-                    id={l.id}
-                    defaultValue={l.label}
-                    className="inline"
-                  />
-                  {active && (
-                    <span
-                      className="ml-auto text-xs"
-                      style={{ color: "var(--color-accent)" }}
-                    >
-                      ●
-                    </span>
-                  )}
-                </Link>
-              );
-            })}
+            <p className="nv-sheet-label">Pages</p>
+            {SECONDARY.map((s) => (
+              <Link key={s.id} to={s.to} className="nv-sheet-item" data-active={isActive(s.to) || undefined}>
+                <AppIcon name={s.icon} size={17} />
+                <EditableText id={s.id} defaultValue={s.label} className="inline" />
+              </Link>
+            ))}
 
-            <div className="relative mt-3" ref={mobilePositionRef}>
-              <button
-                onClick={() => setPositionPickerOpen((o) => !o)}
-                className="w-full flex items-center gap-3 px-3 py-3 rounded-xl border-none cursor-pointer"
-                style={{
-                  background: "rgba(255,255,255,0.06)",
-                  color: "rgba(255,255,255,0.85)",
-                  fontSize: 13,
-                }}
-              >
-                <AppIcon name="switch" size={15} /> Navigation Position
-              </button>
-              {positionPickerOpen && (
-                <div
-                  className="mt-2 rounded-2xl overflow-hidden"
-                  style={{
-                    background: "white",
-                    boxShadow: "0 20px 60px rgba(0,0,0,0.18)",
-                    border: "1px solid #e5e7eb",
-                    animation: "dropdownFade 0.18s ease",
-                  }}
-                >
-                  <NavPositionPicker
-                    navPosition={navPosition}
-                    setNavPosition={setNavPosition}
-                  />
-                </div>
-              )}
-            </div>
-
-            {(role === "admin" || role === "collaborator" || role === "lab_head") && (
+            {signedIn && (
               <>
-                <p
-                  className="text-xs font-black uppercase tracking-widest mb-3 mt-5 px-2"
-                  style={{ color: "rgba(255,255,255,0.3)" }}
-                >
-                  Portal
-                </p>
-                {(role === "admin" || appUser?.adminLevel === "primary" || appUser?.adminLevel === "moderator") && (
-                  <Link
-                    to="/admin"
-                    onClick={() => setMenuOpen(false)}
-                    className="no-underline flex items-center gap-3 px-3 py-3 rounded-xl mb-1"
-                    style={{ color: "rgba(255,255,255,0.8)", fontSize: 14 }}
-                  >
-                    <AppIcon name="admin" size={15} /> Admin Dashboard
-                  </Link>
+                <p className="nv-sheet-label">Portal</p>
+                {isAdmin && (
+                  <Link to="/admin" className="nv-sheet-item"><AppIcon name="admin" size={17} /> Admin dashboard</Link>
                 )}
                 {(role === "collaborator" || role === "lab_head") && (
-                  <Link
-                    to="/collaborator-portal"
-                    onClick={() => setMenuOpen(false)}
-                    className="no-underline flex items-center gap-3 px-3 py-3 rounded-xl mb-1"
-                    style={{ color: "rgba(255,255,255,0.8)", fontSize: 14 }}
-                  >
-                    <AppIcon name="portal" size={15} /> My Portal
-                  </Link>
+                  <Link to="/collaborator-portal" className="nv-sheet-item"><AppIcon name="portal" size={17} /> My portal</Link>
                 )}
+                <button type="button" onClick={logout} className="nv-sheet-signout">
+                  <AppIcon name="logout" size={16} /> Sign out
+                </button>
               </>
             )}
-          </div>
 
-          <div
-            className="px-4 pb-6 flex-shrink-0 flex flex-col gap-2"
-            style={{
-              borderTop: "1px solid rgba(255,255,255,0.08)",
-              paddingTop: 16,
-            }}
-          >
-            {!role && (
-              <Link
-                to="/login"
-                onClick={() => setMenuOpen(false)}
-                className="no-underline flex items-center justify-center gap-2 py-3 rounded-xl font-bold text-sm"
-                style={{ background: "var(--color-accent)", color: "#1f2937" }}
-              >
-                <AppIcon name="login" size={15} /> Portal Login
-              </Link>
-            )}
-            {(role === "admin" || role === "collaborator" || role === "lab_head") && (
-              <button
-                onClick={() => {
-                  logout();
-                  setMenuOpen(false);
-                }}
-                className="flex items-center justify-center gap-2 py-3 rounded-xl font-bold text-sm border-none cursor-pointer"
-                style={{ background: "#fee2e2", color: "#991b1b" }}
-              >
-                <AppIcon name="logout" size={15} /> Sign Out
-              </button>
+            {!signedIn && (
+              <Link to="/login" className="nv-sheet-cta"><AppIcon name="login" size={16} /> Portal login</Link>
             )}
           </div>
-        </div>
+        </>
       )}
     </>
   );
 };
 
-const MobileIconUnifiedBar: React.FC<{
-  navLinks: { to: string; label: string; icon: AppIconName; id: string }[];
-  isActive: (p: string) => boolean;
-  placement: "top" | "bottom";
-  moreMenuOpen: boolean;
-  onToggleMore: () => void;
-  moreRef: React.RefObject<HTMLDivElement>;
-}> = ({
-  navLinks,
-  isActive,
-  placement,
-  moreMenuOpen,
-  onToggleMore,
-  moreRef,
-}) => (
-  <div
-    className="fixed left-0 right-0 z-50 lg:hidden"
-    style={{
-      top: placement === "top" ? 0 : undefined,
-      bottom: placement === "bottom" ? 0 : undefined,
-      background: "var(--color-navbar)",
-      borderBottom:
-        placement === "top" ? "1px solid rgba(255,255,255,0.12)" : undefined,
-      borderTop:
-        placement === "bottom" ? "1px solid rgba(255,255,255,0.12)" : undefined,
-      boxShadow: "0 4px 24px rgba(0,0,0,0.18)",
-    }}
-  >
-    <div
-      className="px-2 py-2"
-      style={{
-        display: "grid",
-        gridTemplateColumns: `repeat(${navLinks.length + 1}, minmax(0, 1fr))`,
-        gap: 4,
-      }}
-    >
-      {navLinks.map((l) => {
-        const active = isActive(l.to);
-        return (
-          <Link
-            key={`icon-${l.to}`}
-            to={l.to}
-            title={l.label}
-            aria-label={l.label}
-            className="no-underline flex flex-col items-center justify-center rounded-xl py-2"
-            style={{
-              color: active ? "var(--color-accent)" : "rgba(255,255,255,0.82)",
-              background: active ? "rgba(255,255,255,0.12)" : "transparent",
-            }}
-          >
-            <AppIcon name={l.icon} size={16} />
-          </Link>
-        );
-      })}
-      <div ref={moreRef} className="flex items-center justify-center">
-        <button
-          onClick={onToggleMore}
-          className="w-full h-full min-h-[40px] rounded-xl border-none cursor-pointer text-white"
-          style={{
-            background: moreMenuOpen
-              ? "rgba(255,255,255,0.16)"
-              : "rgba(255,255,255,0.08)",
-            fontSize: 22,
-          }}
-          title="More options"
-        >
-          ⋯
-        </button>
-      </div>
-    </div>
-  </div>
-);
-
-const NavPositionPicker: React.FC<{
-  navPosition: NavPosition;
-  setNavPosition: (v: NavPosition) => void;
-}> = ({ navPosition, setNavPosition }) => {
-  const options: { value: NavPosition; label: string; hint: string }[] = [
-    { value: "left", label: "Left Sidebar", hint: "Desktop side panel" },
-    { value: "top", label: "Top Bar", hint: "Icon bar under header" },
-    { value: "bottom", label: "Bottom Bar", hint: "Mobile thumb navigation" },
-  ];
-
-  return (
-    <div className="p-2">
-      {options.map((opt) => {
-        const active = navPosition === opt.value;
-        return (
-          <button
-            key={opt.value}
-            onClick={() => setNavPosition(opt.value)}
-            className="w-full text-left px-3 py-2.5 rounded-xl border-none cursor-pointer mb-1"
-            style={{
-              background: active ? "#eff6ff" : "transparent",
-              color: active ? "#1d4ed8" : "#1f2937",
-              fontWeight: active ? 700 : 600,
-            }}
-          >
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <p className="text-sm">{opt.label}</p>
-                <p
-                  className="text-xs"
-                  style={{ color: active ? "#3b82f6" : "#6b7280" }}
-                >
-                  {opt.hint}
-                </p>
-              </div>
-              <span style={{ color: active ? "#2563eb" : "#d1d5db" }}>
-                {active ? "●" : "○"}
-              </span>
-            </div>
-          </button>
-        );
-      })}
-    </div>
-  );
-};
-
-// ── User Dropdown Content ──────────────────────────────────────
-const UserDropdownContent: React.FC<{
-  appUser: any;
-  role: any;
-  avatarPhoto: string;
-  initials: string;
-  onClose: () => void;
-  onLogout: () => void;
-}> = ({ appUser, role, avatarPhoto, initials, onClose, onLogout }) => {
-  const hasAdminAccess = role === "admin" || appUser?.adminLevel === "primary" || appUser?.adminLevel === "moderator";
-  return (
-  <>
-    <div
-      className="px-5 pt-5 pb-4"
-      style={{ background: "var(--color-primary)" }}
-    >
-      <div className="flex items-center gap-3">
-        <AvatarCircle photo={avatarPhoto} initials={initials} size={48} />
-        <div className="flex-1 min-w-0">
-          <p className="text-white font-black text-sm truncate">
-            {appUser?.name ?? "User"}
-          </p>
-          <p
-            className="text-xs mt-0.5 truncate"
-            style={{ color: "rgba(255,255,255,0.6)" }}
-          >
-            {appUser?.email}
-          </p>
-          <span
-            className="inline-block mt-1.5 text-xs font-bold px-2 py-0.5 rounded-full"
-            style={{
-              background:
-                hasAdminAccess
-                  ? "var(--color-accent)"
-                  : "rgba(255,255,255,0.15)",
-              color: hasAdminAccess ? "#1f2937" : "white",
-            }}
-          >
-            {appUser?.adminLevel === "primary" ? "Primary Administrator" : appUser?.adminLevel === "moderator" ? "Moderator Administrator" : role === "admin" ? "Administrator" : role === "lab_head" ? "Lab Head" : "Collaborator"}
-          </span>
-        </div>
-      </div>
-    </div>
-    <div className="py-2">
-      {hasAdminAccess && (
-        <DropdownItem
-          to="/admin"
-          icon="admin"
-          label="Admin Dashboard"
-          onClick={onClose}
-        />
-      )}
-      {(role === "collaborator" || role === "lab_head") && (
-        <DropdownItem
-          to="/collaborator-portal"
-          icon="portal"
-          label="My Portal"
-          onClick={onClose}
-        />
-      )}
-      <DropdownItem
-        to="/"
-        icon="website"
-        label="View Website"
-        onClick={onClose}
-      />
-    </div>
-    <div className="px-3 pb-3 pt-1 border-t" style={{ borderColor: "#f0f0f0" }}>
-      <button
-        onClick={onLogout}
-        className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-bold cursor-pointer border-none text-left"
-        style={{ background: "#fee2e2", color: "#991b1b" }}
-        onMouseEnter={(e) => (e.currentTarget.style.background = "#fecaca")}
-        onMouseLeave={(e) => (e.currentTarget.style.background = "#fee2e2")}
-      >
-        <AppIcon name="logout" size={15} /> Sign Out
-      </button>
-    </div>
-  </>
-  );
-};
-
-// ── Avatar Circle ──────────────────────────────────────────────
-const AvatarCircle: React.FC<{
-  photo: string;
-  initials: string;
-  size: number;
-}> = ({ photo, initials, size }) => {
-  const [err, setErr] = useState(false);
-  if (photo && !err)
-    return (
-      <img
-        src={photo}
-        alt="avatar"
-        onError={() => setErr(true)}
-        style={{
-          width: size,
-          height: size,
-          borderRadius: "50%",
-          objectFit: "cover",
-          display: "block",
-          flexShrink: 0,
-        }}
-      />
-    );
-  return (
-    <div
-      className="flex items-center justify-center text-white font-black flex-shrink-0"
-      style={{
-        width: size,
-        height: size,
-        borderRadius: "50%",
-        background:
-          "linear-gradient(135deg, var(--color-accent), var(--color-secondary))",
-        fontSize: size * 0.36,
-        userSelect: "none",
-      }}
-    >
-      {initials}
-    </div>
-  );
-};
-
-// ── Dropdown Item ──────────────────────────────────────────────
-const DropdownItem: React.FC<{
-  to: string;
-  icon: AppIconName;
-  label: string;
-  onClick: () => void;
-}> = ({ to, icon, label, onClick }) => (
-  <Link
-    to={to}
-    onClick={onClick}
-    className="no-underline flex items-center gap-3 mx-2 px-3 py-2.5 rounded-xl text-sm font-semibold text-gray-700"
-    onMouseEnter={(e) => (e.currentTarget.style.background = "#f3f4f6")}
-    onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
-  >
-    <AppIcon name={icon} size={16} />
-    {label}
+const MenuLink: React.FC<{ to: string; icon: AppIconName; label: string }> = ({ to, icon, label }) => (
+  <Link to={to} role="menuitem" className="nv-menu-link">
+    <AppIcon name={icon} size={16} /> {label}
   </Link>
 );
+
+/* ══════════════════════════════════════════════════════
+ * Styles — hover and focus in CSS, not inline handlers
+ * ══════════════════════════════════════════════════════ */
+
+const CSS = `
+.nv-skip{position:absolute;left:-9999px}
+.nv-skip:focus{left:50%;top:8px;transform:translateX(-50%);z-index:200;
+  padding:10px 18px;border-radius:8px;background:var(--color-accent);color:#1f2937;
+  font-size:13px;font-weight:700;text-decoration:none}
+
+.nv-link{display:inline-flex;align-items:center;gap:6px;padding:8px 12px;border-radius:8px;
+  font-size:13.5px;font-weight:500;color:rgba(255,255,255,.85);text-decoration:none;
+  background:transparent;border:0;cursor:pointer;transition:background .15s,color .15s}
+.nv-link:hover{background:rgba(255,255,255,.1);color:#fff}
+.nv-link:focus-visible{outline:2px solid var(--color-accent);outline-offset:2px}
+.nv-link[data-active]{color:var(--color-accent);background:rgba(255,255,255,.1);font-weight:600}
+
+.nv-panel{position:absolute;left:0;top:100%;margin-top:6px;z-index:120;width:300px;padding:8px;
+  border-radius:14px;border:1px solid #e5e7eb;background:#fff;
+  box-shadow:0 20px 50px rgba(15,23,42,.18);animation:nvIn .16s ease}
+@keyframes nvIn{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:none}}
+.nv-panel-item{display:flex;gap:12px;padding:10px 12px;border-radius:10px;text-decoration:none;
+  transition:background .15s}
+.nv-panel-item:hover{background:#f8fafc}
+.nv-panel-item:focus-visible{outline:2px solid var(--color-secondary);outline-offset:-2px}
+.nv-panel-icon{display:grid;place-items:center;width:32px;height:32px;flex-shrink:0;
+  border-radius:9px;background:#f1f5f9;color:#475569}
+
+.nv-cta{display:inline-flex;align-items:center;gap:7px;padding:9px 15px;border-radius:10px;
+  font-size:13px;font-weight:600;color:#1f2937;text-decoration:none;
+  background:var(--color-accent);transition:opacity .2s}
+.nv-cta:hover{opacity:.9}
+.nv-cta:focus-visible{outline:2px solid #fff;outline-offset:2px}
+
+.nv-user-panel{position:absolute;right:0;top:100%;margin-top:8px;z-index:120;width:284px;
+  border-radius:16px;overflow:hidden;border:1px solid #e5e7eb;background:#fff;
+  box-shadow:0 20px 60px rgba(15,23,42,.2);animation:nvIn .16s ease}
+.nv-menu-link{display:flex;align-items:center;gap:12px;margin:0 8px;padding:10px 12px;
+  border-radius:10px;font-size:13.5px;font-weight:500;color:#374151;text-decoration:none;
+  transition:background .15s}
+.nv-menu-link:hover{background:#f3f4f6}
+.nv-signout{display:flex;width:100%;align-items:center;gap:10px;padding:10px 12px;
+  border:0;border-radius:10px;background:#fee2e2;color:#991b1b;font-size:13.5px;
+  font-weight:600;cursor:pointer;transition:background .15s}
+.nv-signout:hover{background:#fecaca}
+
+/* mobile tabs */
+.nv-tabs{position:fixed;left:0;right:0;bottom:0;z-index:100;display:grid;
+  grid-template-columns:repeat(5,1fr);
+  background:#fff;border-top:1px solid #e5e7eb;
+  padding-bottom:env(safe-area-inset-bottom,0px);
+  box-shadow:0 -2px 16px rgba(15,23,42,.08)}
+.nv-tab{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;
+  min-height:56px;padding:8px 4px;border:0;background:transparent;cursor:pointer;
+  color:#94a3b8;font-size:10.5px;font-weight:500;text-decoration:none}
+.nv-tab[data-active]{color:var(--color-primary);font-weight:600}
+.nv-tab:focus-visible{outline:2px solid var(--color-secondary);outline-offset:-3px}
+
+/* the tab bar is fixed, so the page needs room underneath it */
+@media (max-width:1023px){body{padding-bottom:calc(60px + env(safe-area-inset-bottom,0px))}}
+
+.nv-scrim{position:fixed;inset:0;z-index:110;background:rgba(15,23,42,.5);
+  backdrop-filter:blur(3px);animation:nvFade .2s ease}
+@keyframes nvFade{from{opacity:0}to{opacity:1}}
+.nv-sheet{position:fixed;left:0;right:0;bottom:0;z-index:111;max-height:82vh;overflow-y:auto;
+  padding:12px 16px calc(20px + env(safe-area-inset-bottom,0px));
+  border-radius:22px 22px 0 0;background:#fff;
+  box-shadow:0 -12px 40px rgba(15,23,42,.25);animation:nvUp .28s cubic-bezier(.32,.72,0,1)}
+@keyframes nvUp{from{transform:translateY(100%)}to{transform:none}}
+.nv-sheet-label{margin:14px 4px 6px;font-size:10.5px;font-weight:600;letter-spacing:.14em;
+  text-transform:uppercase;color:#94a3b8}
+.nv-sheet-item{display:flex;align-items:center;gap:12px;min-height:48px;padding:0 12px;
+  border-radius:12px;font-size:14px;font-weight:500;color:#334155;text-decoration:none}
+.nv-sheet-item[data-active]{background:#f1f5f9;color:var(--color-primary);font-weight:600}
+.nv-sheet-signout{display:flex;width:100%;align-items:center;gap:10px;min-height:48px;
+  margin-top:10px;padding:0 12px;border:0;border-radius:12px;background:#fee2e2;
+  color:#991b1b;font-size:14px;font-weight:600;cursor:pointer}
+.nv-sheet-cta{display:flex;align-items:center;justify-content:center;gap:10px;min-height:50px;
+  margin-top:14px;border-radius:12px;background:var(--color-accent);color:#1f2937;
+  font-size:14px;font-weight:600;text-decoration:none}
+
+@media (prefers-reduced-motion:reduce){
+  .nv-panel,.nv-user-panel,.nv-sheet,.nv-scrim{animation:none}
+}
+`;
 
 export default Navbar;
