@@ -11,6 +11,7 @@ import {
   useResearchIdeas,
   useSiteContent,
 } from "../firebase/hooks";
+import type { Announcement } from "../types";
 
 // ── Types ──────────────────────────────────────────────────────
 interface LabHeadData {
@@ -29,6 +30,35 @@ interface LabHeadData {
   researchInterests: string;
 }
 
+/** The optional fields ManageAnnouncements writes. Declared locally so this
+ *  file compiles against the existing Announcement type. */
+type AnnouncementPost = Announcement & {
+  title?: string;
+  body?: string;
+  category?: string;
+};
+
+/** The old code mapped every announcement, so this column grew without limit. */
+const HOME_ANNOUNCEMENT_LIMIT = 4;
+
+/** Newer than this gets a "New" badge. */
+const ANNOUNCEMENT_NEW_DAYS = 21;
+
+/** No title on the record? Derive one from the first sentence of the summary. */
+function announcementTitle(post: AnnouncementPost): string {
+  if (post.title?.trim()) return post.title.trim();
+  const first = (post.content || "").split(/(?<=[.!?])\s/)[0]?.trim() ?? "";
+  return first.length > 72 ? `${first.slice(0, 70).trimEnd()}…` : first || "Untitled";
+}
+
+const announcementIsNew = (iso: string) => {
+  const date = new Date(iso);
+  return (
+    !Number.isNaN(date.getTime()) &&
+    (Date.now() - date.getTime()) / 86_400_000 < ANNOUNCEMENT_NEW_DAYS
+  );
+};
+
 // ── Main Component ─────────────────────────────────────────────
 const Home: React.FC = () => {
   const { content, loading } = useSiteContent();
@@ -41,14 +71,30 @@ const Home: React.FC = () => {
   const [bannerImgErr, setBannerImgErr] = useState(false);
   const [visible, setVisible] = useState(false);
 
+  /**
+   * Proper WCAG relative luminance. This previously averaged the raw 0–255
+   * channels, which is a different curve entirely — so PublicationCard (which
+   * gamma-corrects) and this page could disagree about whether the same theme
+   * colour counts as dark, and the cards would go dark while the page didn't.
+   * Threshold 0.22 matches PublicationCard.
+   */
   const isDarkTheme = React.useMemo(() => {
     const clean = (theme.backgroundColor ?? "").replace("#", "").trim();
-    if (clean.length !== 6) return false;
-    const r = Number.parseInt(clean.slice(0, 2), 16);
-    const g = Number.parseInt(clean.slice(2, 4), 16);
-    const b = Number.parseInt(clean.slice(4, 6), 16);
-    const luminance = 0.2126 * r + 0.7152 * g + 0.0722 * b;
-    return luminance < 140;
+    const full =
+      clean.length === 3
+        ? clean
+            .split("")
+            .map((char) => char + char)
+            .join("")
+        : clean;
+    if (full.length !== 6 || /[^0-9a-f]/i.test(full)) return false;
+
+    const channel = (offset: number) => {
+      const value = Number.parseInt(full.slice(offset, offset + 2), 16) / 255;
+      return value <= 0.03928 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+    };
+
+    return 0.2126 * channel(0) + 0.7152 * channel(2) + 0.0722 * channel(4) < 0.22;
   }, [theme.backgroundColor]);
 
   const sectionTextPrimary = isDarkTheme ? "#e5e7eb" : "#1f2937";
@@ -98,6 +144,26 @@ const Home: React.FC = () => {
       icon: "ideas" as AppIconName,
     },
   ];
+
+  /* Two fixes in one place.
+
+     Drafts: ManageAnnouncements can mark an announcement as hidden, and this
+     page was rendering every record the hook returned — so hiding one removed
+     it from the Announcements page and nowhere else.
+
+     Order: announcements load with orderBy("order", "asc") and each new one is
+     written with order = max + 1, which is oldest-first. The very first
+     announcement the lab ever wrote was sitting at the top of a section titled
+     Latest Updates. */
+  const publishedAnnouncements = (announcements as AnnouncementPost[])
+    .filter((post) => !post.isHidden)
+    .sort(
+      (a, b) =>
+        Number(Boolean(b.isPinned)) - Number(Boolean(a.isPinned)) ||
+        String(b.createdAt).localeCompare(String(a.createdAt)),
+    );
+
+  const latestAnnouncements = publishedAnnouncements.slice(0, HOME_ANNOUNCEMENT_LIMIT);
 
   const labHead: LabHeadData = {
     name: content["labhead.name"] ?? "",
@@ -663,7 +729,7 @@ const Home: React.FC = () => {
           />
 
           <div className="flex flex-col gap-3">
-            {announcements.length === 0 ? (
+            {latestAnnouncements.length === 0 ? (
               <div
                 className="text-center py-8 rounded-xl border-2 border-dashed"
                 style={{ borderColor: sectionCardBorder }}
@@ -677,38 +743,105 @@ const Home: React.FC = () => {
                 </p>
               </div>
             ) : (
-              announcements.map((a, idx) => (
-                <div
+              latestAnnouncements.map((a, idx) => (
+                /* Links to the Announcements page with the drawer already open.
+                   That page reads ?a= on mount, so one click from here lands on
+                   the full text — and Back returns here. */
+                <Link
                   key={a.id}
-                  className="rounded-xl p-4"
+                  to={`/announcements?a=${encodeURIComponent(a.id)}`}
+                  className="no-underline block rounded-xl p-4 transition-all motion-safe:hover:-translate-y-0.5"
                   style={{
                     background: sectionCardBg,
                     border: `1px solid ${sectionCardBorder}`,
-                    borderLeft: "3px solid var(--color-accent)",
+                    borderLeft: `3px solid ${
+                      a.isPinned ? "var(--color-accent)" : "var(--color-secondary)"
+                    }`,
                     boxShadow: "0 2px 10px rgba(0,0,0,0.05)",
                     opacity: visible ? 1 : 0,
                     transform: visible ? "translateX(0)" : "translateX(16px)",
                     transition: `opacity 0.5s ease ${0.1 + idx * 0.08}s, transform 0.5s ease ${0.1 + idx * 0.08}s`,
                   }}
                 >
+                  <div className="flex items-center gap-2 mb-1.5">
+                    {a.isPinned && (
+                      <span
+                        className="text-[9.5px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded"
+                        style={{
+                          background: "rgba(245,158,11,0.15)",
+                          color: "var(--color-accent)",
+                        }}
+                      >
+                        Pinned
+                      </span>
+                    )}
+                    {announcementIsNew(a.createdAt) && (
+                      <span
+                        className="text-[9.5px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded"
+                        style={{
+                          background:
+                            "color-mix(in srgb, var(--color-secondary) 15%, transparent)",
+                          color: "var(--color-secondary)",
+                        }}
+                      >
+                        New
+                      </span>
+                    )}
+                    <span
+                      className="text-xs font-medium ml-auto"
+                      style={{ color: sectionTextMuted }}
+                    >
+                      {new Date(a.createdAt).toLocaleDateString("en-US", {
+                        year: "numeric",
+                        month: "short",
+                        day: "numeric",
+                      })}
+                    </span>
+                  </div>
+
+                  {/* The title carries the announcement now — this section used
+                      to be a wall of undifferentiated summary text. */}
                   <p
-                    className="text-sm leading-relaxed"
-                    style={{ color: sectionTextSecondary }}
+                    className="font-bold text-sm leading-snug"
+                    style={{
+                      color: sectionTextPrimary,
+                      fontFamily: "var(--font-heading)",
+                    }}
+                  >
+                    {announcementTitle(a)}
+                  </p>
+
+                  <p
+                    className="text-xs mt-1.5 leading-relaxed"
+                    style={{
+                      color: sectionTextSecondary,
+                      display: "-webkit-box",
+                      WebkitLineClamp: 2,
+                      WebkitBoxOrient: "vertical",
+                      overflow: "hidden",
+                    }}
                   >
                     {a.content}
                   </p>
-                  <p
-                    className="text-xs mt-2 font-medium"
-                    style={{ color: sectionTextMuted }}
-                  >
-                    {new Date(a.createdAt).toLocaleDateString("en-US", {
-                      year: "numeric",
-                      month: "short",
-                      day: "numeric",
-                    })}
-                  </p>
-                </div>
+                </Link>
               ))
+            )}
+
+            {publishedAnnouncements.length > latestAnnouncements.length && (
+              <Link
+                to="/announcements"
+                className="no-underline text-xs font-bold text-center py-2.5 rounded-xl border transition-all"
+                style={{
+                  color: "var(--color-secondary)",
+                  borderColor: sectionCardBorder,
+                }}
+              >
+                <EditableText
+                  id="home.viewAllAnnouncements"
+                  defaultValue="View all announcements →"
+                  className="font-bold text-xs"
+                />
+              </Link>
             )}
           </div>
         </div>
@@ -1417,6 +1550,10 @@ const LabHeadAvatar: React.FC<{
 
 // ══════════════════════════════════════════════════════════════
 // LAB HEAD MODAL
+//
+// NOTE: nothing renders this — there's no state that opens it and no import
+// elsewhere. Roughly 200 lines of dead code. Left in place because you haven't
+// said whether it's wanted; safe to delete outright if it isn't.
 // ══════════════════════════════════════════════════════════════
 const LabHeadModal: React.FC<{
   labHead: LabHeadData;
