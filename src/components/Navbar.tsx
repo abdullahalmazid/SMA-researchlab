@@ -43,6 +43,7 @@ const NAV: NavGroup[] = [
     ],
   },
   { label: "People", id: "nav-collaborators", to: "/collaborators", icon: "collaborators" },
+  { label: "News", id: "nav-announcements", to: "/announcements", icon: "about" },
   { label: "Contact", id: "nav-contact", to: "/contact", icon: "contact" },
 ];
 
