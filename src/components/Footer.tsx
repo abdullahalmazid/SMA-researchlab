@@ -4,11 +4,40 @@ import { Link } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { db } from "../firebase/config";
 import { useSiteContent } from "../firebase/hooks";
-import { DESTINATIONS } from "../navigation";
 import AppIcon, { type AppIconName } from "./AppIcon";
 import EditableText from "./EditableText";
 
 const LAB_HEAD_UID = String(import.meta.env?.VITE_LAB_HEAD_UID ?? "").trim();
+
+/* ── quick links ──────────────────────────────────────────────────────────
+   The navbar's NAV list, flattened to destinations in the order it presents
+   them. These must stay in step with the navbar by hand.
+
+   Two things to watch when you edit the navbar:
+   - `/lab-head` exists in the navbar and was missing from the old footer.
+   - The ids are shared with the navbar's EditableText, and one id must mean
+     one label. /collaborators is "People" in the navbar; the old footer called
+     it "Collaborators" under the same `nav-collaborators` id, so editing
+     either surface silently rewrote the other. It says "People" here now.
+     The mobile tab bar deliberately uses its own ids for its shorter wording. */
+
+interface FooterLink {
+  to: string;
+  label: string;
+  icon: AppIconName;
+  id: string;
+}
+
+const DESTINATIONS: FooterLink[] = [
+  { to: "/", label: "Home", icon: "home", id: "nav-home" },
+  { to: "/about", label: "The lab", icon: "building", id: "nav-about" },
+  { to: "/lab-head", label: "Lab head", icon: "admin", id: "nav-lab-head" },
+  { to: "/publications", label: "Publications", icon: "publications", id: "nav-publications" },
+  { to: "/research-ideas", label: "Research ideas", icon: "ideas", id: "nav-research-ideas" },
+  { to: "/gallery", label: "Gallery", icon: "gallery", id: "nav-gallery" },
+  { to: "/collaborators", label: "People", icon: "collaborators", id: "nav-collaborators" },
+  { to: "/contact", label: "Contact", icon: "contact", id: "nav-contact" },
+];
 
 /* ── branding fallbacks ───────────────────────────────────────────────────
    Only used when the CMS value is empty. The name was previously hardcoded in
