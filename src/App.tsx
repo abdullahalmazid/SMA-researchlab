@@ -26,6 +26,7 @@ import Login from "./pages/Login";
 import Publications from "./pages/Publications";
 import PublicationDetail from "./pages/PublicationDetail";
 import ResearchIdeas from "./pages/ResearchIdeas";
+import Announcements from "./pages/Announcements";
 
 // Portals
 import AdminDashboard from "./portals/AdminDashboard";
