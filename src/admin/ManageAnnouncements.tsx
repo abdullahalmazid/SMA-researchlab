@@ -13,21 +13,8 @@ import AppIcon from "../components/AppIcon";
 import { db } from "../firebase/config";
 import type { Announcement } from "../types";
 
-/**
- * The four fields added for the public Announcements page, declared here so
- * this file compiles against the existing Announcement type. Move them onto the
- * shared type once you're happy with the shape.
- *
- * `linkLabel` exists so the drawer's button can say "Read the paper" or "Apply
- * now" instead of a generic "Open link" on every announcement.
- */
-type Post = Announcement & {
-  title?: string;
-  body?: string;
-  category?: string;
-  link?: string;
-  linkLabel?: string;
-};
+/* `linkLabel` exists so the drawer's button can say "Read the paper" or "Apply
+   now" instead of a generic "Open link" on every announcement. */
 
 interface Draft {
   title: string;
@@ -41,6 +28,14 @@ interface Draft {
 }
 
 const SUMMARY_TARGET = 180;
+
+/** Matches NEW_DAYS on the public Announcements page. */
+const NEW_DAYS = 21;
+
+const isRecent = (iso: string) => {
+  const date = new Date(iso);
+  return !Number.isNaN(date.getTime()) && (Date.now() - date.getTime()) / 86_400_000 < NEW_DAYS;
+};
 
 const EMPTY_DRAFT = (): Draft => ({
   title: "",
@@ -79,7 +74,7 @@ const fmtDate = (iso: string) => {
 
 /* ------------------------------------------------------------------ text */
 
-function titleOf(post: Post): string {
+function titleOf(post: Announcement): string {
   if (post.title?.trim()) return post.title.trim();
   const first = (post.content || "").split(/(?<=[.!?])\s/)[0]?.trim() ?? "";
   return first.length > 90 ? `${first.slice(0, 88).trimEnd()}…` : first || "Untitled";
@@ -104,7 +99,7 @@ const BTN_QUIET = `${BTN} border border-slate-300 bg-white text-slate-700 hover:
 /* ================================================================= page */
 
 const ManageAnnouncements: React.FC = () => {
-  const [announcements, setAnnouncements] = useState<Post[]>([]);
+  const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
   const [actionError, setActionError] = useState("");
@@ -135,7 +130,7 @@ const ManageAnnouncements: React.FC = () => {
     setLoadError("");
     try {
       const snap = await getDocs(query(collection(db, "announcements"), orderBy("order", "asc")));
-      setAnnouncements(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as Post));
+      setAnnouncements(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as Announcement));
     } catch {
       setLoadError("Couldn't load announcements. Check your connection and try again.");
     } finally {
@@ -221,7 +216,7 @@ const ManageAnnouncements: React.FC = () => {
 
   /* ------------------------------------------------------------ composer */
 
-  const openComposer = (post?: Post) => {
+  const openComposer = (post?: Announcement) => {
     setFormError("");
     setActionError("");
     setPreview("card");
@@ -298,7 +293,7 @@ const ManageAnnouncements: React.FC = () => {
       } else {
         const order = announcements.reduce((max, a) => Math.max(max, a.order ?? 0), 0) + 1;
         const created = await addDoc(collection(db, "announcements"), { ...payload, order });
-        setAnnouncements((prev) => [...prev, { id: created.id, order, ...payload } as Post]);
+        setAnnouncements((prev) => [...prev, { id: created.id, order, ...payload } as Announcement]);
       }
       closeComposer();
     } catch {
@@ -311,7 +306,7 @@ const ManageAnnouncements: React.FC = () => {
 
   /* -------------------------------------------------------------- actions */
 
-  const patch = async (post: Post, changes: Partial<Post>, failure: string) => {
+  const patch = async (post: Announcement, changes: Partial<Announcement>, failure: string) => {
     setBusyId(post.id);
     setActionError("");
     setMenuFor(null);
@@ -327,7 +322,7 @@ const ManageAnnouncements: React.FC = () => {
     }
   };
 
-  const remove = async (post: Post) => {
+  const remove = async (post: Announcement) => {
     setBusyId(post.id);
     setActionError("");
     try {
@@ -357,7 +352,7 @@ const ManageAnnouncements: React.FC = () => {
     link: draft.link,
     linkLabel: draft.linkLabel,
     isPinned: draft.isPinned,
-  } as Post;
+  } as Announcement;
 
   const previewBadges = (
     <div className="flex flex-wrap items-center gap-2">
@@ -366,9 +361,13 @@ const ManageAnnouncements: React.FC = () => {
           Pinned
         </span>
       )}
-      <span className="rounded-[5px] border border-teal-200 bg-teal-50 px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-[0.08em] text-teal-700">
-        New
-      </span>
+      {/* Only for the first 21 days, same as the public page — the preview
+          used to claim "New" on a back-dated announcement. */}
+      {isRecent(fromDateInput(draft.date)) && (
+        <span className="rounded-[5px] border border-teal-200 bg-teal-50 px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-[0.08em] text-teal-700">
+          New
+        </span>
+      )}
       {draft.category && (
         <span className="rounded-[5px] bg-slate-100 px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-[0.08em] text-slate-500">
           {draft.category}
