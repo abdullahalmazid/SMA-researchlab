@@ -5,13 +5,22 @@ import { db } from "../firebase/config";
 import { useSiteContent } from "../firebase/hooks";
 import type { CloudinaryUploadResult } from "../types";
 
-type FieldType = "text" | "textarea" | "image";
+type FieldType = "text" | "textarea" | "image" | "list";
+
+interface ListColumn {
+  key: string;
+  label: string;
+  /** Rough share of the row. Defaults to an equal split. */
+  width?: string;
+}
 
 interface FieldConfig {
   key: string;
   label: string;
   type: FieldType;
   hint?: string;
+  columns?: ListColumn[];
+  addLabel?: string;
 }
 
 interface FieldGroup {
@@ -19,7 +28,165 @@ interface FieldGroup {
   fields: FieldConfig[];
 }
 
-// All editable fields grouped by tab
+/* ------------------------------------------------------------------ *
+ * List rows
+ *
+ * The CV-style content on the Lab Head page is lists — appointments, degrees,
+ * awards, grants, supervised theses. A single textarea can only hold those as
+ * delimited text, where one stray comma silently breaks a row. This stores an
+ * array of objects as JSON inside the same { value: string } document, so
+ * Firestore's shape, useSiteContent and EditableText are all unchanged.
+ * ------------------------------------------------------------------ */
+
+type ListRow = Record<string, string>;
+
+function parseRows(value: string): { rows: ListRow[]; malformed: boolean } {
+  const raw = (value ?? "").trim();
+  if (!raw) return { rows: [], malformed: false };
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return { rows: [], malformed: true };
+    return {
+      rows: parsed.map((row) =>
+        row && typeof row === "object" ? (row as ListRow) : {},
+      ),
+      malformed: false,
+    };
+  } catch {
+    return { rows: [], malformed: true };
+  }
+}
+
+const ListEditor: React.FC<{
+  columns: ListColumn[];
+  value: string;
+  onChange: (next: string) => void;
+  addLabel?: string;
+  compact?: boolean;
+}> = ({ columns, value, onChange, addLabel = "Add row", compact }) => {
+  const { rows, malformed } = parseRows(value);
+
+  const write = (next: ListRow[]) => onChange(JSON.stringify(next, null, 0));
+
+  const update = (index: number, key: string, next: string) =>
+    write(rows.map((row, i) => (i === index ? { ...row, [key]: next } : row)));
+
+  const move = (index: number, delta: number) => {
+    const target = index + delta;
+    if (target < 0 || target >= rows.length) return;
+    const next = [...rows];
+    [next[index], next[target]] = [next[target], next[index]];
+    write(next);
+  };
+
+  /* Rather than silently replacing content it can't read, show the raw text so
+     nothing is lost and the damage is visible. */
+  if (malformed) {
+    return (
+      <div>
+        <p className="mb-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">
+          This field isn&apos;t valid list data, so it&apos;s shown as raw text. Fix or clear it to
+          get the row editor back — nothing has been overwritten.
+        </p>
+        <textarea
+          rows={5}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          className="w-full rounded-xl border px-4 py-2.5 font-mono text-xs outline-none"
+          style={{ borderColor: "#e5e7eb", resize: "vertical" }}
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      {rows.length === 0 ? (
+        <p className="mb-3 rounded-xl border border-dashed px-4 py-6 text-center text-xs text-gray-400"
+           style={{ borderColor: "#e5e7eb" }}>
+          Nothing added yet. The website falls back to its built-in content until you add rows here.
+        </p>
+      ) : (
+        <ol className={`mb-3 flex flex-col ${compact ? "gap-2" : "gap-3"}`}>
+          {rows.map((row, index) => (
+            <li
+              key={index}
+              className="rounded-xl border p-3"
+              style={{ borderColor: "#eef2f7", background: "#fbfcfe" }}
+            >
+              <div className="mb-2 flex items-center gap-2">
+                <span className="text-[11px] font-bold tabular-nums text-gray-400">
+                  {index + 1}
+                </span>
+                <div className="ml-auto flex gap-1">
+                  <button
+                    type="button"
+                    onClick={() => move(index, -1)}
+                    disabled={index === 0}
+                    aria-label={`Move row ${index + 1} up`}
+                    className="rounded-lg bg-slate-100 px-2 py-1 text-xs font-bold text-slate-600 disabled:opacity-40"
+                  >
+                    ↑
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => move(index, 1)}
+                    disabled={index === rows.length - 1}
+                    aria-label={`Move row ${index + 1} down`}
+                    className="rounded-lg bg-slate-100 px-2 py-1 text-xs font-bold text-slate-600 disabled:opacity-40"
+                  >
+                    ↓
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => write(rows.filter((_, i) => i !== index))}
+                    aria-label={`Remove row ${index + 1}`}
+                    className="rounded-lg bg-rose-50 px-2 py-1 text-xs font-bold text-rose-700"
+                  >
+                    Remove
+                  </button>
+                </div>
+              </div>
+
+              <div className="grid gap-2" style={{ gridTemplateColumns: columns.map((c) => c.width ?? "1fr").join(" ") }}>
+                {columns.map((column) => (
+                  <label key={column.key} className="block">
+                    <span className="mb-1 block text-[10.5px] font-semibold uppercase tracking-wider text-gray-400">
+                      {column.label}
+                    </span>
+                    <input
+                      type="text"
+                      value={row[column.key] ?? ""}
+                      onChange={(e) => update(index, column.key, e.target.value)}
+                      className="w-full rounded-lg border px-3 py-2 text-sm outline-none"
+                      style={{ borderColor: "#e5e7eb", background: "white" }}
+                    />
+                  </label>
+                ))}
+              </div>
+            </li>
+          ))}
+        </ol>
+      )}
+
+      <button
+        type="button"
+        onClick={() =>
+          write([...rows, Object.fromEntries(columns.map((c) => [c.key, ""]))])
+        }
+        className="rounded-xl border px-4 py-2 text-xs font-bold"
+        style={{ borderColor: "#d1d5db", background: "white", color: "#374151" }}
+      >
+        + {addLabel}
+      </button>
+    </div>
+  );
+};
+
+/* ------------------------------------------------------------------ *
+ * Fields
+ * ------------------------------------------------------------------ */
+
 const FIELD_GROUPS: FieldGroup[] = [
   {
     tab: "Home",
@@ -94,10 +261,134 @@ const FIELD_GROUPS: FieldGroup[] = [
       { key: "labhead.scholar", label: "Google Scholar URL", type: "text" },
       { key: "labhead.orcid", label: "ORCID URL", type: "text" },
       { key: "labhead.researchgate", label: "ResearchGate URL", type: "text" },
+      { key: "labhead.scopus", label: "Scopus URL", type: "text" },
       {
         key: "labhead.researchInterests",
         label: "Research Interests (comma separated)",
         type: "text",
+      },
+
+      /* Metrics — separate from the lists because these are the numbers that go
+         stale, and the "as of" date is what stops them going stale silently. */
+      {
+        key: "labhead.metrics.citations",
+        label: "Citations",
+        type: "text",
+        hint: "Google Scholar total, e.g. 12,160",
+      },
+      { key: "labhead.metrics.hIndex", label: "h-index", type: "text" },
+      { key: "labhead.metrics.i10Index", label: "i10-index", type: "text" },
+      {
+        key: "labhead.metrics.publications",
+        label: "Journal Articles",
+        type: "text",
+      },
+      {
+        key: "labhead.metrics.experienceYears",
+        label: "Years in Teaching & Research",
+        type: "text",
+      },
+      {
+        key: "labhead.metrics.asOf",
+        label: "Figures Accurate As Of",
+        type: "text",
+        hint: "Shown beside the metrics, e.g. August 2026",
+      },
+
+      /* Record — the CV lists. */
+      {
+        key: "labhead.appointments",
+        label: "Academic Appointments",
+        type: "list",
+        addLabel: "appointment",
+        columns: [
+          { key: "period", label: "Period", width: "0.8fr" },
+          { key: "role", label: "Role", width: "1fr" },
+          { key: "organisation", label: "Organisation", width: "1.4fr" },
+        ],
+      },
+      {
+        key: "labhead.leadership",
+        label: "Leadership Positions",
+        type: "list",
+        addLabel: "position",
+        columns: [
+          { key: "period", label: "Period", width: "0.8fr" },
+          { key: "role", label: "Role", width: "1fr" },
+          { key: "organisation", label: "Organisation", width: "1.4fr" },
+        ],
+      },
+      {
+        key: "labhead.education",
+        label: "Education",
+        type: "list",
+        addLabel: "degree",
+        columns: [
+          { key: "year", label: "Year", width: "0.5fr" },
+          { key: "degree", label: "Degree", width: "1.2fr" },
+          { key: "institution", label: "Institution", width: "1.5fr" },
+        ],
+      },
+      {
+        key: "labhead.honours",
+        label: "Honours & Awards",
+        type: "list",
+        addLabel: "honour",
+        columns: [
+          { key: "year", label: "Year", width: "0.5fr" },
+          { key: "title", label: "Award", width: "1.5fr" },
+          { key: "awardedBy", label: "Awarded by", width: "1.2fr" },
+        ],
+      },
+      {
+        key: "labhead.grants",
+        label: "Research Funding",
+        type: "list",
+        addLabel: "grant",
+        columns: [
+          { key: "year", label: "Year", width: "0.6fr" },
+          { key: "title", label: "Project", width: "1.8fr" },
+          { key: "funder", label: "Funder", width: "1fr" },
+          { key: "amount", label: "Amount", width: "0.8fr" },
+        ],
+      },
+      {
+        key: "labhead.editorial",
+        label: "Editorial & Peer Review",
+        type: "list",
+        addLabel: "role",
+        columns: [
+          { key: "role", label: "Role", width: "1fr" },
+          { key: "outlet", label: "Journal / Publisher", width: "2fr" },
+        ],
+      },
+      {
+        key: "labhead.supervision",
+        label: "Graduate Supervision",
+        type: "list",
+        addLabel: "thesis",
+        columns: [
+          { key: "year", label: "Year", width: "0.5fr" },
+          { key: "researcher", label: "Researcher", width: "1fr" },
+          { key: "thesis", label: "Thesis", width: "2.4fr" },
+        ],
+      },
+      {
+        key: "labhead.collaborations",
+        label: "International Collaborations",
+        type: "list",
+        addLabel: "institution",
+        columns: [
+          { key: "institution", label: "Institution", width: "2fr" },
+          { key: "country", label: "Country", width: "1fr" },
+        ],
+      },
+      {
+        key: "labhead.venues",
+        label: "Selected Journals",
+        type: "list",
+        addLabel: "journal",
+        columns: [{ key: "name", label: "Journal" }],
       },
     ],
   },
@@ -198,6 +489,18 @@ const FIELD_GROUPS: FieldGroup[] = [
     ],
   },
   {
+    /* New: the Announcements page reads these and nothing could set them. */
+    tab: "Announcements",
+    fields: [
+      { key: "announcements.pageTitle", label: "Page Title", type: "text" },
+      {
+        key: "announcements.pageSubtitle",
+        label: "Page Subtitle",
+        type: "text",
+      },
+    ],
+  },
+  {
     tab: "Research Ideas",
     fields: [
       { key: "ideas.pageTitle", label: "Page Title", type: "text" },
@@ -248,6 +551,26 @@ const FIELD_GROUPS: FieldGroup[] = [
       },
     ],
   },
+  {
+    /* New: the Footer reads all three and there was no way to edit them. */
+    tab: "Branding",
+    fields: [
+      { key: "branding.labName", label: "Lab Name", type: "text" },
+      {
+        key: "branding.institution",
+        label: "Institution",
+        type: "text",
+        hint: "Shown under the lab name in the footer",
+      },
+      {
+        key: "branding.logoUrl",
+        label: "Logo",
+        type: "image",
+        hint: "Square, at least 128×128px. Without one, the lab's initial is used.",
+      },
+      { key: "footer.tagline", label: "Footer Tagline", type: "textarea" },
+    ],
+  },
 ];
 
 const sectionTitleFromKey = (key: string) => {
@@ -265,6 +588,22 @@ const sectionTitleFromKey = (key: string) => {
   if (subKey.startsWith("mission")) return "Mission";
   if (subKey.startsWith("vision")) return "Vision";
   if (subKey.includes("banner")) return "Banner";
+  if (subKey === "metrics") return "Metrics";
+  if (
+    [
+      "appointments",
+      "leadership",
+      "education",
+      "honours",
+      "grants",
+      "editorial",
+      "supervision",
+      "collaborations",
+      "venues",
+    ].includes(subKey)
+  ) {
+    return "Academic record";
+  }
   return "General";
 };
 
@@ -317,17 +656,22 @@ const ContentEditor: React.FC = () => {
 
   const saveAll = async (groupFields: FieldConfig[]) => {
     const dirtyKeys = groupFields.filter((f) => dirty[f.key]).map((f) => f.key);
-    const keysToSave = dirtyKeys.length
-      ? dirtyKeys
-      : groupFields.map((f) => f.key);
+
+    /* Previously, with nothing modified this fell through to writing *every*
+       field on the tab from local state — which, if it ran before content had
+       loaded, wrote empty strings over live values. */
+    if (dirtyKeys.length === 0) {
+      setNotice({ type: "success", text: "Nothing to publish — every field on this tab is already saved." });
+      return;
+    }
 
     setSavingAll(true);
     setNotice(null);
     try {
-      for (const key of keysToSave) {
+      for (const key of dirtyKeys) {
         await saveField(key);
       }
-      setNotice({ type: "success", text: `${keysToSave.length} field${keysToSave.length === 1 ? "" : "s"} saved successfully.` });
+      setNotice({ type: "success", text: `${dirtyKeys.length} field${dirtyKeys.length === 1 ? "" : "s"} saved successfully.` });
     } catch {
       // The field-level error contains the exact Firestore failure.
     } finally {
@@ -498,7 +842,7 @@ const ContentEditor: React.FC = () => {
                 >
                   <span className="flex items-center gap-1.5">
                     {g.tab}
-                    {g.tab === "Lab Head" && (
+                    {(g.tab === "Announcements" || g.tab === "Branding") && (
                       <span
                         className="text-[11px] px-1.5 py-0.5 rounded-full"
                         style={{
@@ -563,17 +907,6 @@ const ContentEditor: React.FC = () => {
                     }}
                   >
                     {tabDirtyCount(g.tab)}
-                  </span>
-                )}
-                {g.tab === "Lab Head" && (
-                  <span
-                    className="ml-1.5 text-xs px-1.5 py-0.5 rounded-full"
-                    style={{
-                      background: "var(--color-accent)",
-                      color: "#1f2937",
-                    }}
-                  >
-                    New
                   </span>
                 )}
               </button>
@@ -661,8 +994,12 @@ const ContentEditor: React.FC = () => {
             style={{ borderColor: "#e5e7eb" }}
           >
             <div className="flex flex-wrap items-center gap-2">
+              <label htmlFor="content-search" className="sr-only">
+                Search fields
+              </label>
               <input
-                type="text"
+                id="content-search"
+                type="search"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Search field by label or key (e.g. hero, banner, contact.email)..."
@@ -719,6 +1056,7 @@ const ContentEditor: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => toggleSection(section)}
+                  aria-expanded={Boolean(openSections[`${activeTab}:${section}`])}
                   className="mb-1 flex w-full items-center justify-between rounded-2xl border border-slate-200 bg-gradient-to-r from-slate-50 to-indigo-50/60 px-4 py-3 text-left hover:border-indigo-200"
                 >
                   <span>
@@ -793,6 +1131,10 @@ const ContentEditor: React.FC = () => {
                           </div>
                         </div>
 
+                        {field.hint && (
+                          <p className="mb-3 text-xs text-gray-400">{field.hint}</p>
+                        )}
+
                         {field.type === "image" ? (
                           <div>
                             <CloudinaryUpload
@@ -822,6 +1164,14 @@ const ContentEditor: React.FC = () => {
                               </button>
                             )}
                           </div>
+                        ) : field.type === "list" ? (
+                          <ListEditor
+                            columns={field.columns ?? [{ key: "value", label: "Value" }]}
+                            value={values[field.key] ?? ""}
+                            onChange={(next) => setFieldValue(field.key, next)}
+                            addLabel={field.addLabel}
+                            compact={compactMode}
+                          />
                         ) : field.type === "textarea" ? (
                           <div>
                             <textarea
