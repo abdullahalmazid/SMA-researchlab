@@ -142,12 +142,20 @@ export interface ContactMessage {
 
 export interface Announcement {
   id: string;
-  content: string;
+  content: string; // the summary — the line shown in lists and on Home
   createdAt: string;
   order: number;
   updatedAt?: string;
   isPinned?: boolean;
-  isHidden?: boolean;
+  isHidden?: boolean; // draft: written but not published
+  /* Optional because announcements written before these fields existed don't
+     have them. Every consumer falls back: no title and one is derived from the
+     first sentence of `content`; no body and the detail drawer shows `content`. */
+  title?: string;
+  body?: string; // the full text, shown in the detail drawer
+  category?: string;
+  link?: string;
+  linkLabel?: string; // the drawer button's text, e.g. "Read the paper"
 }
 
 export interface ThemeSettings {
@@ -201,6 +209,9 @@ export interface SiteContent {
   "publications.ongoingSubtitle": string;
   "publications.publishedTitle": string;
   "publications.publishedSubtitle": string;
+  // Announcements
+  "announcements.pageTitle": string;
+  "announcements.pageSubtitle": string;
   // Research Ideas
   "ideas.pageTitle": string;
   "ideas.pageSubtitle": string;
