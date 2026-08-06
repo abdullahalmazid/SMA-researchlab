@@ -95,6 +95,31 @@ export const normalizeResearchIdea = (id: string, raw: Record<string, unknown>):
   isPinned: raw.isPinned === true,
 });
 
+/**
+ * Announcements were the one collection read through an inline object literal
+ * instead of a normalizer, and that literal named seven fields. The admin panel
+ * writes twelve — so title, body, category, link and linkLabel were written to
+ * Firestore and then dropped on the way out, and the public page fell back to
+ * deriving a title from the summary with an empty detail panel.
+ *
+ * Empty strings rather than undefined: every consumer already treats "" as
+ * absent, and it keeps the shape uniform.
+ */
+export const normalizeAnnouncement = (id: string, raw: Record<string, unknown>): Announcement => ({
+  id,
+  title: text(raw.title),
+  content: text(raw.content),
+  body: text(raw.body),
+  category: text(raw.category),
+  link: text(raw.link),
+  linkLabel: text(raw.linkLabel),
+  order: Number(raw.order) || 0,
+  isPinned: raw.isPinned === true,
+  isHidden: raw.isHidden === true,
+  createdAt: iso(raw.createdAt),
+  updatedAt: text(raw.updatedAt) || undefined,
+});
+
 const normalizeComment = (id: string, raw: Record<string, unknown>): AppComment => ({
   id,
   ideaId: text(raw.ideaId),
@@ -296,9 +321,17 @@ export function useAnnouncements() {
       collection(db, "announcements"),
       (snap) => {
         const all = snap.docs
-          .map((d) => ({ id: d.id, content: text(d.data().content), createdAt: iso(d.data().createdAt), order: Number(d.data().order) || 0, updatedAt: text(d.data().updatedAt) || undefined, isPinned: d.data().isPinned === true, isHidden: d.data().isHidden === true } as Announcement))
+          .map((d) => normalizeAnnouncement(d.id, d.data()))
           .filter((item) => !item.isHidden)
-          .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+          /* Pinned first, then newest first. Sorting by `order` ascending gave
+             oldest-first, which is why the lab's very first announcement sat at
+             the top of a section titled "Latest Updates". `order` is still
+             written by the admin panel; nothing reads it for display now. */
+          .sort(
+            (a, b) =>
+              Number(Boolean(b.isPinned)) - Number(Boolean(a.isPinned)) ||
+              b.createdAt.localeCompare(a.createdAt),
+          );
         setAnnouncements(all);
       },
       (error) => {
