@@ -1,26 +1,14 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import AppIcon from "../components/AppIcon";
 import EditableText from "../components/EditableText";
 import { useThemeContext } from "../context/ThemeContext";
 import { useAnnouncements, useSiteContent } from "../firebase/hooks";
 import type { Announcement } from "../types";
 
-/**
- * Four optional fields the admin panel can start writing. Declared here rather
- * than in types.ts so this page compiles against the existing Announcement
- * shape — move them onto the shared type once ManageAnnouncements writes them.
- *
- * Everything degrades: no title and one is derived from the first sentence of
- * `content`; no body and the detail drawer shows `content`.
- */
-type Post = Announcement & {
-  title?: string;
-  body?: string;
-  category?: string;
-  link?: string;
-  linkLabel?: string;
-};
+/* title, body, category, link and linkLabel are optional on the shared type:
+   announcements written before those fields existed simply don't have them, and
+   everything degrades — no title and one is derived from the first sentence of
+   `content`; no body and the drawer shows `content`. */
 
 const PARAM = { open: "a", search: "q", category: "topic" } as const;
 
@@ -62,13 +50,13 @@ const isRecent = (value: string) => {
 /* ------------------------------------------------------------------ text */
 
 /** First sentence, trimmed to a headline length. */
-function titleOf(post: Post): string {
+function titleOf(post: Announcement): string {
   if (post.title?.trim()) return post.title.trim();
   const first = (post.content || "").split(/(?<=[.!?])\s/)[0]?.trim() ?? "";
   return first.length > 90 ? `${first.slice(0, 88).trimEnd()}…` : first || "Untitled";
 }
 
-const bodyOf = (post: Post) => post.body?.trim() || post.content || "";
+const bodyOf = (post: Announcement) => post.body?.trim() || post.content || "";
 const norm = (value?: string) => (value ?? "").toLowerCase();
 
 /* ----------------------------------------------------------------- theme */
@@ -111,7 +99,7 @@ type Tokens = ReturnType<typeof buildTokens>;
 
 /* ------------------------------------------------------------------ bits */
 
-const Badges: React.FC<{ post: Post; t: Tokens }> = ({ post, t }) => (
+const Badges: React.FC<{ post: Announcement; t: Tokens }> = ({ post, t }) => (
   <>
     {post.isPinned && (
       <span
@@ -159,7 +147,7 @@ const CardSkeleton: React.FC<{ t: Tokens }> = ({ t }) => (
 /* ================================================================== page */
 
 const Announcements: React.FC = () => {
-  const announcements = useAnnouncements() as Post[];
+  const announcements = useAnnouncements();
   const { content } = useSiteContent();
   const { theme } = useThemeContext();
   const navigate = useNavigate();
@@ -321,7 +309,7 @@ const Announcements: React.FC = () => {
   const grouped = useMemo(() => {
     const pinned = visible.filter((post) => post.isPinned);
     const rest = visible.filter((post) => !post.isPinned);
-    const months: { label: string; posts: Post[] }[] = [];
+    const months: { label: string; posts: Announcement[] }[] = [];
     rest.forEach((post) => {
       const label = monthOf(post.createdAt);
       const last = months[months.length - 1];
@@ -341,7 +329,7 @@ const Announcements: React.FC = () => {
     </h2>
   );
 
-  const card = (post: Post) => (
+  const card = (post: Announcement) => (
     <button
       key={post.id}
       type="button"
@@ -692,9 +680,6 @@ const Announcements: React.FC = () => {
           </button>
           <span className="text-[11.5px] tabular-nums" style={{ color: t.faint }}>
             {openIndex >= 0 ? `${openIndex + 1} of ${visible.length}` : ""}
-          </span>
-          <span className="ml-auto">
-            <AppIcon name="about" size={14} />
           </span>
         </div>
       </aside>
