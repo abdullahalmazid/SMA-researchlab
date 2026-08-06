@@ -10,7 +10,7 @@ type FieldType = "text" | "textarea" | "image" | "list";
 interface ListColumn {
   key: string;
   label: string;
-  /** Rough share of the row. Defaults to an equal split. */
+  /** Relative share of the row's width. Columns wrap on narrow screens. */
   width?: string;
 }
 
@@ -21,6 +21,8 @@ interface FieldConfig {
   hint?: string;
   columns?: ListColumn[];
   addLabel?: string;
+  /** Explicit grouping. Without it the section is guessed from the key. */
+  section?: string;
 }
 
 interface FieldGroup {
@@ -40,6 +42,10 @@ interface FieldGroup {
 
 type ListRow = Record<string, string>;
 
+/** Rows collapse to one line each past this many — 26 supervised theses open at
+ *  once buries every other field on the tab. */
+const COLLAPSE_THRESHOLD = 6;
+
 function parseRows(value: string): { rows: ListRow[]; malformed: boolean } {
   const raw = (value ?? "").trim();
   if (!raw) return { rows: [], malformed: false };
@@ -57,26 +63,53 @@ function parseRows(value: string): { rows: ListRow[]; malformed: boolean } {
   }
 }
 
+/** "1.4fr" → 1.4. Used as a flex-grow, so columns share space on a wide screen
+ *  and stack on a narrow one without needing a media query. */
+const growOf = (width?: string) => Number.parseFloat(width ?? "1") || 1;
+
+const summarise = (row: ListRow, columns: ListColumn[]) =>
+  columns
+    .slice(0, 2)
+    .map((column) => (row[column.key] ?? "").trim())
+    .filter(Boolean)
+    .join("  ·  ");
+
+const ROW_BTN =
+  "rounded-lg px-2 py-1 text-xs font-bold transition disabled:opacity-40 disabled:cursor-not-allowed";
+
 const ListEditor: React.FC<{
   columns: ListColumn[];
   value: string;
   onChange: (next: string) => void;
   addLabel?: string;
   compact?: boolean;
-}> = ({ columns, value, onChange, addLabel = "Add row", compact }) => {
+}> = ({ columns, value, onChange, addLabel = "row", compact }) => {
   const { rows, malformed } = parseRows(value);
+  const [openRows, setOpenRows] = useState<Record<number, boolean>>({});
 
-  const write = (next: ListRow[]) => onChange(JSON.stringify(next, null, 0));
+  const collapsible = rows.length > COLLAPSE_THRESHOLD;
+  const isOpen = (index: number) => !collapsible || Boolean(openRows[index]);
+
+  /* Any structural change reshuffles indices, so the open map is discarded
+     rather than left pointing at whatever now sits at that position. */
+  const write = (next: ListRow[], nextOpen: Record<number, boolean> = {}) => {
+    setOpenRows(nextOpen);
+    onChange(JSON.stringify(next));
+  };
 
   const update = (index: number, key: string, next: string) =>
-    write(rows.map((row, i) => (i === index ? { ...row, [key]: next } : row)));
+    onChange(
+      JSON.stringify(
+        rows.map((row, i) => (i === index ? { ...row, [key]: next } : row)),
+      ),
+    );
 
   const move = (index: number, delta: number) => {
     const target = index + delta;
     if (target < 0 || target >= rows.length) return;
     const next = [...rows];
     [next[index], next[target]] = [next[target], next[index]];
-    write(next);
+    write(next, { [target]: true });
   };
 
   /* Rather than silently replacing content it can't read, show the raw text so
@@ -99,32 +132,100 @@ const ListEditor: React.FC<{
     );
   }
 
+  const addRow = () =>
+    write(
+      [...rows, Object.fromEntries(columns.map((c) => [c.key, ""]))],
+      { [rows.length]: true },
+    );
+
   return (
-    <div>
+    <div className="rounded-xl border" style={{ borderColor: "#eef2f7" }}>
+      {/* Toolbar. The count is the point: it tells you what you're about to
+          open without opening it. */}
+      <div
+        className="flex flex-wrap items-center gap-2 rounded-t-xl border-b px-3 py-2"
+        style={{ borderColor: "#eef2f7", background: "#f8fafc" }}
+      >
+        <span className="text-xs font-bold text-slate-600">
+          {rows.length} {rows.length === 1 ? "entry" : "entries"}
+        </span>
+
+        {collapsible && (
+          <>
+            <button
+              type="button"
+              onClick={() =>
+                setOpenRows(Object.fromEntries(rows.map((_, i) => [i, true])))
+              }
+              className={`${ROW_BTN} bg-white text-slate-600 ring-1 ring-slate-200`}
+            >
+              Expand all
+            </button>
+            <button
+              type="button"
+              onClick={() => setOpenRows({})}
+              className={`${ROW_BTN} bg-white text-slate-600 ring-1 ring-slate-200`}
+            >
+              Collapse all
+            </button>
+          </>
+        )}
+
+        <button
+          type="button"
+          onClick={addRow}
+          className={`${ROW_BTN} ml-auto bg-indigo-600 text-white`}
+        >
+          + Add {addLabel}
+        </button>
+      </div>
+
       {rows.length === 0 ? (
-        <p className="mb-3 rounded-xl border border-dashed px-4 py-6 text-center text-xs text-gray-400"
-           style={{ borderColor: "#e5e7eb" }}>
-          Nothing added yet. The website falls back to its built-in content until you add rows here.
+        <p className="px-4 py-7 text-center text-xs text-gray-400">
+          Nothing added yet. The website shows its built-in content until you add entries here.
         </p>
       ) : (
-        <ol className={`mb-3 flex flex-col ${compact ? "gap-2" : "gap-3"}`}>
+        <ol className={`flex flex-col ${compact ? "gap-1.5" : "gap-2"} p-3`}>
           {rows.map((row, index) => (
             <li
               key={index}
-              className="rounded-xl border p-3"
-              style={{ borderColor: "#eef2f7", background: "#fbfcfe" }}
+              className="rounded-lg border"
+              style={{
+                borderColor: isOpen(index) ? "#dbeafe" : "#eef2f7",
+                background: isOpen(index) ? "#fbfcfe" : "white",
+              }}
             >
-              <div className="mb-2 flex items-center gap-2">
-                <span className="text-[11px] font-bold tabular-nums text-gray-400">
+              <div className="flex items-center gap-2 px-3 py-2">
+                <span className="w-5 shrink-0 text-[11px] font-bold tabular-nums text-gray-400">
                   {index + 1}
                 </span>
-                <div className="ml-auto flex gap-1">
+
+                {collapsible ? (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setOpenRows((prev) => ({ ...prev, [index]: !prev[index] }))
+                    }
+                    aria-expanded={isOpen(index)}
+                    className="min-w-0 flex-1 truncate text-left text-[13px] font-medium text-slate-700 hover:text-slate-900"
+                  >
+                    {summarise(row, columns) || (
+                      <span className="text-gray-400">Empty entry</span>
+                    )}
+                  </button>
+                ) : (
+                  <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-slate-500">
+                    {summarise(row, columns)}
+                  </span>
+                )}
+
+                <div className="flex shrink-0 gap-1">
                   <button
                     type="button"
                     onClick={() => move(index, -1)}
                     disabled={index === 0}
-                    aria-label={`Move row ${index + 1} up`}
-                    className="rounded-lg bg-slate-100 px-2 py-1 text-xs font-bold text-slate-600 disabled:opacity-40"
+                    aria-label={`Move entry ${index + 1} up`}
+                    className={`${ROW_BTN} bg-slate-100 text-slate-600`}
                   >
                     ↑
                   </button>
@@ -132,53 +233,51 @@ const ListEditor: React.FC<{
                     type="button"
                     onClick={() => move(index, 1)}
                     disabled={index === rows.length - 1}
-                    aria-label={`Move row ${index + 1} down`}
-                    className="rounded-lg bg-slate-100 px-2 py-1 text-xs font-bold text-slate-600 disabled:opacity-40"
+                    aria-label={`Move entry ${index + 1} down`}
+                    className={`${ROW_BTN} bg-slate-100 text-slate-600`}
                   >
                     ↓
                   </button>
                   <button
                     type="button"
                     onClick={() => write(rows.filter((_, i) => i !== index))}
-                    aria-label={`Remove row ${index + 1}`}
-                    className="rounded-lg bg-rose-50 px-2 py-1 text-xs font-bold text-rose-700"
+                    aria-label={`Remove entry ${index + 1}`}
+                    className={`${ROW_BTN} bg-rose-50 text-rose-700`}
                   >
                     Remove
                   </button>
                 </div>
               </div>
 
-              <div className="grid gap-2" style={{ gridTemplateColumns: columns.map((c) => c.width ?? "1fr").join(" ") }}>
-                {columns.map((column) => (
-                  <label key={column.key} className="block">
-                    <span className="mb-1 block text-[10.5px] font-semibold uppercase tracking-wider text-gray-400">
-                      {column.label}
-                    </span>
-                    <input
-                      type="text"
-                      value={row[column.key] ?? ""}
-                      onChange={(e) => update(index, column.key, e.target.value)}
-                      className="w-full rounded-lg border px-3 py-2 text-sm outline-none"
-                      style={{ borderColor: "#e5e7eb", background: "white" }}
-                    />
-                  </label>
-                ))}
-              </div>
+              {isOpen(index) && (
+                /* Flex rather than a fixed grid: the widths act as flex-grow, so
+                   columns share a wide row and wrap on a narrow one — a 4-column
+                   grid on a phone gives you four unusable slivers. */
+                <div className="flex flex-wrap gap-2 border-t px-3 py-3" style={{ borderColor: "#eef2f7" }}>
+                  {columns.map((column) => (
+                    <label
+                      key={column.key}
+                      className="block min-w-[170px]"
+                      style={{ flex: `${growOf(column.width)} 1 170px` }}
+                    >
+                      <span className="mb-1 block text-[10.5px] font-semibold uppercase tracking-wider text-gray-400">
+                        {column.label}
+                      </span>
+                      <input
+                        type="text"
+                        value={row[column.key] ?? ""}
+                        onChange={(e) => update(index, column.key, e.target.value)}
+                        className="w-full rounded-lg border px-3 py-2 text-sm outline-none"
+                        style={{ borderColor: "#e5e7eb", background: "white" }}
+                      />
+                    </label>
+                  ))}
+                </div>
+              )}
             </li>
           ))}
         </ol>
       )}
-
-      <button
-        type="button"
-        onClick={() =>
-          write([...rows, Object.fromEntries(columns.map((c) => [c.key, ""]))])
-        }
-        className="rounded-xl border px-4 py-2 text-xs font-bold"
-        style={{ borderColor: "#d1d5db", background: "white", color: "#374151" }}
-      >
-        + {addLabel}
-      </button>
     </div>
   );
 };
@@ -230,160 +329,184 @@ const FIELD_GROUPS: FieldGroup[] = [
     ],
   },
   {
+    /* Explicit sections here. Derived from the key, every one of these landed
+       in a single "General" bucket of fourteen fields. */
     tab: "Lab Head",
     fields: [
-      { key: "labhead.name", label: "Full Name", type: "text" },
-      { key: "labhead.title", label: "Title / Position", type: "text" },
+      { section: "Identity", key: "labhead.name", label: "Full Name", type: "text" },
+      { section: "Identity", key: "labhead.title", label: "Title / Position", type: "text" },
       {
+        section: "Identity",
         key: "labhead.department",
         label: "Department & University",
         type: "text",
       },
       {
+        section: "Identity",
         key: "labhead.photo",
         label: "Profile Photo",
         type: "image",
-        hint: "Recommended: square, at least 400×400px",
+        hint: "Square, at least 400×400px. Shown at up to 320px on the profile page.",
       },
+
       {
+        section: "Biography",
         key: "labhead.shortBio",
-        label: "Short Bio (shown on Home page)",
+        label: "Short Bio",
         type: "textarea",
+        hint: "Also used on the Home page hero card, where it clamps to four lines — keep it to roughly 60 words.",
       },
       {
+        section: "Biography",
         key: "labhead.fullBio",
-        label: "Full Bio (shown on profile page)",
+        label: "Full Bio",
         type: "textarea",
+        hint: "Shown on the profile page beneath the short bio. Leave a blank line between paragraphs.",
       },
-      { key: "labhead.email", label: "Email", type: "text" },
-      { key: "labhead.phone", label: "Phone", type: "text" },
-      { key: "labhead.linkedin", label: "LinkedIn URL", type: "text" },
-      { key: "labhead.scholar", label: "Google Scholar URL", type: "text" },
-      { key: "labhead.orcid", label: "ORCID URL", type: "text" },
-      { key: "labhead.researchgate", label: "ResearchGate URL", type: "text" },
-      { key: "labhead.scopus", label: "Scopus URL", type: "text" },
       {
+        section: "Biography",
         key: "labhead.researchInterests",
-        label: "Research Interests (comma separated)",
+        label: "Research Interests",
         type: "text",
+        hint: "Comma separated. Each becomes a chip on the profile page.",
       },
+
+      { section: "Contact & profiles", key: "labhead.email", label: "Email", type: "text" },
+      { section: "Contact & profiles", key: "labhead.phone", label: "Phone", type: "text" },
+      { section: "Contact & profiles", key: "labhead.linkedin", label: "LinkedIn URL", type: "text" },
+      { section: "Contact & profiles", key: "labhead.scholar", label: "Google Scholar URL", type: "text" },
+      { section: "Contact & profiles", key: "labhead.orcid", label: "ORCID URL", type: "text" },
+      { section: "Contact & profiles", key: "labhead.researchgate", label: "ResearchGate URL", type: "text" },
+      { section: "Contact & profiles", key: "labhead.scopus", label: "Scopus URL", type: "text" },
 
       /* Metrics — separate from the lists because these are the numbers that go
          stale, and the "as of" date is what stops them going stale silently. */
       {
+        section: "Metrics",
         key: "labhead.metrics.citations",
         label: "Citations",
         type: "text",
         hint: "Google Scholar total, e.g. 12,160",
       },
-      { key: "labhead.metrics.hIndex", label: "h-index", type: "text" },
-      { key: "labhead.metrics.i10Index", label: "i10-index", type: "text" },
+      { section: "Metrics", key: "labhead.metrics.hIndex", label: "h-index", type: "text" },
+      { section: "Metrics", key: "labhead.metrics.i10Index", label: "i10-index", type: "text" },
       {
+        section: "Metrics",
         key: "labhead.metrics.publications",
         label: "Journal Articles",
         type: "text",
       },
       {
+        section: "Metrics",
         key: "labhead.metrics.experienceYears",
         label: "Years in Teaching & Research",
         type: "text",
       },
       {
+        section: "Metrics",
         key: "labhead.metrics.asOf",
         label: "Figures Accurate As Of",
         type: "text",
-        hint: "Shown beside the metrics, e.g. August 2026",
+        hint: "Printed beside the metrics, e.g. August 2026. Update it whenever you update a number.",
       },
 
-      /* Record — the CV lists. */
       {
+        section: "Academic record",
         key: "labhead.appointments",
         label: "Academic Appointments",
         type: "list",
         addLabel: "appointment",
         columns: [
-          { key: "period", label: "Period", width: "0.8fr" },
-          { key: "role", label: "Role", width: "1fr" },
-          { key: "organisation", label: "Organisation", width: "1.4fr" },
+          { key: "period", label: "Period", width: "0.8" },
+          { key: "role", label: "Role", width: "1" },
+          { key: "organisation", label: "Organisation", width: "1.6" },
         ],
       },
       {
+        section: "Academic record",
         key: "labhead.leadership",
         label: "Leadership Positions",
         type: "list",
         addLabel: "position",
         columns: [
-          { key: "period", label: "Period", width: "0.8fr" },
-          { key: "role", label: "Role", width: "1fr" },
-          { key: "organisation", label: "Organisation", width: "1.4fr" },
+          { key: "period", label: "Period", width: "0.8" },
+          { key: "role", label: "Role", width: "1" },
+          { key: "organisation", label: "Organisation", width: "1.6" },
         ],
       },
       {
+        section: "Academic record",
         key: "labhead.education",
         label: "Education",
         type: "list",
         addLabel: "degree",
         columns: [
-          { key: "year", label: "Year", width: "0.5fr" },
-          { key: "degree", label: "Degree", width: "1.2fr" },
-          { key: "institution", label: "Institution", width: "1.5fr" },
+          { key: "year", label: "Year", width: "0.4" },
+          { key: "degree", label: "Degree", width: "1.2" },
+          { key: "institution", label: "Institution", width: "1.5" },
         ],
       },
       {
+        section: "Academic record",
         key: "labhead.honours",
         label: "Honours & Awards",
         type: "list",
         addLabel: "honour",
         columns: [
-          { key: "year", label: "Year", width: "0.5fr" },
-          { key: "title", label: "Award", width: "1.5fr" },
-          { key: "awardedBy", label: "Awarded by", width: "1.2fr" },
+          { key: "year", label: "Year", width: "0.4" },
+          { key: "title", label: "Award", width: "1.6" },
+          { key: "awardedBy", label: "Awarded by", width: "1.2" },
         ],
       },
       {
+        section: "Academic record",
         key: "labhead.grants",
         label: "Research Funding",
         type: "list",
         addLabel: "grant",
         columns: [
-          { key: "year", label: "Year", width: "0.6fr" },
-          { key: "title", label: "Project", width: "1.8fr" },
-          { key: "funder", label: "Funder", width: "1fr" },
-          { key: "amount", label: "Amount", width: "0.8fr" },
+          { key: "year", label: "Year", width: "0.5" },
+          { key: "title", label: "Project", width: "2" },
+          { key: "funder", label: "Funder", width: "1" },
+          { key: "amount", label: "Amount", width: "0.7" },
         ],
       },
       {
+        section: "Academic record",
         key: "labhead.editorial",
         label: "Editorial & Peer Review",
         type: "list",
         addLabel: "role",
         columns: [
-          { key: "role", label: "Role", width: "1fr" },
-          { key: "outlet", label: "Journal / Publisher", width: "2fr" },
+          { key: "role", label: "Role", width: "1" },
+          { key: "outlet", label: "Journal / Publisher", width: "2.2" },
         ],
       },
       {
+        section: "Academic record",
         key: "labhead.supervision",
         label: "Graduate Supervision",
         type: "list",
         addLabel: "thesis",
         columns: [
-          { key: "year", label: "Year", width: "0.5fr" },
-          { key: "researcher", label: "Researcher", width: "1fr" },
-          { key: "thesis", label: "Thesis", width: "2.4fr" },
+          { key: "year", label: "Year", width: "0.4" },
+          { key: "researcher", label: "Researcher", width: "1" },
+          { key: "thesis", label: "Thesis", width: "2.6" },
         ],
       },
       {
+        section: "Academic record",
         key: "labhead.collaborations",
         label: "International Collaborations",
         type: "list",
         addLabel: "institution",
         columns: [
-          { key: "institution", label: "Institution", width: "2fr" },
-          { key: "country", label: "Country", width: "1fr" },
+          { key: "institution", label: "Institution", width: "2" },
+          { key: "country", label: "Country", width: "1" },
         ],
       },
       {
+        section: "Academic record",
         key: "labhead.venues",
         label: "Selected Journals",
         type: "list",
@@ -552,7 +675,7 @@ const FIELD_GROUPS: FieldGroup[] = [
     ],
   },
   {
-    /* New: the Footer reads all three and there was no way to edit them. */
+    /* New: the Footer reads all four and there was no way to edit them. */
     tab: "Branding",
     fields: [
       { key: "branding.labName", label: "Lab Name", type: "text" },
@@ -573,6 +696,7 @@ const FIELD_GROUPS: FieldGroup[] = [
   },
 ];
 
+/** Fallback only — fields can declare `section` instead. */
 const sectionTitleFromKey = (key: string) => {
   const [, subKey = ""] = key.split(".");
 
@@ -588,24 +712,10 @@ const sectionTitleFromKey = (key: string) => {
   if (subKey.startsWith("mission")) return "Mission";
   if (subKey.startsWith("vision")) return "Vision";
   if (subKey.includes("banner")) return "Banner";
-  if (subKey === "metrics") return "Metrics";
-  if (
-    [
-      "appointments",
-      "leadership",
-      "education",
-      "honours",
-      "grants",
-      "editorial",
-      "supervision",
-      "collaborations",
-      "venues",
-    ].includes(subKey)
-  ) {
-    return "Academic record";
-  }
   return "General";
 };
+
+const sectionOf = (field: FieldConfig) => field.section ?? sectionTitleFromKey(field.key);
 
 const ContentEditor: React.FC = () => {
   const { content } = useSiteContent();
@@ -711,7 +821,9 @@ const ContentEditor: React.FC = () => {
     }));
   };
 
-  const activeGroup = FIELD_GROUPS.find((g) => g.tab === activeTab)!;
+  /* No non-null assertion: an unknown activeTab would have crashed the page. */
+  const activeGroup =
+    FIELD_GROUPS.find((g) => g.tab === activeTab) ?? FIELD_GROUPS[0];
   const activeDirtyCount = activeGroup.fields.filter(
     (f) => dirty[f.key],
   ).length;
@@ -719,7 +831,7 @@ const ContentEditor: React.FC = () => {
   const fieldsBySection = useMemo(() => {
     const grouped: Record<string, FieldConfig[]> = {};
     activeGroup.fields.forEach((field) => {
-      const section = sectionTitleFromKey(field.key);
+      const section = sectionOf(field);
       grouped[section] = [...(grouped[section] ?? []), field];
     });
     return Object.entries(grouped);
@@ -795,6 +907,25 @@ const ContentEditor: React.FC = () => {
     if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
   };
 
+  /** Shared by the field header and, for lists, repeated at the bottom — a
+   *  26-row list puts the header's Save button several screens away. */
+  const saveButton = (field: FieldConfig) => (
+    <button
+      type="button"
+      onClick={() => saveField(field.key)}
+      disabled={saving[field.key]}
+      className="text-xs font-bold px-4 py-1.5 rounded-lg text-white disabled:opacity-60"
+      style={{
+        background: saved[field.key] ? "#22c55e" : "var(--color-primary)",
+        border: "none",
+        cursor: "pointer",
+        minWidth: 74,
+      }}
+    >
+      {saved[field.key] ? "✓ Saved" : saving[field.key] ? "..." : "Save"}
+    </button>
+  );
+
   return (
     <div>
       {notice && <div role="status" className={`mb-5 rounded-2xl border px-4 py-3 text-sm font-bold ${notice.type === "success" ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-rose-200 bg-rose-50 text-rose-800"}`}>{notice.text}</div>}
@@ -824,7 +955,7 @@ const ContentEditor: React.FC = () => {
             className="sticky top-4 rounded-[22px] border border-slate-200 bg-slate-950 p-3 text-white shadow-xl"
           >
             <p className="px-2 pb-2 text-xs font-semibold uppercase tracking-[0.18em] text-gray-400">
-              Sections
+              Pages
             </p>
             <div className="flex flex-col gap-1.5">
               {FIELD_GROUPS.map((g) => (
@@ -874,6 +1005,33 @@ const ContentEditor: React.FC = () => {
                 </button>
               ))}
             </div>
+
+            {/* Section jump list. On a tab with five sections and twenty-nine
+                fields, scrolling to find one is the slowest part of the job. */}
+            {fieldsBySection.length > 1 && (
+              <>
+                <p className="mt-4 px-2 pb-2 text-xs font-semibold uppercase tracking-[0.18em] text-gray-400">
+                  {activeTab} sections
+                </p>
+                <div className="flex flex-col gap-1">
+                  {fieldsBySection.map(([section, fields]) => (
+                    <button
+                      key={`side-${section}`}
+                      type="button"
+                      onClick={() => jumpToSection(section)}
+                      className="flex items-center justify-between rounded-lg px-3 py-1.5 text-left text-[12.5px] font-semibold text-slate-300 hover:bg-white/10 hover:text-white"
+                    >
+                      <span className="truncate">{section}</span>
+                      <span className="ml-2 shrink-0 text-[11px] tabular-nums text-slate-500">
+                        {sectionDirtyCount(fields) > 0
+                          ? `${sectionDirtyCount(fields)} ●`
+                          : fields.length}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
           </div>
         </aside>
 
@@ -1052,6 +1210,7 @@ const ContentEditor: React.FC = () => {
                   sectionRefs.current[`${activeTab}:${section}`] = el;
                 }}
                 className={`overflow-hidden rounded-[22px] border border-slate-200 bg-white shadow-sm transition hover:shadow-md ${compactMode ? "p-3" : "p-5"}`}
+                style={{ scrollMarginTop: 16 }}
               >
                 <button
                   type="button"
@@ -1109,30 +1268,14 @@ const ContentEditor: React.FC = () => {
                                 Unsaved
                               </span>
                             )}
-                            <button
-                              onClick={() => saveField(field.key)}
-                              disabled={saving[field.key]}
-                              className="text-xs font-bold px-4 py-1.5 rounded-lg text-white disabled:opacity-60"
-                              style={{
-                                background: saved[field.key]
-                                  ? "#22c55e"
-                                  : "var(--color-primary)",
-                                border: "none",
-                                cursor: "pointer",
-                                minWidth: 74,
-                              }}
-                            >
-                              {saved[field.key]
-                                ? "✓ Saved"
-                                : saving[field.key]
-                                  ? "..."
-                                  : "Save"}
-                            </button>
+                            {saveButton(field)}
                           </div>
                         </div>
 
                         {field.hint && (
-                          <p className="mb-3 text-xs text-gray-400">{field.hint}</p>
+                          <p className="mb-3 text-xs leading-relaxed text-gray-400">
+                            {field.hint}
+                          </p>
                         )}
 
                         {field.type === "image" ? (
@@ -1165,13 +1308,23 @@ const ContentEditor: React.FC = () => {
                             )}
                           </div>
                         ) : field.type === "list" ? (
-                          <ListEditor
-                            columns={field.columns ?? [{ key: "value", label: "Value" }]}
-                            value={values[field.key] ?? ""}
-                            onChange={(next) => setFieldValue(field.key, next)}
-                            addLabel={field.addLabel}
-                            compact={compactMode}
-                          />
+                          <>
+                            <ListEditor
+                              columns={field.columns ?? [{ key: "value", label: "Value" }]}
+                              value={values[field.key] ?? ""}
+                              onChange={(next) => setFieldValue(field.key, next)}
+                              addLabel={field.addLabel}
+                              compact={compactMode}
+                            />
+                            {dirty[field.key] && (
+                              <div className="mt-3 flex items-center gap-3">
+                                <span className="text-xs font-semibold text-amber-700">
+                                  Unsaved changes to this list
+                                </span>
+                                <span className="ml-auto">{saveButton(field)}</span>
+                              </div>
+                            )}
+                          </>
                         ) : field.type === "textarea" ? (
                           <div>
                             <textarea
