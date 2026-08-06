@@ -1,8 +1,8 @@
 import React, { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
+import { cld } from "../cloudinary";
 import AppIcon from "../components/AppIcon";
 import EditableText from "../components/EditableText";
-import LabHeadCustomSections from "../components/LabHeadCustomSections";
 import { useThemeContext } from "../context/ThemeContext";
 import { useCollaborators, useSiteContent } from "../firebase/hooks";
 
@@ -19,8 +19,200 @@ interface LabHeadData {
   scholar: string;
   orcid: string;
   researchgate: string;
+  scopus: string;
   researchInterests: string;
 }
+
+/* ------------------------------------------------------------------ *
+ * Record data
+ *
+ * The lists below are the defaults — the page is complete on deploy with no
+ * data entry. The Lab Head tab of the Content Editor writes the same shapes as
+ * JSON, and an admin's rows replace the matching default outright.
+ * ------------------------------------------------------------------ */
+
+type Row = Record<string, string>;
+
+/** Falls back whenever the stored value is empty, unparseable, or an empty list. */
+function rowsFrom(value: string | undefined, fallback: Row[]): Row[] {
+  const raw = (value ?? "").trim();
+  if (!raw) return fallback;
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return fallback;
+    const clean = parsed.filter((row): row is Row => Boolean(row) && typeof row === "object");
+    return clean.length > 0 ? clean : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+const DEFAULT_APPOINTMENTS: Row[] = [
+  { period: "2019 — present", role: "Professor", organisation: "Department of Industrial and Production Engineering, BUET" },
+  { period: "2016 — 2019", role: "Associate Professor", organisation: "Department of Industrial and Production Engineering, BUET" },
+  { period: "2010 — 2016", role: "Assistant Professor", organisation: "Department of Industrial and Production Engineering, BUET" },
+  { period: "2007 — 2010", role: "Lecturer", organisation: "Department of Industrial and Production Engineering, BUET" },
+];
+
+const DEFAULT_LEADERSHIP: Row[] = [
+  { period: "2023 — 2025", role: "Chairman (Head)", organisation: "Department of Industrial and Production Engineering, BUET" },
+  { period: "2022 — 2024", role: "Provost", organisation: "Dr. M. A. Rashid Hall, BUET" },
+  { period: "2017 — 2020", role: "Assistant Provost", organisation: "Dr. M. A. Rashid Hall, BUET" },
+];
+
+const DEFAULT_EDUCATION: Row[] = [
+  { year: "2016", degree: "PhD, Supply Chain Management", institution: "Nagoya Institute of Technology, Japan" },
+  { year: "2009", degree: "MSc, Industrial and Production Engineering", institution: "BUET, Dhaka" },
+  { year: "2007", degree: "BSc, Industrial and Production Engineering", institution: "BUET, Dhaka" },
+];
+
+const DEFAULT_HONOURS: Row[] = [
+  { year: "2023", title: "Outstanding Researcher Award", awardedBy: "IEOM Society International" },
+  { year: "2022 — present", title: "Listed among the world's top 2% of scientists", awardedBy: "Standardized citation indicator databases" },
+  { year: "2021", title: "Forum 86 Research Excellence Award 2020", awardedBy: "Forum '86, BUET" },
+  { year: "2012 — 2016", title: "Doctoral Fellowship", awardedBy: "MEXT, Government of Japan" },
+  { year: "2002 — 2007", title: "University Merit Scholarship", awardedBy: "BUET" },
+  { year: "2002 — 2007", title: "Dean's List Scholarship", awardedBy: "BUET" },
+  { year: "", title: "Honours in the BSc and MSc examinations", awardedBy: "BUET" },
+];
+
+const DEFAULT_GRANTS: Row[] = [
+  {
+    year: "2025 — present",
+    title: "Technology Business Incubators for Innovation and Commercialization in Bangladesh",
+    funder: "HEAT Grant, University Grants Commission",
+    amount: "BDT 39.99 million",
+  },
+  {
+    year: "2022 — 2023",
+    title: "Framework for Implementing Circular Supply Chain in the Readymade Garment Industry: Implications for Sustainable Development Goals",
+    funder: "RISE, BUET",
+    amount: "BDT 820,000",
+  },
+  {
+    year: "2017 — 2018",
+    title: "Analysis of Supply Chain Risk and Critical Success Factors in the Ready-Made Garments Industry in Bangladesh",
+    funder: "BUET",
+    amount: "BDT 207,500",
+  },
+];
+
+const DEFAULT_EDITORIAL: Row[] = [
+  { role: "Leading Guest Editor", outlet: "International Journal of Emerging Markets (Emerald)" },
+  { role: "Leading Guest Editor", outlet: "Frontiers in Sustainability (Frontiers)" },
+  { role: "Guest Editor", outlet: "Sustainability (MDPI)" },
+  { role: "Guest Editor", outlet: "Modern Supply Chain Research and Applications (Emerald)" },
+  { role: "Assistant Editor", outlet: "Sustainability (MDPI)" },
+  { role: "Reviewer", outlet: "International Journal of Production Economics (Elsevier)" },
+  { role: "Reviewer", outlet: "Journal of Cleaner Production (Elsevier)" },
+  { role: "Reviewer", outlet: "Resources, Conservation & Recycling (Elsevier)" },
+  { role: "Reviewer", outlet: "Measurement (Elsevier)" },
+  { role: "Reviewer", outlet: "Applied Mathematical Modelling (Elsevier)" },
+  { role: "Reviewer", outlet: "International Journal of Medical Informatics (Elsevier)" },
+  { role: "Reviewer", outlet: "Annals of Operations Research (Springer)" },
+  { role: "Reviewer", outlet: "International Journal of System Assurance Engineering and Management (Springer)" },
+  { role: "Reviewer", outlet: "Environmental Science and Pollution Research (Springer)" },
+  { role: "Reviewer", outlet: "International Journal of Logistics Management (Emerald)" },
+  { role: "Reviewer", outlet: "International Journal of Physical Distribution & Logistics Management (Emerald)" },
+  { role: "Reviewer", outlet: "Industrial Management & Data Systems (Emerald)" },
+  { role: "Reviewer", outlet: "International Journal of Emerging Markets (Emerald)" },
+  { role: "Reviewer", outlet: "Sustainability (MDPI)" },
+];
+
+const DEFAULT_SUPERVISION: Row[] = [
+  { year: "2026", researcher: "M. A. Haque", thesis: "Development of a sustainable medical waste management network using a combined probabilistic and possibilistic approach" },
+  { year: "2025", researcher: "M. G. A. Amio", thesis: "Development of a closed-loop supply chain incorporating solid waste management through the vehicle routing problem" },
+  { year: "2025", researcher: "I. Ahmed", thesis: "Enhancing yarn procurement efficiency through automation for a readymade garments firm with dashboard visualization" },
+  { year: "2025", researcher: "P. Bhattacharjee", thesis: "A machine learning based ensemble model for predicting risk level of maternal health" },
+  { year: "2024", researcher: "S. M. Billah", thesis: "Lean, agile and resilient supplier selection in the leather industry: a case study" },
+  { year: "2024", researcher: "R. A. Joy", thesis: "Performance evaluation of an effluent treatment plant in the readymade garment industry: a case study" },
+  { year: "2023", researcher: "S. Roy", thesis: "Modelling hierarchical structure for circular supply chain in the readymade garment industry" },
+  { year: "2021", researcher: "H. M. M. Taqi", thesis: "Supply chain network design with flexibility, resilience and environmental considerations" },
+  { year: "2021", researcher: "K. W. Hasan", thesis: "Development of a multi-objective closed-loop green supply chain model with disruption risk consideration" },
+  { year: "2020", researcher: "A. U. Rahman", thesis: "Supply chain performance prediction using a grey-based neural network" },
+  { year: "2020", researcher: "M. R. Islam", thesis: "Warehouse performance prediction model using particle swarm optimization-based grey theory" },
+  { year: "2020", researcher: "M. R. Sarker", thesis: "Sustainability performance assessment framework based on a hybrid approach: a case of the leather industry" },
+  { year: "2020", researcher: "S. Raian", thesis: "Assessing and managing sustainability risk in the supply chain: a case study" },
+  { year: "2020", researcher: "S. M. N. Hoq", thesis: "Framework for evaluating factors contributing to failure of IT systems: a case of the banking industry" },
+  { year: "2019", researcher: "R. Anzoom", thesis: "Modelling of employee absenteeism rate prediction at the workplace using a Bayesian belief network" },
+  { year: "2019", researcher: "A. Banik", thesis: "Critical success factors for implementing green supply chain management in the electronics industry: a case study" },
+  { year: "2019", researcher: "T. Nahid", thesis: "Conceptual framework for implementing lean manufacturing in small and medium-sized enterprises: a case study" },
+  { year: "2019", researcher: "M. M. Bappy", thesis: "Assessing sustainability in the supply chain using Dempster-Shafer theory" },
+  { year: "2018", researcher: "M. N. Haque", thesis: "Improving changeover techniques in apparel manufacturing: a case study" },
+  { year: "2018", researcher: "A. Hossain", thesis: "Examining barriers to Lean Six Sigma implementation in the supply chain: a case study" },
+  { year: "2018", researcher: "S. Shohan", thesis: "Structural framework for evaluating drivers and barriers to green supply chain management in the chemical industry" },
+  { year: "2018", researcher: "A. A. Zubayer", thesis: "Analysis of supply chain risk in the ceramic industry: a case study" },
+  { year: "2018", researcher: "A. A. Munny", thesis: "Assessing enablers to social sustainability of the supply chain in the footwear industry: a case study" },
+  { year: "2018", researcher: "T. Rahman", thesis: "Analysis of barriers in implementing green supply chain management in the plastic industry" },
+  { year: "2017", researcher: "M. S. Uddin", thesis: "Analysis of barriers to green supply chain management in the leather industry: a case study" },
+  { year: "2017", researcher: "M. A. Moktadir", thesis: "Identification and analysis of barriers to sustainable supply chain management practices: a case study" },
+];
+
+const DEFAULT_COLLABORATIONS: Row[] = [
+  { institution: "Inland Norway University", country: "Norway" },
+  { institution: "Indian Institute of Technology Delhi", country: "India" },
+  { institution: "Vellore Institute of Technology", country: "India" },
+  { institution: "Saveetha Institute of Medical and Technical Sciences", country: "India" },
+  { institution: "Kalasalingam Academy of Research and Education", country: "India" },
+  { institution: "Excelia Business School", country: "France" },
+  { institution: "Normandie Business School", country: "France" },
+  { institution: "University of Cincinnati", country: "United States" },
+  { institution: "University of Arizona", country: "United States" },
+  { institution: "North Carolina State University", country: "United States" },
+  { institution: "Arkansas State University", country: "United States" },
+  { institution: "University of Regina", country: "Canada" },
+  { institution: "Université du Québec à Montréal", country: "Canada" },
+  { institution: "University of Technology Sydney", country: "Australia" },
+  { institution: "Federal University of Paraná", country: "Brazil" },
+  { institution: "Integrated Colleges of Taquara (Faccat)", country: "Brazil" },
+  { institution: "Aarhus University", country: "Denmark" },
+  { institution: "Universidad Católica del Norte", country: "Chile" },
+  { institution: "Universidad de Talca", country: "Chile" },
+  { institution: "King Abdullah University of Science and Technology", country: "Saudi Arabia" },
+  { institution: "International Institute for Applied Systems Analysis", country: "Austria" },
+  { institution: "Universiti Teknologi Malaysia", country: "Malaysia" },
+];
+
+const DEFAULT_VENUES: Row[] = [
+  { name: "Journal of Cleaner Production" },
+  { name: "Annals of Operations Research" },
+  { name: "International Journal of Production Economics" },
+  { name: "International Journal of Production Research" },
+  { name: "Resources, Conservation & Recycling" },
+  { name: "Computers & Industrial Engineering" },
+  { name: "Sustainable Production and Consumption" },
+  { name: "Journal of Retailing and Consumer Services" },
+  { name: "Industrial Management & Data Systems" },
+  { name: "Process Safety and Environmental Protection" },
+  { name: "Business Strategy and the Environment" },
+  { name: "Business Strategy & Development" },
+];
+
+const DEFAULT_INTERESTS =
+  "Applied artificial intelligence and machine learning, Logistics and supply chain management, Supply chain risk management, Supply chain sustainability";
+
+const DEFAULT_BIO = `Dr. Syed Mithun Ali is a Professor in the Department of Industrial and Production Engineering at Bangladesh University of Engineering and Technology (BUET). He holds a PhD in supply chain management from the Nagoya Institute of Technology, Japan.
+
+His research enhances both the theoretical and practical understanding of the environmental, social and economic sustainability of organisations and their supply chains. Through mentoring and international partnerships, he works to advance sustainable practices that benefit both industry and the environment.`;
+
+/* Institutional address only — the CV's personal mobile numbers and private
+   email are deliberately not published here. */
+const DEFAULT_EMAIL = "mithun@ipe.buet.ac.bd";
+const DEFAULT_SCHOLAR = "https://scholar.google.com/citations?user=vCkenssAAAAJ&hl=en";
+const DEFAULT_RESEARCHGATE = "https://www.researchgate.net/profile/Syed_Mithun_Ali";
+const DEFAULT_SCOPUS = "https://www.scopus.com/authid/detail.uri?authorId=57193722242";
+
+/* Figures come from the Google Scholar record in the CV rather than its prose,
+   which quotes slightly different numbers. `asOf` is displayed beside them so
+   they can't go quietly stale. */
+const DEFAULT_METRICS = {
+  citations: "12,160",
+  hIndex: "60",
+  i10Index: "141",
+  publications: "152",
+  experienceYears: "19+",
+  asOf: "August 2026",
+};
 
 /* ------------------------------------------------------------------ *
  * Colour utilities
@@ -84,7 +276,9 @@ const LabHeadAvatar: React.FC<{ photo: string; name: string }> = ({ photo, name 
   if (photo && !failed) {
     return (
       <img
-        src={photo}
+        /* Transformed rather than the full-size original — the page renders it
+           at 320px at most. */
+        src={cld(photo, "portrait")}
         alt={name}
         decoding="async"
         onError={() => setFailed(true)}
@@ -165,18 +359,20 @@ const LabHead: React.FC = () => {
     title: canonicalProfile?.designation || content["labhead.title"] || "",
     department: canonicalProfile?.affiliation || content["labhead.department"] || "",
     photo: canonicalProfile?.photo || content["labhead.photo"] || "",
-    shortBio: canonicalProfile?.bio || content["labhead.shortBio"] || "",
+    shortBio: canonicalProfile?.bio || content["labhead.shortBio"] || DEFAULT_BIO,
     fullBio: content["labhead.fullBio"] || canonicalProfile?.bio || "",
-    email: canonicalProfile?.email || content["labhead.email"] || "",
+    email: canonicalProfile?.email || content["labhead.email"] || DEFAULT_EMAIL,
     phone: content["labhead.phone"] ?? "",
     linkedin: canonicalProfile?.linkedin || content["labhead.linkedin"] || "",
-    scholar: canonicalProfile?.scholar || content["labhead.scholar"] || "",
+    scholar: canonicalProfile?.scholar || content["labhead.scholar"] || DEFAULT_SCHOLAR,
     orcid: canonicalProfile?.orcid || content["labhead.orcid"] || "",
-    researchgate: canonicalProfile?.researchgate || content["labhead.researchgate"] || "",
+    researchgate:
+      canonicalProfile?.researchgate || content["labhead.researchgate"] || DEFAULT_RESEARCHGATE,
+    scopus: content["labhead.scopus"] || DEFAULT_SCOPUS,
     researchInterests:
       canonicalProfile?.researchInterests?.join(", ") ||
       content["labhead.researchInterests"] ||
-      "",
+      DEFAULT_INTERESTS,
   };
 
   const interests = labHead.researchInterests
@@ -184,11 +380,32 @@ const LabHead: React.FC = () => {
     .map((entry) => entry.trim())
     .filter(Boolean);
 
+  const metrics = {
+    citations: content["labhead.metrics.citations"] || DEFAULT_METRICS.citations,
+    hIndex: content["labhead.metrics.hIndex"] || DEFAULT_METRICS.hIndex,
+    i10Index: content["labhead.metrics.i10Index"] || DEFAULT_METRICS.i10Index,
+    publications: content["labhead.metrics.publications"] || DEFAULT_METRICS.publications,
+    experienceYears:
+      content["labhead.metrics.experienceYears"] || DEFAULT_METRICS.experienceYears,
+    asOf: content["labhead.metrics.asOf"] || DEFAULT_METRICS.asOf,
+  };
+
+  const appointments = rowsFrom(content["labhead.appointments"], DEFAULT_APPOINTMENTS);
+  const leadership = rowsFrom(content["labhead.leadership"], DEFAULT_LEADERSHIP);
+  const education = rowsFrom(content["labhead.education"], DEFAULT_EDUCATION);
+  const honours = rowsFrom(content["labhead.honours"], DEFAULT_HONOURS);
+  const grants = rowsFrom(content["labhead.grants"], DEFAULT_GRANTS);
+  const editorial = rowsFrom(content["labhead.editorial"], DEFAULT_EDITORIAL);
+  const supervision = rowsFrom(content["labhead.supervision"], DEFAULT_SUPERVISION);
+  const collaborations = rowsFrom(content["labhead.collaborations"], DEFAULT_COLLABORATIONS);
+  const venues = rowsFrom(content["labhead.venues"], DEFAULT_VENUES);
+
   const links = [
     { href: labHead.linkedin, label: "LinkedIn", icon: "linkedin" as const },
     { href: labHead.scholar, label: "Google Scholar", icon: "scholar" as const },
     { href: labHead.orcid, label: "ORCID", icon: "orcid" as const },
     { href: labHead.researchgate, label: "ResearchGate", icon: "researchgate" as const },
+    { href: labHead.scopus, label: "Scopus", icon: "publications" as const },
   ].filter((link) => link.href);
 
   const hasSecondBio = Boolean(labHead.fullBio) && labHead.fullBio !== labHead.shortBio;
@@ -208,6 +425,59 @@ const LabHead: React.FC = () => {
   } as React.CSSProperties;
 
   const heroGradient = `linear-gradient(130deg, ${theme.primaryColor} 0%, ${theme.secondaryColor} 70%)`;
+
+  /* A timeline row: period on the left, role and organisation on the right. */
+  const timeline = (items: Row[], periodKey: string, titleKey: string, subKey: string) => (
+    <ol className="grid gap-5">
+      {items.map((item, index) => (
+        <li
+          key={`${item[titleKey]}-${index}`}
+          className="grid gap-1 sm:grid-cols-[150px_minmax(0,1fr)] sm:gap-5"
+        >
+          <span
+            className="text-[12.5px] font-semibold tabular-nums"
+            style={{ color: tone.muted }}
+          >
+            {item[periodKey]}
+          </span>
+          <span>
+            <span className="block text-[15px] font-semibold" style={{ color: tone.heading }}>
+              {item[titleKey]}
+            </span>
+            {item[subKey] && (
+              <span className="mt-0.5 block text-[13.5px] leading-6" style={{ color: tone.muted }}>
+                {item[subKey]}
+              </span>
+            )}
+          </span>
+        </li>
+      ))}
+    </ol>
+  );
+
+  /* Long lists sit behind a disclosure so the page stays scannable — the count
+     in the summary is what tells you whether it's worth opening. */
+  const disclosure = (label: string, count: number, children: React.ReactNode) => (
+    <details className="group">
+      <summary
+        className={`flex cursor-pointer list-none items-center gap-3 rounded-xl border px-4 py-3 text-sm font-semibold [&::-webkit-details-marker]:hidden ${focusRing}`}
+        style={{ ...focusVars, borderColor: tone.border, color: tone.body }}
+      >
+        {label}
+        <span className="text-[12px] font-medium tabular-nums" style={{ color: tone.muted }}>
+          {count}
+        </span>
+        <span
+          aria-hidden="true"
+          className="ml-auto transition-transform group-open:rotate-90"
+          style={{ color: tone.muted }}
+        >
+          ›
+        </span>
+      </summary>
+      <div className="pt-5">{children}</div>
+    </details>
+  );
 
   /* ---------------------------------------------------------------- *
    * Loading and empty states
@@ -408,6 +678,40 @@ const LabHead: React.FC = () => {
               )}
             </div>
           </div>
+
+          {/* Metrics. The "as of" stamp is not decoration — a citation count with
+              no date attached is wrong within weeks and nobody notices. */}
+          <div className="mt-12 border-t border-white/15 pt-7">
+            <dl className="flex flex-wrap gap-x-10 gap-y-5">
+              {[
+                { value: metrics.citations, label: "Citations" },
+                { value: metrics.hIndex, label: "h-index" },
+                { value: metrics.i10Index, label: "i10-index" },
+                { value: metrics.publications, label: "Journal articles" },
+                { value: metrics.experienceYears, label: "Years teaching & research" },
+              ]
+                .filter((metric) => metric.value)
+                .map((metric) => (
+                  <div key={metric.label} className="flex items-baseline gap-2.5">
+                    <dt className="sr-only">{metric.label}</dt>
+                    <dd
+                      className="text-[26px] font-bold leading-none tabular-nums"
+                      style={{ color: theme.accentColor, fontFamily: "var(--font-heading)" }}
+                    >
+                      {metric.value}
+                    </dd>
+                    <span aria-hidden="true" className="text-[12.5px] text-white/60">
+                      {metric.label}
+                    </span>
+                  </div>
+                ))}
+            </dl>
+            {metrics.asOf && (
+              <p className="mt-4 text-[11.5px] text-white/45">
+                Google Scholar figures, accurate as of {metrics.asOf}.
+              </p>
+            )}
+          </div>
         </div>
       </section>
 
@@ -518,6 +822,266 @@ const LabHead: React.FC = () => {
                   />
                 </p>
               )}
+            </section>
+
+            {appointments.length > 0 && (
+              <section
+                aria-labelledby="labhead-appointments"
+                className="rounded-[20px] p-6 md:p-9"
+                style={panelStyle}
+              >
+                <SectionHeading
+                  id="labhead-appointments"
+                  tone={tone}
+                  eyebrow={
+                    <EditableText
+                      id="labhead.appointmentsTitle"
+                      defaultValue="Academic Appointments"
+                      className="inline"
+                    />
+                  }
+                />
+                {timeline(appointments, "period", "role", "organisation")}
+
+                {leadership.length > 0 && (
+                  <div className="mt-9 border-t pt-8" style={{ borderColor: tone.border }}>
+                    <h3
+                      className="mb-6 text-[11px] font-semibold uppercase tracking-[0.16em]"
+                      style={{ color: tone.muted }}
+                    >
+                      <EditableText
+                        id="labhead.leadershipTitle"
+                        defaultValue="Academic & Administrative Leadership"
+                        className="inline"
+                      />
+                    </h3>
+                    {timeline(leadership, "period", "role", "organisation")}
+                  </div>
+                )}
+              </section>
+            )}
+
+            {education.length > 0 && (
+              <section
+                aria-labelledby="labhead-education"
+                className="rounded-[20px] p-6 md:p-9"
+                style={panelStyle}
+              >
+                <SectionHeading
+                  id="labhead-education"
+                  tone={tone}
+                  eyebrow={
+                    <EditableText
+                      id="labhead.educationTitle"
+                      defaultValue="Education"
+                      className="inline"
+                    />
+                  }
+                />
+                {timeline(education, "year", "degree", "institution")}
+              </section>
+            )}
+
+            {honours.length > 0 && (
+              <section
+                aria-labelledby="labhead-honours"
+                className="rounded-[20px] p-6 md:p-9"
+                style={panelStyle}
+              >
+                <SectionHeading
+                  id="labhead-honours"
+                  tone={tone}
+                  eyebrow={
+                    <EditableText
+                      id="labhead.honoursTitle"
+                      defaultValue="Honours & Awards"
+                      className="inline"
+                    />
+                  }
+                />
+                {timeline(honours, "year", "title", "awardedBy")}
+              </section>
+            )}
+
+            {grants.length > 0 && (
+              <section
+                aria-labelledby="labhead-grants"
+                className="rounded-[20px] p-6 md:p-9"
+                style={panelStyle}
+              >
+                <SectionHeading
+                  id="labhead-grants"
+                  tone={tone}
+                  eyebrow={
+                    <EditableText
+                      id="labhead.grantsTitle"
+                      defaultValue="Research Funding"
+                      className="inline"
+                    />
+                  }
+                />
+                <ol className="grid gap-6">
+                  {grants.map((grant, index) => (
+                    <li key={`${grant.title}-${index}`}>
+                      <p className="text-[15px] font-semibold" style={{ color: tone.heading }}>
+                        {grant.title}
+                      </p>
+                      <p className="mt-1 text-[13.5px] leading-6" style={{ color: tone.muted }}>
+                        {[grant.funder, grant.year].filter(Boolean).join(" · ")}
+                      </p>
+                      {grant.amount && (
+                        <p
+                          className="mt-1.5 text-[13px] font-semibold tabular-nums"
+                          style={{ color: theme.secondaryColor }}
+                        >
+                          {grant.amount}
+                        </p>
+                      )}
+                    </li>
+                  ))}
+                </ol>
+              </section>
+            )}
+
+            {/* The long tail. Behind disclosures so the page stays readable —
+                nineteen editorial roles and twenty-six theses would otherwise
+                bury the sections above. */}
+            <section
+              aria-labelledby="labhead-record"
+              className="rounded-[20px] p-6 md:p-9"
+              style={panelStyle}
+            >
+              <SectionHeading
+                id="labhead-record"
+                tone={tone}
+                eyebrow={
+                  <EditableText
+                    id="labhead.recordTitle"
+                    defaultValue="Academic Record"
+                    className="inline"
+                  />
+                }
+              />
+
+              <div className="grid gap-3">
+                {editorial.length > 0 &&
+                  disclosure(
+                    "Editorial & peer review",
+                    editorial.length,
+                    <ul className="grid gap-3">
+                      {editorial.map((item, index) => (
+                        <li
+                          key={`${item.outlet}-${index}`}
+                          className="grid gap-0.5 sm:grid-cols-[170px_minmax(0,1fr)] sm:gap-5"
+                        >
+                          <span
+                            className="text-[12.5px] font-semibold"
+                            style={{ color: tone.muted }}
+                          >
+                            {item.role}
+                          </span>
+                          <span className="text-[14px] leading-6" style={{ color: tone.body }}>
+                            {item.outlet}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>,
+                  )}
+
+                {supervision.length > 0 &&
+                  disclosure(
+                    "Supervised graduate research",
+                    supervision.length,
+                    <ol className="grid gap-4">
+                      {supervision.map((item, index) => (
+                        <li
+                          key={`${item.researcher}-${index}`}
+                          className="grid gap-0.5 sm:grid-cols-[70px_minmax(0,1fr)] sm:gap-5"
+                        >
+                          <span
+                            className="text-[12.5px] font-semibold tabular-nums"
+                            style={{ color: tone.muted }}
+                          >
+                            {item.year}
+                          </span>
+                          <span>
+                            <span
+                              className="block text-[14px] font-semibold"
+                              style={{ color: tone.heading }}
+                            >
+                              {item.researcher}
+                            </span>
+                            <span
+                              className="mt-0.5 block text-[13.5px] leading-6"
+                              style={{ color: tone.body }}
+                            >
+                              {item.thesis}
+                            </span>
+                          </span>
+                        </li>
+                      ))}
+                    </ol>,
+                  )}
+
+                {collaborations.length > 0 &&
+                  disclosure(
+                    "International collaborations",
+                    collaborations.length,
+                    <ul className="grid gap-2 sm:grid-cols-2">
+                      {collaborations.map((item, index) => (
+                        <li
+                          key={`${item.institution}-${index}`}
+                          className="rounded-lg px-3 py-2.5"
+                          style={{ background: tone.surfaceMuted }}
+                        >
+                          <span
+                            className="block text-[13.5px] font-medium"
+                            style={{ color: tone.body }}
+                          >
+                            {item.institution}
+                          </span>
+                          {item.country && (
+                            <span className="text-[12px]" style={{ color: tone.muted }}>
+                              {item.country}
+                            </span>
+                          )}
+                        </li>
+                      ))}
+                    </ul>,
+                  )}
+
+                {venues.length > 0 &&
+                  disclosure(
+                    "Selected journals",
+                    venues.length,
+                    <ul className="flex flex-wrap gap-2">
+                      {venues.map((venue, index) => (
+                        <li
+                          key={`${venue.name}-${index}`}
+                          className="rounded-lg px-3 py-2 text-[13px]"
+                          style={{ background: tone.surfaceMuted, color: tone.body }}
+                        >
+                          {venue.name}
+                        </li>
+                      ))}
+                    </ul>,
+                  )}
+              </div>
+
+              {/* The Publications page does search, filtering and citations —
+                  duplicating the list here would be a second copy to maintain. */}
+              <Link
+                to="/publications"
+                style={{ ...focusVars, borderColor: tone.border, color: tone.body }}
+                className={`mt-6 inline-flex min-h-[44px] items-center gap-2 rounded-xl border px-4 text-sm font-semibold no-underline transition hover:border-[color:${tone.borderStrong}] ${focusRing}`}
+              >
+                <EditableText
+                  id="labhead.publicationsCta"
+                  defaultValue="Browse all publications"
+                  className="inline"
+                />
+                <span aria-hidden="true">→</span>
+              </Link>
             </section>
           </div>
 
@@ -653,8 +1217,6 @@ const LabHead: React.FC = () => {
           </aside>
         </div>
       </div>
-
-      <LabHeadCustomSections />
 
       {/* Onward navigation. The self-link to /lab-head is removed — it pointed at
           the page the reader is already on. */}
