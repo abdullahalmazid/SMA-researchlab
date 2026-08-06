@@ -19,6 +19,7 @@ type Post = Announcement & {
   body?: string;
   category?: string;
   link?: string;
+  linkLabel?: string;
 };
 
 const PARAM = { open: "a", search: "q", category: "topic" } as const;
@@ -656,7 +657,9 @@ const Announcements: React.FC = () => {
                   className="mt-6 inline-flex items-center gap-2 rounded-[9px] px-4 py-2.5 text-[13px] font-bold text-white no-underline"
                   style={{ background: "var(--color-primary)" }}
                 >
-                  Open link <span aria-hidden="true">↗</span>
+                  {/* The admin panel writes linkLabel precisely so this doesn't
+                      say "Open link" on every announcement. */}
+                  {openPost.linkLabel?.trim() || "Open link"} <span aria-hidden="true">↗</span>
                 </a>
               )}
             </>
