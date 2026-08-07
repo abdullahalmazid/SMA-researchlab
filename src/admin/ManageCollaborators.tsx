@@ -1,469 +1,537 @@
 import {
-  collection,
-  doc,
-  getDocs,
-  onSnapshot,
-  query,
-  where,
+  addDoc,
+collection,
+  deleteDoc,
+doc,
+getDocs,
+  orderBy,
+query,
+  updateDoc,
 } from "firebase/firestore";
-import { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
+import AppIcon from "../components/AppIcon";
+import CloudinaryUpload from "../components/CloudinaryUpload";
+import { db } from "../firebase/config";
 import type {
-  Announcement,
-  Comment as AppComment,
-  CollaboratorProfile,
-  Publication,
-  PublicationAuthorEntry,
-  ResearchIdea,
-  SiteContent,
-  ThemeSettings,
+  CloudinaryUploadResult,
+CollaboratorProfile,
+  CollaboratorPublication,
 } from "../types";
-import { db, isFirebaseConfigured } from "./config";
 
-import type { GalleryItem } from "../types";
-
-const DEFAULT_THEME: ThemeSettings = {
-  primaryColor: "#1e3a5f", secondaryColor: "#2563eb", accentColor: "#f59e0b",
-  backgroundColor: "#f8fafc", navbarColor: "#1e3a5f", footerColor: "#111827",
-  fontFamily: "'Inter', sans-serif", headingFont: "'Inter', sans-serif",
-};
-
-const text = (value: unknown) => typeof value === "string" ? value : "";
-const normalizeCollaborator = (id: string, raw: Record<string, unknown>): CollaboratorProfile => ({
-  id,
-  uid: text(raw.uid) || id,
-  name: text(raw.name) || "Unnamed collaborator",
-  email: text(raw.email),
-  photo: text(raw.photo),
-  affiliation: text(raw.affiliation) || "Affiliation not provided",
-  designation: text(raw.designation) || "Research collaborator",
-  bio: text(raw.bio) || "Profile information will be added soon.",
-  researchInterests: Array.isArray(raw.researchInterests) ? raw.researchInterests.filter((item): item is string => typeof item === "string" && Boolean(item.trim())) : [],
-  linkedin: text(raw.linkedin),
-  orcid: text(raw.orcid),
-  scholar: text(raw.scholar),
-  researchgate: text(raw.researchgate),
-  facebook: text(raw.facebook),
-  publications: Array.isArray(raw.publications) ? raw.publications.flatMap((item, index) => {
-    if (!item || typeof item !== "object") return [];
-    const row = item as Record<string, unknown>;
-    const title = text(row.title).trim();
-    if (!title) return [];
-    return [{ id: text(row.id) || `${id}-publication-${index}`, title, journal: text(row.journal), year: Number(row.year) || new Date().getFullYear(), url: text(row.url) }];
-  }) : [],
-  isActive: raw.isActive !== false,
-  order: Number(raw.order) || 0,
-  createdAt: text(raw.createdAt) || new Date(0).toISOString(),
+const createEmptyCollaborator = (nextOrder: number): CollaboratorProfile => ({
+  id: "",
+  uid: "",
+  name: "",
+  email: "",
+  photo: "",
+  affiliation: "",
+  designation: "",
+  bio: "",
+  researchInterests: [],
+  linkedin: "",
+  orcid: "",
+  scholar: "",
+  researchgate: "",
+  facebook: "",
+  publications: [],
+  isActive: true,
+  order: nextOrder,
+  createdAt: new Date().toISOString(),
 });
 
-const stringList = (value: unknown) => Array.isArray(value) ? value.filter((item): item is string => typeof item === "string" && Boolean(item.trim())) : [];
-const iso = (value: unknown) => text(value) || new Date(0).toISOString();
+const ManageCollaborators: React.FC = () => {
+const [collaborators, setCollaborators] = useState<CollaboratorProfile[]>([]);
+const [loading, setLoading] = useState(true);
+  const [editing, setEditing] = useState<CollaboratorProfile | null>(null);
+  const [editorMode, setEditorMode] = useState<"add" | "edit">("edit");
+  const [saving, setSaving] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
 
-export const normalizePublication = (id: string, raw: Record<string, unknown>): Publication => ({
-  id,
-  title: text(raw.title) || "Untitled publication",
-  authors: text(raw.authors) || "Author information unavailable",
-  journal: text(raw.journal) || "Publication venue unavailable",
-  year: Number(raw.year) || new Date().getFullYear(),
-  abstract: text(raw.abstract),
-  url: text(raw.url),
-  doi: text(raw.doi),
-  type: raw.type === "ongoing" ? "ongoing" : "published",
-  tags: stringList(raw.tags),
-  paperKey: text(raw.paperKey) || undefined,
-  hasLabHeadAuthorship: raw.hasLabHeadAuthorship !== false,
-  authorEntries: Array.isArray(raw.authorEntries) ? raw.authorEntries.filter((entry) => entry && typeof entry === "object") as Publication["authorEntries"] : [],
-  contributorUids: stringList(raw.contributorUids),
-  createdByUid: text(raw.createdByUid) || undefined,
-  updatedAt: text(raw.updatedAt) || undefined,
-  createdAt: iso(raw.createdAt),
-});
-
-/**
- * Announcements were the one collection read through an inline object literal
- * instead of a normalizer, and that literal named seven fields. The admin panel
- * writes twelve — so title, body, category, link and linkLabel were written to
- * Firestore and then dropped on the way out, and the public page fell back to
- * deriving a title from the summary with an empty detail panel.
- */
-export const normalizeAnnouncement = (id: string, raw: Record<string, unknown>): Announcement => ({
-  id,
-  title: text(raw.title),
-  content: text(raw.content),
-  body: text(raw.body),
-  category: text(raw.category),
-  link: text(raw.link),
-  linkLabel: text(raw.linkLabel),
-  order: Number(raw.order) || 0,
-  isPinned: raw.isPinned === true,
-  isHidden: raw.isHidden === true,
-  createdAt: iso(raw.createdAt),
-  updatedAt: text(raw.updatedAt) || undefined,
-});
-
-export const normalizeResearchIdea = (id: string, raw: Record<string, unknown>): ResearchIdea => ({
-  id,
-  title: text(raw.title) || "Untitled research idea",
-  shortDescription: text(raw.shortDescription) || "No summary has been provided.",
-  fullDescription: text(raw.fullDescription) || text(raw.shortDescription) || "No description has been provided.",
-  tags: stringList(raw.tags),
-  authorId: text(raw.authorId),
-  authorName: text(raw.authorName) || "Research team member",
-  authorPhoto: text(raw.authorPhoto),
-  createdAt: iso(raw.createdAt),
-  updatedAt: iso(raw.updatedAt || raw.createdAt),
-  commentCount: Math.max(0, Number(raw.commentCount) || 0),
-  isPublished: raw.isPublished !== false,
-  isHidden: raw.isHidden === true,
-  isFlagged: raw.isFlagged === true,
-  isPinned: raw.isPinned === true,
-});
-
-const normalizeComment = (id: string, raw: Record<string, unknown>): AppComment => ({
-  id,
-  ideaId: text(raw.ideaId),
-  authorId: text(raw.authorId),
-  authorName: text(raw.authorName) || "Team member",
-  authorPhoto: text(raw.authorPhoto),
-  content: text(raw.content),
-  parentId: text(raw.parentId) || null,
-  createdAt: iso(raw.createdAt),
-});
-
-/* ------------------------------------------------------------------ *
- * Publication identity
- *
- * The portal writes a document id of `doi_<doi>` when a DOI is supplied and
- * `key_<title>-<year>-<journal>` when it isn't — so the same paper entered once
- * without a DOI and once with one lands in two documents that never collide.
- * Matching on doi *or* paperKey here means the display survives that, whatever
- * the write path did.
- * ------------------------------------------------------------------ */
-
-export const slug = (value: string) =>
-  value.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
-
-/** Accepts a bare DOI, a doi: prefix, or a doi.org URL. */
-export const normalizeDoi = (value: string) =>
-  value
-    .trim()
-    .toLowerCase()
-    .replace(/^https?:\/\/(dx\.)?doi\.org\//, "")
-    .replace(/^doi:/, "")
-    .trim();
-
-/** Title-year-journal, the fallback identity for papers with no DOI. */
-export const paperKeyOf = (title: string, year: number | string, journal: string) =>
-  slug(`${title}-${year}-${journal || "unknown"}`);
-
-/**
- * The document id every writer must use. Two screens computing this differently
- * is what let the same paper land in `doi_…` from one form and `key_…` from
- * another, with nothing to make them collide.
- */
-export const canonicalPublicationId = (doi: string, paperKey: string) =>
-  doi ? `doi_${slug(normalizeDoi(doi))}` : `key_${paperKey}`;
-
-export const publicationKeys = (publication: Publication): string[] => {
-  const keys: string[] = [];
-  const doi = slug(publication.doi ?? "");
-  const paperKey = slug(publication.paperKey ?? "");
-  const derived = slug(
-    `${publication.title}-${publication.year}-${publication.journal ?? ""}`,
-  );
-  if (doi) keys.push(`doi:${doi}`);
-  if (paperKey) keys.push(`key:${paperKey}`);
-  if (derived) keys.push(`key:${derived}`);
-  return keys.length ? keys : [`id:${publication.id}`];
-};
-
-const authorEntryKey = (entry: PublicationAuthorEntry) =>
-  entry.type === "linked" && entry.uid
-    ? `linked:${entry.uid}`
-    : `external:${slug(entry.name ?? "")}`;
-
-/** Union of both records, so a duplicate's contributor links aren't discarded. */
-const mergePublications = (a: Publication, b: Publication): Publication => {
-  const entries = new Map<string, PublicationAuthorEntry>();
-  [...(a.authorEntries ?? []), ...(b.authorEntries ?? [])].forEach((entry) => {
-    const key = authorEntryKey(entry);
-    if (!entries.has(key)) entries.set(key, entry);
-  });
-
-  const richer =
-    (b.abstract ? 1 : 0) + (b.doi ? 1 : 0) + (b.authorEntries?.length ?? 0) >
-    (a.abstract ? 1 : 0) + (a.doi ? 1 : 0) + (a.authorEntries?.length ?? 0)
-      ? b
-      : a;
-
-  return {
-    ...richer,
-    abstract: a.abstract || b.abstract,
-    url: a.url || b.url,
-    doi: a.doi || b.doi,
-    paperKey: a.paperKey || b.paperKey,
-    tags: a.tags?.length ? a.tags : (b.tags ?? []),
-    authorEntries: Array.from(entries.values()),
-    contributorUids: Array.from(
-      new Set([...(a.contributorUids ?? []), ...(b.contributorUids ?? [])]),
-    ),
-    /* If either copy says the lab head is an author, the paper is a lab paper. */
-    hasLabHeadAuthorship: Boolean(a.hasLabHeadAuthorship || b.hasLabHeadAuthorship),
+  const load = async () => {
+    const snap = await getDocs(
+      query(collection(db, "collaborators"), orderBy("order", "asc")),
+    );
+    setCollaborators(
+      snap.docs.map((d) => ({ id: d.id, ...d.data() }) as CollaboratorProfile),
+    );
+    setLoading(false);
   };
+
+useEffect(() => {
+    load();
+}, []);
+
+  const toggleActive = async (c: CollaboratorProfile) => {
+    await updateDoc(doc(db, "collaborators", c.id), { isActive: !c.isActive });
+    load();
+  };
+
+  const remove = async (c: CollaboratorProfile) => {
+    if (
+      !window.confirm(
+        `Remove ${c.name} from collaborators? This cannot be undone.`,
+      )
+    )
+      return;
+    setDeletingId(c.id);
+    await deleteDoc(doc(db, "collaborators", c.id));
+    setDeletingId(null);
+    load();
+  };
+
+  const reorder = async (
+    item: CollaboratorProfile,
+    direction: "up" | "down",
+  ) => {
+    const idx = collaborators.findIndex((c) => c.id === item.id);
+    const swapIdx = direction === "up" ? idx - 1 : idx + 1;
+    if (swapIdx < 0 || swapIdx >= collaborators.length) return;
+    const swap = collaborators[swapIdx];
+    await updateDoc(doc(db, "collaborators", item.id), {
+      order: swap.order ?? 0,
+    });
+    await updateDoc(doc(db, "collaborators", swap.id), {
+      order: item.order ?? 0,
+    });
+    load();
+  };
+
+  const startAdd = () => {
+    const nextOrder =
+      collaborators.reduce((max, c) => Math.max(max, c.order ?? 0), 0) + 1;
+    setEditorMode("add");
+    setEditing(createEmptyCollaborator(nextOrder));
+  };
+
+  const saveEdit = async () => {
+    if (!editing) return;
+    if (!editing.name.trim()) {
+      alert("Please enter a collaborator name.");
+      return;
+    }
+    setSaving(true);
+    try {
+      const { id, ...data } = editing;
+      if (editorMode === "add") {
+        await addDoc(collection(db, "collaborators"), {
+          ...data,
+          createdAt: data.createdAt || new Date().toISOString(),
+        } as any);
+      } else {
+        await updateDoc(doc(db, "collaborators", id), data as any);
+      }
+      setEditing(null);
+      load();
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (loading)
+    return (
+      <div className="flex justify-center py-16">
+        <div
+          className="w-8 h-8 rounded-full border-4 border-t-transparent animate-spin"
+          style={{
+            borderColor: "var(--color-primary)",
+            borderTopColor: "transparent",
+          }}
+        />
+      </div>
+);
+
+  if (editing) {
+    return (
+      <EditForm
+        mode={editorMode}
+        collaborator={editing}
+        onChange={setEditing}
+        onSave={saveEdit}
+        onCancel={() => setEditing(null)}
+        saving={saving}
+      />
+);
+  }
+
+  return (
+    <div>
+      <div className="mb-6">
+        <h2
+          className="text-2xl font-black"
+          style={{ color: "var(--color-primary)" }}
+        >
+          Manage Collaborators
+        </h2>
+        <p className="text-sm text-gray-500 mt-1">
+          {collaborators.length} collaborators total
+        </p>
+      </div>
+
+      <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+        <button
+          type="button"
+          onClick={startAdd}
+          className="group relative aspect-square overflow-hidden rounded-2xl border-2 border-dashed transition-all"
+          style={{
+            borderColor: "#cbd5e1",
+            background:
+              "linear-gradient(135deg, rgba(255,255,255,0.95) 0%, rgba(238,245,241,0.98) 100%)",
+          }}
+        >
+          <div className="absolute inset-0 flex flex-col items-center justify-center">
+            <div
+              className="flex h-16 w-16 items-center justify-center rounded-2xl text-white shadow-md"
+              style={{ background: "var(--color-primary)" }}
+            >
+              <span className="text-4xl leading-none">+</span>
+            </div>
+            <p className="mt-4 text-sm font-black text-gray-900">
+              Add Collaborator
+            </p>
+          </div>
+        </button>
+
+        {collaborators.map((c, idx) => (
+          <div
+            key={c.id}
+            className={`group relative aspect-square rounded-2xl border bg-white shadow-sm ${openMenuId === c.id ? "z-20" : "z-0"}`}
+            style={{ borderColor: "#e5e7eb" }}
+            onMouseLeave={() =>
+              setOpenMenuId((current) => (current === c.id ? null : current))
+            }
+          >
+            {c.photo ? (
+              <img
+                src={c.photo}
+                alt={c.name}
+                className="h-full w-full rounded-2xl object-cover"
+              />
+            ) : (
+              <div
+                className="h-full w-full rounded-2xl flex items-center justify-center text-6xl font-black text-white"
+                style={{ background: "var(--color-primary)" }}
+              >
+                {c.name.charAt(0).toUpperCase()}
+              </div>
+            )}
+
+            <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 to-transparent px-3 pb-3 pt-10">
+              <p className="text-sm font-black text-white line-clamp-1">
+                {c.name}
+              </p>
+              <p className="text-xs text-white/80 mt-1 line-clamp-1">
+                {c.designation || "Collaborator"}
+                {c.affiliation ? ` · ${c.affiliation}` : ""}
+              </p>
+              <p className="text-xs text-white/70 mt-1">
+                {c.isActive ? "Visible" : "Hidden"}
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={() =>
+                setOpenMenuId((current) => (current === c.id ? null : c.id))
+              }
+              className="absolute right-3 top-3 flex h-9 w-9 items-center justify-center rounded-full bg-black/35 text-white opacity-100 transition-all duration-200 hover:bg-black/50 sm:opacity-0 sm:group-hover:opacity-100"
+              aria-label="Open collaborator menu"
+            >
+              <AppIcon name="more" size={18} />
+            </button>
+
+            {openMenuId === c.id && (
+              <div className="absolute right-3 top-14 z-[500] w-48 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditorMode("edit");
+                    setEditing(c);
+                    setOpenMenuId(null);
+                  }}
+                  className="flex w-full items-center gap-2 px-4 py-2.5 text-left text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                >
+                  <AppIcon name="about" size={14} />
+                  Edit
+                </button>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    setOpenMenuId(null);
+                    await reorder(c, "up");
+                  }}
+                  disabled={idx === 0}
+                  className="flex w-full items-center gap-2 px-4 py-2.5 text-left text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-40"
+                >
+                  <span>↑</span>
+                  Move Up
+                </button>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    setOpenMenuId(null);
+                    await reorder(c, "down");
+                  }}
+                  disabled={idx === collaborators.length - 1}
+                  className="flex w-full items-center gap-2 px-4 py-2.5 text-left text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-40"
+                >
+                  <span>↓</span>
+                  Move Down
+                </button>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    setOpenMenuId(null);
+                    await toggleActive(c);
+                  }}
+                  className="flex w-full items-center gap-2 px-4 py-2.5 text-left text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                >
+                  <AppIcon name="user" size={14} />
+                  {c.isActive ? "Hide" : "Show"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => remove(c)}
+                  disabled={deletingId === c.id}
+                  className="flex w-full items-center gap-2 px-4 py-2.5 text-left text-sm font-semibold text-red-600 hover:bg-red-50 disabled:opacity-50"
+                >
+                  <AppIcon name="logout" size={14} />
+                  {deletingId === c.id ? "Removing..." : "Remove"}
+                </button>
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 };
 
-/** True when this uid appears as a contributor on the paper, by either route.
- *  Older records carry authorEntries without contributorUids, and vice versa. */
-export const isContributor = (publication: Publication, uid: string): boolean =>
-  Boolean(uid) &&
-  (publication.contributorUids?.includes(uid) ||
-    Boolean(
-      publication.authorEntries?.some(
-        (entry) => entry.type === "linked" && entry.uid === uid,
-      ),
-    ));
+// ── Edit Form ──────────────────────────────────────────────────
+const EditForm: React.FC<{
+  mode: "add" | "edit";
+  collaborator: CollaboratorProfile;
+  onChange: (c: CollaboratorProfile) => void;
+  onSave: () => void;
+  onCancel: () => void;
+  saving: boolean;
+}> = ({ mode, collaborator: c, onChange, onSave, onCancel, saving }) => {
+  const set = (k: keyof CollaboratorProfile, v: any) =>
+    onChange({ ...c, [k]: v });
 
-// ── Site Content ──────────────────────────────────────────────
-export function useSiteContent() {
-  const [content, setContent] = useState<Partial<SiteContent>>({});
-  const [loading, setLoading] = useState(true);
+  const updatePub = (
+    i: number,
+    k: keyof CollaboratorPublication,
+    v: string | number,
+  ) => {
+    const pubs = [...(c.publications ?? [])];
+    pubs[i] = { ...pubs[i], [k]: v };
+    set("publications", pubs);
+  };
 
-  useEffect(() => {
-    if (!isFirebaseConfigured) { setLoading(false); return; }
-    const unsub = onSnapshot(collection(db, "siteContent"), (snap) => {
-      const data: Partial<SiteContent> = {};
-      snap.forEach((d) => {
-        data[d.id as keyof SiteContent] = d.data().value as string;
-      });
-      setContent(data);
-      setLoading(false);
-    }, (error) => { console.error("Site content error:", error); setLoading(false); });
-    return unsub;
-  }, []);
+  const addPub = () =>
+    set("publications", [
+      ...(c.publications ?? []),
+      {
+        id: Date.now().toString(),
+        title: "",
+        journal: "",
+        year: new Date().getFullYear(),
+        url: "",
+},
+    ]);
 
-  return { content, loading };
-}
+  const removePub = (i: number) =>
+    set(
+      "publications",
+      (c.publications ?? []).filter((_, idx) => idx !== i),
+);
 
-// ── Theme ─────────────────────────────────────────────────────
-export function useTheme() {
-  const [theme, setTheme] = useState<ThemeSettings>(DEFAULT_THEME);
+  const inp = "w-full px-3 py-2.5 text-sm rounded-xl border outline-none";
+  const inpStyle = { borderColor: "#e5e7eb" };
 
-  useEffect(() => {
-    if (!isFirebaseConfigured) return;
-    const unsub = onSnapshot(doc(db, "theme", "settings"), (snap) => {
-      if (snap.exists()) {
-        const raw = snap.data();
-        setTheme(Object.fromEntries(Object.entries(DEFAULT_THEME).map(([key, fallback]) => [key, text(raw[key]) || fallback])) as unknown as ThemeSettings);
-      }
-    }, (error) => console.error("Theme error:", error));
-    return unsub;
-  }, []);
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-6">
+        <h2
+          className="text-2xl font-black"
+          style={{ color: "var(--color-primary)" }}
+        >
+          {mode === "add" ? "Add Collaborator" : `Edit: ${c.name}`}
+        </h2>
+        <div className="flex gap-3">
+          <button
+            onClick={onCancel}
+            className="text-sm font-semibold px-5 py-2 rounded-xl border cursor-pointer"
+            style={{
+              borderColor: "#d1d5db",
+              background: "white",
+              color: "#374151",
+            }}
+          >
+            Cancel
+          </button>
+          <button
+            onClick={onSave}
+            disabled={saving}
+            className="text-sm font-bold px-5 py-2 rounded-xl text-white disabled:opacity-60 cursor-pointer border-none"
+            style={{ background: "var(--color-primary)" }}
+          >
+            {saving
+              ? "Saving..."
+              : mode === "add"
+                ? "Create Collaborator"
+                : "Save Changes"}
+          </button>
+        </div>
+      </div>
 
-  return theme;
-}
+      <div
+        className="bg-white rounded-2xl p-6 shadow-sm border"
+        style={{ borderColor: "#e5e7eb" }}
+      >
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mb-5">
+          {(
+            [
+              ["name", "Name"],
+              ["email", "Email"],
+              ["uid", "UID"],
+              ["designation", "Designation"],
+              ["affiliation", "Affiliation"],
+              ["linkedin", "LinkedIn"],
+              ["orcid", "ORCID"],
+              ["scholar", "Google Scholar"],
+              ["researchgate", "ResearchGate"],
+              ["facebook", "Facebook"],
+            ] as const
+          ).map(([k, label]) => (
+            <div key={k}>
+              <label className="block text-xs font-semibold text-gray-600 mb-1.5">
+                {label}
+              </label>
+              <input
+                className={inp}
+                style={inpStyle}
+                value={(c as any)[k] ?? ""}
+                onChange={(e) => set(k as any, e.target.value)}
+              />
+            </div>
+          ))}
+        </div>
 
-// ── Collaborators ─────────────────────────────────────────────
-// No compound query — filter and sort on client to avoid composite index requirement
-export function useCollaborators() {
-  const [collaborators, setCollaborators] = useState<CollaboratorProfile[]>([]);
-  const [loading, setLoading] = useState(true);
+        <div className="mb-5">
+          <label className="block text-xs font-semibold text-gray-600 mb-1.5">
+            Bio
+          </label>
+          <textarea
+            rows={5}
+            className={inp}
+            style={{ ...inpStyle, resize: "vertical" }}
+            value={c.bio ?? ""}
+            onChange={(e) => set("bio", e.target.value)}
+          />
+        </div>
 
-  useEffect(() => {
-    if (!isFirebaseConfigured) { setLoading(false); return; }
-    const unsub = onSnapshot(
-      collection(db, "collaborators"),
-      (snap) => {
-        const all = snap.docs.map((d) => normalizeCollaborator(d.id, d.data()));
-        const filtered = all
-          .filter((c) => c.isActive === true)
-          .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
-        setCollaborators(filtered);
-        setLoading(false);
-      },
-      (error) => {
-        console.error("Collaborators error:", error);
-        setLoading(false);
-      },
-    );
-    return unsub;
-  }, []);
+        <div className="mb-5">
+          <label className="block text-xs font-semibold text-gray-600 mb-1.5">
+            Research Interests (comma separated)
+          </label>
+          <input
+            className={inp}
+            style={inpStyle}
+            value={(c.researchInterests ?? []).join(", ")}
+            onChange={(e) =>
+              set(
+                "researchInterests",
+                e.target.value
+                  .split(",")
+                  .map((s) => s.trim())
+                  .filter(Boolean),
+              )
+            }
+          />
+        </div>
 
-  return { collaborators, loading };
-}
+        <CloudinaryUpload
+          label="Profile Photo"
+          currentUrl={c.photo}
+          onUpload={(r: CloudinaryUploadResult) => set("photo", r.secure_url)}
+        />
 
-// ── Publications ──────────────────────────────────────────────
-export function usePublications() {
-  const [all, setAll] = useState<Publication[]>([]);
-  const [ongoing, setOngoing] = useState<Publication[]>([]);
-  const [published, setPublished] = useState<Publication[]>([]);
-  const [loading, setLoading] = useState(true);
+        {/* Publications */}
+        <div className="mt-5">
+          <div className="flex items-center justify-between mb-3">
+            <label className="text-sm font-bold text-gray-700">
+              Publications
+            </label>
+            <button
+              onClick={addPub}
+              className="text-xs font-bold bg-transparent border-none cursor-pointer"
+              style={{ color: "var(--color-secondary)" }}
+            >
+              + Add
+            </button>
+          </div>
+          {(c.publications ?? []).map((p, i) => (
+            <div
+              key={p.id}
+              className="grid grid-cols-4 gap-2 mb-2 items-center"
+            >
+              <input
+                className={`${inp} col-span-2`}
+                style={inpStyle}
+                placeholder="Title"
+                value={p.title}
+                onChange={(e) => updatePub(i, "title", e.target.value)}
+              />
+              <input
+                className={inp}
+                style={inpStyle}
+                placeholder="Journal"
+                value={p.journal}
+                onChange={(e) => updatePub(i, "journal", e.target.value)}
+              />
+              <div className="flex gap-1">
+                <input
+                  className={inp}
+                  style={inpStyle}
+                  placeholder="Year"
+                  type="number"
+                  value={p.year}
+                  onChange={(e) => updatePub(i, "year", +e.target.value)}
+                />
+                <button
+                  onClick={() => removePub(i)}
+                  className="text-red-400 bg-transparent border-none cursor-pointer text-lg leading-none"
+                >
+                  ×
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
 
-  useEffect(() => {
-    if (!isFirebaseConfigured) { setLoading(false); return; }
-    const unsub = onSnapshot(
-      collection(db, "publications"),
-      (snap) => {
-        /* Dedupe across every alias a record might carry. A paper written once
-           with a DOI and once without produces two documents; both point at the
-           same canonical entry here, and the entries are merged rather than one
-           being discarded. */
-        const canonical = new Map<string, Publication>();
+        <div
+          className="mt-4 flex items-center gap-4 pt-4 border-t"
+          style={{ borderColor: "#e5e7eb" }}
+        >
+          <label className="text-sm font-semibold text-gray-700">
+            Visibility
+          </label>
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={c.isActive}
+              onChange={(e) => set("isActive", e.target.checked)}
+            />
+            <span className="text-sm text-gray-600">
+              Show on Collaborators page
+            </span>
+          </label>
+        </div>
+      </div>
+    </div>
+  );
+};
 
-        snap.docs.forEach((d) => {
-          const pub = normalizePublication(d.id, d.data());
-          const keys = publicationKeys(pub);
-          const existingKey = keys.find((key) => canonical.has(key));
-          const merged = existingKey
-            ? mergePublications(canonical.get(existingKey) as Publication, pub)
-            : pub;
-          publicationKeys(merged).concat(keys).forEach((key) => canonical.set(key, merged));
-        });
-
-        const unique = Array.from(new Set(canonical.values())).sort(
-          (a, b) => b.year - a.year || a.title.localeCompare(b.title),
-        );
-
-        /* `all` is every paper the lab knows about. `ongoing` and `published`
-           stay lab-head-only, which is what the Publications page and the Home
-           stats mean by those words — but filtering at the source meant a
-           collaborator's own paper never reached their profile page either. */
-        setAll(unique);
-        const labPapers = unique.filter((p) => p.hasLabHeadAuthorship);
-        setOngoing(labPapers.filter((p) => p.type === "ongoing"));
-        setPublished(labPapers.filter((p) => p.type === "published"));
-        setLoading(false);
-      },
-      (error) => {
-        console.error("Publications error:", error);
-        setLoading(false);
-      },
-    );
-    return unsub;
-  }, []);
-
-  return { all, ongoing, published, loading };
-}
-
-// ── Research Ideas ────────────────────────────────────────────
-export function useResearchIdeas() {
-  const [ideas, setIdeas] = useState<ResearchIdea[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    if (!isFirebaseConfigured) { setLoading(false); return; }
-    const unsub = onSnapshot(
-      collection(db, "researchIdeas"),
-      (snap) => {
-        const all = snap.docs
-          .map((d) => normalizeResearchIdea(d.id, d.data()))
-          .filter((idea) => !idea.isHidden)
-          .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-        setIdeas(all);
-        setLoading(false);
-      },
-      (error) => {
-        console.error("Research ideas error:", error);
-        setLoading(false);
-      },
-    );
-    return unsub;
-  }, []);
-
-  return { ideas, loading };
-}
-
-// ── Comments for an idea ──────────────────────────────────────
-export function useComments(ideaId: string) {
-  const [comments, setComments] = useState<AppComment[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    if (!ideaId || !isFirebaseConfigured) { setLoading(false); return; }
-    const unsub = onSnapshot(
-      query(collection(db, "comments"), where("ideaId", "==", ideaId)),
-      (snap) => {
-        const all = snap.docs
-          .map((d) => normalizeComment(d.id, d.data()))
-          .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
-        setComments(all);
-        setLoading(false);
-      },
-      (error) => {
-        console.error("Comments error:", error);
-        setLoading(false);
-      },
-    );
-    return unsub;
-  }, [ideaId]);
-
-  return { comments, loading };
-}
-
-// ── Announcements ─────────────────────────────────────────────
-export function useAnnouncements() {
-  const [announcements, setAnnouncements] = useState<Announcement[]>([]);
-
-  useEffect(() => {
-    if (!isFirebaseConfigured) return;
-    const unsub = onSnapshot(
-      collection(db, "announcements"),
-      (snap) => {
-        const all = snap.docs
-          .map((d) => normalizeAnnouncement(d.id, d.data()))
-          .filter((item) => !item.isHidden)
-          /* Pinned first, then newest first. Sorting by `order` ascending gave
-             oldest-first, which is why the lab's very first announcement sat at
-             the top of a section titled "Latest Updates". */
-          .sort(
-            (a, b) =>
-              Number(Boolean(b.isPinned)) - Number(Boolean(a.isPinned)) ||
-              b.createdAt.localeCompare(a.createdAt),
-          );
-        setAnnouncements(all);
-      },
-      (error) => {
-        console.error("Announcements error:", error);
-      },
-    );
-    return unsub;
-  }, []);
-
-  return announcements;
-}
-
-// ── Single collaborator profile by uid ────────────────────────
-export async function getCollaboratorByUid(
-  uid: string,
-): Promise<CollaboratorProfile | null> {
-  const q = query(collection(db, "collaborators"), where("uid", "==", uid));
-  const snap = await getDocs(q);
-  if (snap.empty) return null;
-  return { id: snap.docs[0].id, ...snap.docs[0].data() } as CollaboratorProfile;
-}
-
-// ── Gallery ───────────────────────────────────────────────────
-export function useGallery() {
-  const [gallery, setGallery] = useState<GalleryItem[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    if (!isFirebaseConfigured) { setLoading(false); return; }
-    const unsub = onSnapshot(
-      collection(db, "gallery"),
-      (snap) => {
-        const all = snap.docs
-          .map((d) => ({ id: d.id, title: text(d.data().title) || "Lab gallery item", description: text(d.data().description), imageUrl: text(d.data().imageUrl), order: Number(d.data().order) || 0, createdAt: iso(d.data().createdAt), updatedAt: text(d.data().updatedAt) || undefined, uploaderUid: text(d.data().uploaderUid) || undefined, uploaderName: text(d.data().uploaderName) || undefined, uploaderEmail: text(d.data().uploaderEmail) || undefined, isVisible: d.data().isVisible !== false, moderationStatus: d.data().moderationStatus === "rejected" ? "rejected" : d.data().moderationStatus === "pending" ? "pending" : "approved" } as GalleryItem))
-          .filter((item) => Boolean(item.imageUrl) && item.isVisible !== false && item.moderationStatus !== "rejected")
-          .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
-        setGallery(all);
-        setLoading(false);
-      },
-      (error) => {
-        console.error("Gallery error:", error);
-        setLoading(false);
-      },
-    );
-    return unsub;
-  }, []);
-
-  return { gallery, loading };
-}
+export default ManageCollaborators;
