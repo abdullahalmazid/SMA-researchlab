@@ -3,7 +3,13 @@ import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import CollaboratorPublicProfile from "../components/CollaboratorPublicProfile";
 import EditableText from "../components/EditableText";
 import { useThemeContext } from "../context/ThemeContext";
-import { useCollaborators, useGallery, usePublications } from "../firebase/hooks";
+import {
+  isContributor,
+  publicationKeys,
+  useCollaborators,
+  useGallery,
+  usePublications,
+} from "../firebase/hooks";
 import type { CollaboratorPublication } from "../types";
 
 /* ------------------------------------------------------------------ *
@@ -42,6 +48,11 @@ const relativeLuminance = (hex: string) => {
   return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b);
 };
 
+/** Loose title match, used only to spot a paper entered twice by hand and as a
+ *  shared record. Deliberately forgiving about punctuation and case. */
+const titleKey = (value: string) =>
+  value.trim().toLowerCase().replace(/[^a-z0-9]+/g, "");
+
 /* ------------------------------------------------------------------ *
  * Page
  * ------------------------------------------------------------------ */
@@ -54,7 +65,7 @@ const CollaboratorProfilePage: React.FC = () => {
 
   const { collaborators, loading: collaboratorsLoading } = useCollaborators();
   const { gallery, loading: galleryLoading } = useGallery();
-  const { ongoing, published, loading: publicationsLoading } = usePublications();
+  const { all: allPublications, loading: publicationsLoading } = usePublications();
 
   const tone = useMemo(() => {
     const isDark = relativeLuminance(theme.backgroundColor ?? "#ffffff") < 0.22;
@@ -77,20 +88,37 @@ const CollaboratorProfilePage: React.FC = () => {
   const linkedPublications = useMemo<CollaboratorPublication[]>(() => {
     if (!uid) return [];
 
-    // A record can appear in both feeds, so dedupe by id before mapping.
-    const seen = new Set<string>();
+    /**
+     * Reads the full publication list, not the lab-head-filtered feeds.
+     *
+     * usePublications drops every record where hasLabHeadAuthorship is false
+     * before splitting into ongoing/published. That rule is right for the
+     * Publications page — but this page was built from those same two lists, so
+     * a paper the lab head isn't on vanished from its own authors' profiles
+     * too. Filtering per person here means a paper with three lab authors shows
+     * on all three profiles, with no extra bookkeeping.
+     */
+    const mine = allPublications.filter((publication) => isContributor(publication, uid));
 
-    return [...ongoing, ...published]
-      .filter((publication) => {
-        if (seen.has(publication.id)) return false;
-        const isContributor =
-          publication.contributorUids?.includes(uid) ||
-          publication.authorEntries?.some(
-            (author) => author.type === "linked" && author.uid === uid,
-          );
-        if (isContributor) seen.add(publication.id);
-        return isContributor;
-      })
+    /* The hook already merges duplicate documents; this guards the remaining
+       case of two records that share no key at all. */
+    const seen = new Set<string>();
+    const unique = mine.filter((publication) => {
+      const keys = publicationKeys(publication);
+      if (keys.some((key) => seen.has(key))) return false;
+      keys.forEach((key) => seen.add(key));
+      return true;
+    });
+
+    /* `CollaboratorProfile.publications` is a separate hand-typed list in the
+       portal. A paper entered there *and* added as a shared record showed up
+       twice; the manual copy wins, since it's the one the person curated. */
+    const manual = new Set(
+      (collaborator?.publications ?? []).map((entry) => titleKey(entry.title)),
+    );
+
+    return unique
+      .filter((publication) => !manual.has(titleKey(publication.title)))
       .map((publication) => ({
         id: publication.id,
         title: publication.title,
@@ -98,11 +126,8 @@ const CollaboratorProfilePage: React.FC = () => {
         year: publication.year,
         url: publication.url,
       }))
-      .sort(
-        (a, b) =>
-          (b.year ?? 0) - (a.year ?? 0) || a.title.localeCompare(b.title),
-      );
-  }, [ongoing, published, uid]);
+      .sort((a, b) => (b.year ?? 0) - (a.year ?? 0) || a.title.localeCompare(b.title));
+  }, [allPublications, collaborator, uid]);
 
   const galleryItems = useMemo(
     () => (collaborator ? gallery.filter((item) => item.uploaderUid === collaborator.uid) : []),
