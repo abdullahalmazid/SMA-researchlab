@@ -3,6 +3,9 @@ import React, { useState } from "react";
 import AppIcon from "../components/AppIcon";
 import EditableText from "../components/EditableText";
 import IdeaCard from "../components/IdeaCard";
+import IdeaView from "../components/IdeaView";
+import SideDrawer from "../components/SideDrawer";
+import SplitView, { useSplitRoute } from "../components/SplitView";
 import PageHero from "../components/PageHero";
 import PageSearchBar from "../components/PageSearchBar";
 import { useAuth } from "../context/AuthContext";
@@ -15,6 +18,10 @@ const ResearchIdeas: React.FC = () => {
   const { role, appUser } = useAuth();
   const [showModal, setShowModal] = useState(false);
   const [search, setSearch] = useState("");
+  /* An open idea is /research-ideas/<id>: beside the list on desktop, in a
+     bottom sheet on phones. */
+  const { openId, isDesktop, open: openIdea, close: closeIdea } = useSplitRoute("/research-ideas");
+  const openTitle = ideas.find((i) => i.id === openId)?.title ?? "Research idea";
 
   const canPost = role === "collaborator" || role === "lab_head";
 
@@ -37,6 +44,29 @@ const ResearchIdeas: React.FC = () => {
         />
       </div>
     );
+
+  if (isDesktop && openId) {
+    return (
+      <SplitView
+        section="Research ideas"
+        items={filtered.map((idea) => ({
+          id: idea.id,
+          title: idea.title,
+          subtitle: `${idea.authorName || "Researcher"} · ${idea.commentCount ?? 0} comments`,
+        }))}
+        total={ideas.length}
+        activeId={openId}
+        onSelect={openIdea}
+        onClose={closeIdea}
+        search={search}
+        onSearch={setSearch}
+        searchPlaceholder="Find an idea…"
+        current={openTitle}
+      >
+        <IdeaView id={openId} />
+      </SplitView>
+    );
+  }
 
   return (
     <div>
@@ -124,7 +154,7 @@ const ResearchIdeas: React.FC = () => {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {filtered.map((idea) => (
-              <IdeaCard key={idea.id} idea={idea} />
+              <IdeaCard key={idea.id} idea={idea} onOpen={() => openIdea(idea.id)} />
             ))}
           </div>
         )}
@@ -137,6 +167,10 @@ const ResearchIdeas: React.FC = () => {
           onClose={() => setShowModal(false)}
         />
       )}
+
+      <SideDrawer open={!isDesktop && Boolean(openId)} onClose={closeIdea} eyebrow="Research idea" title={openTitle} mobileHeight={88}>
+        {openId && <IdeaView id={openId} />}
+      </SideDrawer>
     </div>
   );
 };

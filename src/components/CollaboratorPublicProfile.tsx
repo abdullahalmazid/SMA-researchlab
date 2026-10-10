@@ -8,7 +8,10 @@ interface Props {
   c: CollaboratorProfile;
   linkedPublications: CollaboratorPublication[];
   galleryItems?: GalleryItem[];
-  onBack: () => void;
+  /** Shown as a "Back to Collaborators" button on the full page. */
+  onBack?: () => void;
+  /** "panel" is the compact layout for drawers, sheets and the split view. */
+  variant?: "page" | "panel";
   /** Id of the shared publication record behind an entry, when there is one —
    *  that record has a detail page at /publications/:id. */
   getDetailId?: (publication: CollaboratorPublication) => string | undefined;
@@ -57,7 +60,7 @@ const Eyebrow: React.FC<{ id: string; children: React.ReactNode; count?: number 
  * symmetry pulls the whole header into a centred vertical stack.
  * ------------------------------------------------------------------ */
 
-const ProfileAvatar: React.FC<{ photo?: string; name: string }> = ({ photo, name }) => {
+const ProfileAvatar: React.FC<{ photo?: string; name: string; compact?: boolean }> = ({ photo, name, compact }) => {
   const [failed, setFailed] = useState(false);
   const initials = (name || "Unknown")
     .split(" ")
@@ -68,7 +71,7 @@ const ProfileAvatar: React.FC<{ photo?: string; name: string }> = ({ photo, name
     .toUpperCase();
 
   const shared: React.CSSProperties = {
-    width: "clamp(124px, 14vw, 168px)",
+    width: compact ? "clamp(84px, 9vw, 112px)" : "clamp(124px, 14vw, 168px)",
     aspectRatio: "1 / 1",
     borderRadius: 20,
     border: "3px solid rgba(255,255,255,0.3)",
@@ -113,7 +116,10 @@ const CollaboratorPublicProfile: React.FC<Props> = ({
   onBack,
   getDetailId,
   onMessage,
+  variant = "page",
 }) => {
+  const isPanel = variant === "panel";
+  const box = isPanel ? "p-5" : "p-6 md:p-8";
   const [openPublication, setOpenPublication] = useState<PublicationDrawerTarget | null>(null);
 
   const mergedPublications = useMemo(() => {
@@ -157,13 +163,13 @@ const CollaboratorPublicProfile: React.FC<Props> = ({
   const visibleGallery = galleryItems.slice(0, 9);
 
   return (
-    <main className="bg-slate-50">
+    <div className={isPanel ? "" : "bg-slate-50"}>
       {/* Compact header: one horizontal row instead of a centred stack of
           avatar → name → designation → affiliation → 3-up stat grid, which was
           what made this section so tall. */}
       <header
         aria-labelledby="collaborator-name"
-        className="relative overflow-hidden px-4 py-10 md:py-12"
+        className={`relative overflow-hidden px-4 ${isPanel ? "py-6 md:px-6" : "py-10 md:py-12"}`}
         style={{
           background: "linear-gradient(135deg, var(--color-primary), var(--color-secondary))",
         }}
@@ -177,15 +183,15 @@ const CollaboratorPublicProfile: React.FC<Props> = ({
           }}
         />
 
-        <div className="relative mx-auto flex max-w-6xl flex-col items-center gap-7 text-center sm:flex-row sm:items-center sm:gap-9 sm:text-left">
+        <div className={`relative mx-auto flex max-w-6xl flex-col items-center text-center sm:flex-row sm:items-center sm:text-left ${isPanel ? "gap-5 sm:gap-6" : "gap-7 sm:gap-9"}`}>
           <div className="shrink-0">
-            <ProfileAvatar photo={c.photo} name={c.name} />
+            <ProfileAvatar photo={c.photo} name={c.name} compact={isPanel} />
           </div>
 
           <div className="min-w-0 flex-1">
             <h1
               id="collaborator-name"
-              className="text-[26px] font-bold leading-[1.15] tracking-[-0.02em] text-white md:text-[36px]"
+              className={`font-bold leading-[1.15] tracking-[-0.02em] text-white ${isPanel ? "text-[22px] md:text-[26px]" : "text-[26px] md:text-[36px]"}`}
               style={{ fontFamily: "var(--font-heading)" }}
             >
               {c.name}
@@ -205,12 +211,12 @@ const CollaboratorPublicProfile: React.FC<Props> = ({
             )}
 
             {(c.email || onMessage) && (
-              <div className="mt-6 flex flex-wrap justify-center gap-2.5 sm:justify-start">
+              <div className={`${isPanel ? "mt-4" : "mt-6"} flex flex-wrap justify-center gap-2.5 sm:justify-start`}>
                 {onMessage && (
                   <button
                     type="button"
                     onClick={onMessage}
-                    className={`inline-flex min-h-[42px] items-center gap-2 rounded-xl border-0 px-5 text-sm font-semibold text-[color:var(--on-accent)] shadow-lg transition hover:opacity-90 ${FOCUS_ON_HERO}`}
+                    className={`inline-flex ${isPanel ? "min-h-[36px] px-4" : "min-h-[42px] px-5"} items-center gap-2 rounded-xl border-0 text-sm font-semibold text-[color:var(--on-accent)] shadow-lg transition hover:opacity-90 ${FOCUS_ON_HERO}`}
                     style={{ background: "var(--color-accent)" }}
                   >
                     <MessageCircle size={17} aria-hidden="true" />
@@ -220,7 +226,7 @@ const CollaboratorPublicProfile: React.FC<Props> = ({
                 {c.email && (
                   <a
                     href={`mailto:${c.email}`}
-                    className={`inline-flex min-h-[42px] items-center rounded-xl bg-white px-5 text-sm font-semibold no-underline shadow-lg transition hover:opacity-90 ${FOCUS_ON_HERO}`}
+                    className={`inline-flex ${isPanel ? "min-h-[36px] px-4" : "min-h-[42px] px-5"} items-center rounded-xl bg-white text-sm font-semibold no-underline shadow-lg transition hover:opacity-90 ${FOCUS_ON_HERO}`}
                     style={{ color: "var(--color-primary)" }}
                   >
                     Contact {c.name.split(" ")[0]}
@@ -232,7 +238,8 @@ const CollaboratorPublicProfile: React.FC<Props> = ({
         </div>
       </header>
 
-      <div className="mx-auto max-w-6xl px-4 py-10 md:py-12">
+      <div className={isPanel ? "px-4 py-5 md:px-6" : "mx-auto max-w-6xl px-4 py-10 md:py-12"}>
+        {onBack && (
         <button
           type="button"
           onClick={onBack}
@@ -244,11 +251,12 @@ const CollaboratorPublicProfile: React.FC<Props> = ({
           </span>
           Back to Collaborators
         </button>
+        )}
 
-        <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_300px]">
-          <div className="min-w-0 space-y-6">
+        <div className={`grid ${isPanel ? "gap-4 xl:grid-cols-[minmax(0,1fr)_260px]" : "gap-6 lg:grid-cols-[minmax(0,1fr)_300px]"}`}>
+          <div className={`min-w-0 ${isPanel ? "space-y-4" : "space-y-6"}`}>
             {c.bio && (
-              <section aria-labelledby="about-heading" className={`${PANEL} p-6 md:p-8`}>
+              <section aria-labelledby="about-heading" className={`${PANEL} ${box}`}>
                 <Eyebrow id="about-heading">About</Eyebrow>
                 <p
                   className="max-w-[68ch] text-[15.5px] text-slate-700"
@@ -259,7 +267,7 @@ const CollaboratorPublicProfile: React.FC<Props> = ({
               </section>
             )}
 
-            <section aria-labelledby="publications-heading" className={`${PANEL} p-6 md:p-8`}>
+            <section aria-labelledby="publications-heading" className={`${PANEL} ${box}`}>
               <Eyebrow id="publications-heading" count={mergedPublications.length}>
                 Publications
               </Eyebrow>
@@ -324,7 +332,7 @@ const CollaboratorPublicProfile: React.FC<Props> = ({
             </section>
 
             {visibleGallery.length > 0 && (
-              <section aria-labelledby="gallery-heading" className={`${PANEL} p-6 md:p-8`}>
+              <section aria-labelledby="gallery-heading" className={`${PANEL} ${box}`}>
                 <Eyebrow id="gallery-heading" count={galleryItems.length}>
                   Contributor gallery
                 </Eyebrow>
@@ -362,9 +370,9 @@ const CollaboratorPublicProfile: React.FC<Props> = ({
             )}
           </div>
 
-          <aside className="space-y-6 lg:sticky lg:top-24 lg:h-fit">
+          <aside className={isPanel ? "space-y-4" : "space-y-6 lg:sticky lg:top-24 lg:h-fit"}>
             {interests.length > 0 && (
-              <section aria-labelledby="interests-heading" className={`${PANEL} p-6`}>
+              <section aria-labelledby="interests-heading" className={`${PANEL} ${box}`}>
                 <Eyebrow id="interests-heading">Research interests</Eyebrow>
                 {/* Was hardcoded #eff6ff / #1d4ed8 — blue whatever the theme. */}
                 <ul className="flex flex-wrap gap-2">
@@ -381,7 +389,7 @@ const CollaboratorPublicProfile: React.FC<Props> = ({
             )}
 
             {links.length > 0 && (
-              <section aria-labelledby="links-heading" className={`${PANEL} p-6`}>
+              <section aria-labelledby="links-heading" className={`${PANEL} ${box}`}>
                 <Eyebrow id="links-heading">Academic profiles</Eyebrow>
                 <ul className="grid gap-2">
                   {links.map((link) => (
@@ -406,7 +414,7 @@ const CollaboratorPublicProfile: React.FC<Props> = ({
             )}
 
             {c.email && (
-              <section aria-labelledby="contact-heading" className={`${PANEL} p-6`}>
+              <section aria-labelledby="contact-heading" className={`${PANEL} ${box}`}>
                 <Eyebrow id="contact-heading">Contact</Eyebrow>
                 <dl>
                   <dt className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
@@ -437,7 +445,7 @@ const CollaboratorPublicProfile: React.FC<Props> = ({
       </div>
 
       <PublicationDrawer target={openPublication} onClose={() => setOpenPublication(null)} />
-    </main>
+    </div>
   );
 };
 

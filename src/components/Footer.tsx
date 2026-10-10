@@ -1,4 +1,5 @@
 import { collection, getDocs, limit, query, where } from "firebase/firestore";
+import { PersonLink } from "./PersonDrawer";
 import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
@@ -290,6 +291,79 @@ const Footer: React.FC = () => {
             {/* The card looked clickable — rounded, bordered, shaded on hover —
                 but led nowhere. It now opens the lab head's profile. */}
             {labHeadName && (
+LAB_HEAD_UID ? (
+              <PersonLink
+                uid={LAB_HEAD_UID}
+                name={labHeadName}
+                aria-label={`View ${labHeadName}'s profile`}
+                className={`group flex items-center gap-[13px] rounded-2xl border border-[color:color-mix(in_srgb,var(--footer-text)_10%,transparent)] px-3.5 py-3 no-underline transition hover:border-[color:var(--color-accent)]/40 hover:bg-[color:color-mix(in_srgb,var(--footer-text)_10%,transparent)] motion-safe:hover:-translate-y-px ${FOCUS}`}
+                style={{
+                  background:
+                    "linear-gradient(180deg, color-mix(in srgb, var(--footer-text) 7.5%, transparent), color-mix(in srgb, var(--footer-text) 3.5%, transparent))",
+                }}
+              >
+                <span
+                  aria-hidden="true"
+                  className="grid h-[52px] w-[52px] flex-none place-items-center overflow-hidden rounded-[15px] text-[17px] font-extrabold text-white"
+                  style={{
+                    background:
+                      "linear-gradient(135deg, var(--color-accent), var(--color-secondary))",
+                    /* A ring rather than a border, so it doesn't eat into the photo. */
+                    boxShadow: "0 0 0 2px rgba(240,180,41,0.34), 0 6px 16px rgba(0,0,0,0.3)",
+                  }}
+                >
+                  {labHeadPhoto && !photoFailed ? (
+                    <img
+                      src={labHeadPhoto}
+                      /* Empty: the name sits right beside it, so alt={name} made
+                         a screen reader announce it twice. */
+                      alt=""
+                      loading="lazy"
+                      decoding="async"
+                      onError={() => setPhotoFailed(true)}
+                      className="h-full w-full object-cover"
+                    />
+                  ) : (
+                    /* charAt(0) on "Prof. Dr. Shahidur Rahman" gives "P". */
+                    personInitials(labHeadName)
+                  )}
+                </span>
+
+                <span className="min-w-0 flex-1">
+                  <span
+                    title={labHeadName}
+                    className={`block truncate text-[14.5px] font-extrabold ${FG_STRONG}`}
+                  >
+                    {labHeadName}
+                  </span>
+                  {labHeadTitle && (
+                    <span className={`mt-0.5 block truncate text-[11.5px] ${FG_FAINT}`}>
+                      {labHeadTitle}
+                    </span>
+                  )}
+                  <span
+                    className="mt-[7px] inline-flex items-center gap-1.5 rounded-full py-[3px] pl-[7px] pr-[9px] text-[10px] font-extrabold uppercase tracking-[0.09em]"
+                    style={{ background: "rgba(240,180,41,0.15)", color: "var(--footer-accent)" }}
+                  >
+                    <span aria-hidden="true" className="h-1 w-1 rounded-full bg-current" />
+                    <EditableText
+                      id="footer.labDirectorLabel"
+                      defaultValue="Lab Director"
+                      className="inline"
+                    />
+                  </span>
+                </span>
+
+                <span
+                  aria-hidden="true"
+                  className={`flex-none transition group-hover:text-[color:var(--footer-accent)] motion-safe:group-hover:translate-x-0.5 ${FG_FAINT}`}
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                    <path d="M9 5l7 7-7 7" strokeLinecap="round" />
+                  </svg>
+                </span>
+              </PersonLink>
+            ) : (
               <Link
                 to={labHeadHref}
                 aria-label={`View ${labHeadName}'s profile`}
@@ -360,6 +434,7 @@ const Footer: React.FC = () => {
                   </svg>
                 </span>
               </Link>
+            )
             )}
 
             {socialLinks.length > 0 && (

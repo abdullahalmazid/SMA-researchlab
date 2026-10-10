@@ -1,9 +1,11 @@
 import React, { useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
 import EditableText from "../components/EditableText";
 import PageHero from "../components/PageHero";
 import PageSearchBar, { SearchBarSelect, SearchBarTabs } from "../components/PageSearchBar";
 import PublicationCard from "../components/PublicationCard";
+import { PublicationPanel } from "../components/PublicationDrawer";
+import SideDrawer from "../components/SideDrawer";
+import SplitView, { useSplitRoute } from "../components/SplitView";
 import { usePublications, useSiteContent } from "../firebase/hooks";
 import type { Publication } from "../types";
 
@@ -25,7 +27,9 @@ const FOCUS =
 const Publications: React.FC = () => {
   const { ongoing, published, loading } = usePublications();
   const { content } = useSiteContent();
-  const navigate = useNavigate();
+  /* An open paper is /publications/<id>: beside the list on desktop, in a
+     bottom sheet on phones — the reader never leaves this page. */
+  const { openId, isDesktop, open: openPaper, close: closePaper } = useSplitRoute("/publications");
 
   const [search, setSearch] = useState("");
   const [tab, setTab] = useState<Tab>("all");
@@ -76,7 +80,8 @@ const Publications: React.FC = () => {
     (tab === "all" || tab === "ongoing" ? filteredOngoing.length : 0) +
     (tab === "all" || tab === "published" ? filteredPublished.length : 0);
 
-  const openDetails = (publication: Publication) => navigate(`/publications/${publication.id}`);
+  const openDetails = (publication: Publication) => openPaper(publication.id);
+  const openTitle = [...ongoing, ...published].find((p) => p.id === openId)?.title ?? "Publication";
 
   const stats = [
     {
@@ -155,6 +160,40 @@ const Publications: React.FC = () => {
         />
       </div>
     );
+
+  if (isDesktop && openId) {
+    const railList = [
+      ...(tab === "all" || tab === "ongoing" ? filteredOngoing : []),
+      ...(tab === "all" || tab === "published" ? filteredPublished : []),
+    ];
+    return (
+      <SplitView
+        section="Publications"
+        items={railList.map((p) => ({
+          id: p.id,
+          title: p.title,
+          subtitle: [p.year, p.journal].filter(Boolean).join(" · "),
+          leading: (
+            <span
+              aria-hidden="true"
+              className="h-2 w-2 shrink-0 rounded-full"
+              style={{ background: p.type === "ongoing" ? "#d97706" : "#059669" }}
+            />
+          ),
+        }))}
+        total={ongoing.length + published.length}
+        activeId={openId}
+        onSelect={openPaper}
+        onClose={closePaper}
+        search={search}
+        onSearch={setSearch}
+        searchPlaceholder="Find a paper…"
+        current={openTitle}
+      >
+        <PublicationPanel id={openId} />
+      </SplitView>
+    );
+  }
 
   return (
     <div style={{ background: "var(--color-bg)" }}>
@@ -333,6 +372,10 @@ const Publications: React.FC = () => {
           </div>
         )}
       </div>
+
+      <SideDrawer open={!isDesktop && Boolean(openId)} onClose={closePaper} eyebrow="Publication" title={openTitle} mobileHeight={88}>
+        {openId && <PublicationPanel id={openId} />}
+      </SideDrawer>
     </div>
   );
 };

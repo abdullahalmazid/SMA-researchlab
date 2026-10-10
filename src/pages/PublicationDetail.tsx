@@ -9,6 +9,7 @@ import {
 } from "firebase/firestore";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
+import { PersonLink } from "../components/PersonDrawer";
 import { db } from "../firebase/config";
 import { normalizePublication } from "../firebase/hooks";
 import type { Publication, PublicationAuthorEntry } from "../types";
@@ -19,7 +20,6 @@ import type { Publication, PublicationAuthorEntry } from "../types";
 
 const SITE_NAME = "Your Research Group";
 /** Route pattern for an internal author's profile page. */
-const profilePath = (profileId: string) => `/collaborators/${encodeURIComponent(profileId)}`;
 
 /* ------------------------------------------------------------------ *
  * Author helpers
@@ -476,13 +476,13 @@ const AuthorList: React.FC<{
         return (
           <li key={`${author.name}-${index}`}>
             {profileId ? (
-              <Link
-                to={profilePath(profileId)}
+              <PersonLink
+                uid={profileId}
                 className={linkClass}
                 style={inline ? undefined : { color: "var(--color-secondary)" }}
               >
                 {author.name}
-              </Link>
+              </PersonLink>
             ) : (
               <span>{author.name}</span>
             )}

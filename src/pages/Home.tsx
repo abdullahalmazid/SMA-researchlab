@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { NewsLink, PersonLink } from "../components/PersonDrawer";
 import { Link } from "react-router-dom";
 import AppIcon, { type AppIconName } from "../components/AppIcon";
 import EditableText from "../components/EditableText";
@@ -569,13 +570,15 @@ const Home: React.FC = () => {
                         year: "numeric", month: "short", day: "numeric",
                       })}
                     </span>
-                    <Link
-                      to={`/announcements?a=${encodeURIComponent(a.id)}`}
+                    {/* Opens in a drawer over the home page — no jump to the News section. */}
+                    <NewsLink
+                      id={a.id}
+                      title={announcementTitle(a)}
                       className="hm-read ml-auto no-underline text-[11px] font-bold px-2.5 py-0.5 rounded-lg"
                       aria-label={`Read: ${announcementTitle(a)}`}
                     >
                       Read <span aria-hidden="true">→</span>
-                    </Link>
+                    </NewsLink>
                   </div>
 
                   <p className="font-bold text-sm leading-snug" style={{ color: sectionTextPrimary, fontFamily: "var(--font-heading)" }}>
@@ -598,13 +601,17 @@ const Home: React.FC = () => {
               ))
             )}
 
-            {publishedAnnouncements.length > latestAnnouncements.length && (
+            {publishedAnnouncements.length > 0 && (
               <Link
                 to="/announcements"
-                className="hm-cta no-underline text-xs font-bold text-center py-2.5 rounded-xl border"
-                style={{ color: "var(--color-secondary)", borderColor: sectionCardBorder }}
+                className="hm-cta no-underline inline-flex items-center justify-center gap-1.5 text-xs font-bold py-2.5 rounded-xl border"
+                style={{ color: "var(--secondary-ink)", borderColor: sectionCardBorder, background: sectionCardBg }}
               >
-                <EditableText id="home.viewAllAnnouncements" defaultValue="View all announcements →" className="font-bold text-xs" />
+                <EditableText id="home.showAllNews" defaultValue="Show all news" className="font-bold text-xs" />
+                <span aria-hidden="true">→</span>
+                <span className="font-semibold tabular-nums" style={{ color: sectionTextMuted }}>
+                  ({publishedAnnouncements.length})
+                </span>
               </Link>
             )}
           </div>
@@ -719,9 +726,10 @@ const TeamSection: React.FC<{ collaborators: CollaboratorProfile[]; isDarkTheme:
 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
           {visibleMembers.map((member) => (
-            <Link
+            <PersonLink
               key={member.uid ?? member.name}
-              to={member.uid ? `/collaborators/${member.uid}` : "/collaborators"}
+              uid={member.uid ?? ""}
+              name={member.name}
               className="hm-slide no-underline flex flex-col items-center text-center rounded-2xl overflow-hidden"
               style={{
                 background: t.cardBg,
@@ -773,7 +781,7 @@ const TeamSection: React.FC<{ collaborators: CollaboratorProfile[]; isDarkTheme:
                   </p>
                 )}
               </div>
-            </Link>
+            </PersonLink>
           ))}
         </div>
 

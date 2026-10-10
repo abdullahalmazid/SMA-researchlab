@@ -2,7 +2,11 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useNavigate, useSearchParams } from "react-router-dom";
 import EditableText from "../components/EditableText";
 import PageHero from "../components/PageHero";
+import AnnouncementView, { fmtDate, titleOf } from "../components/AnnouncementView";
 import PageSearchBar from "../components/PageSearchBar";
+import SideDrawer from "../components/SideDrawer";
+import SplitView from "../components/SplitView";
+import { useIsDesktop } from "../hooks/useMediaQuery";
 import { useThemeContext } from "../context/ThemeContext";
 import { useAnnouncements, useSiteContent } from "../firebase/hooks";
 import type { Announcement } from "../types";
@@ -14,17 +18,7 @@ import type { Announcement } from "../types";
 
 const PARAM = { open: "a", search: "q", category: "topic" } as const;
 
-/** Anything newer than this gets a "New" badge. */
-const NEW_DAYS = 21;
-
 /* ------------------------------------------------------------------ dates */
-
-const fmtDate = (value: string) => {
-  const date = new Date(value);
-  return Number.isNaN(date.getTime())
-    ? ""
-    : date.toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
-};
 
 const monthOf = (value: string) => {
   const date = new Date(value);
@@ -33,32 +27,8 @@ const monthOf = (value: string) => {
     : date.toLocaleDateString("en-US", { year: "numeric", month: "long" });
 };
 
-function relativeTo(value: string): string {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "";
-  const days = Math.round((Date.now() - date.getTime()) / 86_400_000);
-  if (days <= 0) return "today";
-  if (days === 1) return "yesterday";
-  if (days < 30) return `${days} days ago`;
-  if (days < 365) return `${Math.round(days / 30)} months ago`;
-  return `${Math.round(days / 365)} years ago`;
-}
-
-const isRecent = (value: string) => {
-  const date = new Date(value);
-  return !Number.isNaN(date.getTime()) && (Date.now() - date.getTime()) / 86_400_000 < NEW_DAYS;
-};
-
 /* ------------------------------------------------------------------ text */
 
-/** First sentence, trimmed to a headline length. */
-function titleOf(post: Announcement): string {
-  if (post.title?.trim()) return post.title.trim();
-  const first = (post.content || "").split(/(?<=[.!?])\s/)[0]?.trim() ?? "";
-  return first.length > 90 ? `${first.slice(0, 88).trimEnd()}…` : first || "Untitled";
-}
-
-const bodyOf = (post: Announcement) => post.body?.trim() || post.content || "";
 const norm = (value?: string) => (value ?? "").toLowerCase();
 
 /* ----------------------------------------------------------------- theme */
@@ -100,39 +70,6 @@ const buildTokens = (dark: boolean) => ({
 type Tokens = ReturnType<typeof buildTokens>;
 
 /* ------------------------------------------------------------------ bits */
-
-const Badges: React.FC<{ post: Announcement; t: Tokens }> = ({ post, t }) => (
-  <>
-    {post.isPinned && (
-      <span
-        className="inline-flex items-center rounded-[5px] border px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-[0.08em]"
-        style={{ background: t.pinBg, borderColor: t.pinBorder, color: t.pin }}
-      >
-        Pinned
-      </span>
-    )}
-    {isRecent(post.createdAt) && (
-      <span
-        className="inline-flex items-center rounded-[5px] border px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-[0.08em]"
-        style={{
-          background: "color-mix(in srgb, var(--color-secondary) 14%, transparent)",
-          borderColor: "color-mix(in srgb, var(--color-secondary) 30%, transparent)",
-          color: "var(--color-secondary)",
-        }}
-      >
-        New
-      </span>
-    )}
-    {post.category && (
-      <span
-        className="inline-flex items-center rounded-[5px] px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-[0.08em]"
-        style={{ background: t.surfaceAlt, color: t.muted }}
-      >
-        {post.category}
-      </span>
-    )}
-  </>
-);
 
 const CardSkeleton: React.FC<{ t: Tokens }> = ({ t }) => (
   <div
@@ -224,15 +161,10 @@ const Announcements: React.FC = () => {
   const openPost = openIndex >= 0 ? visible[openIndex] : null;
   const isOpen = Boolean(openPost);
 
-  const headingRef = useRef<HTMLHeadingElement>(null);
-  const drawerRef = useRef<HTMLElement>(null);
-  const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const isDesktop = useIsDesktop();
   const pushedRef = useRef(false);
-  const scrollRef = useRef(0);
 
-  const openPostById = (id: string, trigger: HTMLButtonElement) => {
-    triggerRef.current = trigger;
-    scrollRef.current = window.scrollY;
+  const openPostById = (id: string) => {
     pushedRef.current = true;
     /* Pushed, not replaced: Back closes the drawer instead of leaving the page. */
     setParam(PARAM.open, id, false);
@@ -252,59 +184,6 @@ const Announcements: React.FC = () => {
     const next = visible[openIndex + delta];
     if (next) setParam(PARAM.open, next.id);
   };
-
-  /* Lock the page behind the drawer, and restore the reader's place on close —
-     the whole point of a drawer over a detail page is not losing it. */
-  useEffect(() => {
-    if (!isOpen) return;
-    const previous = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = previous;
-    };
-  }, [isOpen]);
-
-  useEffect(() => {
-    if (isOpen) {
-      /* The heading, not the close button: a screen reader then reads the
-         announcement's title as the dialog opens. */
-      window.requestAnimationFrame(() => headingRef.current?.focus());
-    } else if (triggerRef.current) {
-      triggerRef.current.focus();
-      triggerRef.current = null;
-      window.scrollTo(0, scrollRef.current);
-    }
-  }, [isOpen, openId]);
-
-  /* Escape closes; Tab is trapped. Without the trap, Tab walks out into the
-     list behind — visible, but not meant to be reachable. */
-  useEffect(() => {
-    if (!isOpen) return;
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        close();
-        return;
-      }
-      if (event.key !== "Tab" || !drawerRef.current) return;
-      const focusable = Array.from(
-        drawerRef.current.querySelectorAll<HTMLElement>("a[href], button:not(:disabled)"),
-      ).filter((el) => el.offsetParent !== null);
-      if (focusable.length === 0) return;
-      const first = focusable[0];
-      const last = focusable[focusable.length - 1];
-      const active = document.activeElement;
-      if (event.shiftKey && (active === first || active === headingRef.current)) {
-        event.preventDefault();
-        last.focus();
-      } else if (!event.shiftKey && active === last) {
-        event.preventDefault();
-        first.focus();
-      }
-    };
-    document.addEventListener("keydown", onKeyDown);
-    return () => document.removeEventListener("keydown", onKeyDown);
-  }, [isOpen, close]);
 
   /* --------------------------------------------------------------- view */
 
@@ -339,11 +218,15 @@ const Announcements: React.FC = () => {
          navigating. Announcing "link" and then not going anywhere is what makes
          dialogs confusing on a screen reader. */
       aria-haspopup="dialog"
-      onClick={(event) => openPostById(post.id, event.currentTarget)}
+      onClick={() => openPostById(post.id)}
       className="mb-3 block w-full rounded-2xl border border-l-4 px-5 py-[18px] text-left transition hover:shadow-[0_12px_28px_rgba(15,23,42,0.09)] motion-safe:hover:-translate-y-0.5"
       style={{
         background: t.surface,
-        borderColor: openId === post.id ? "var(--color-secondary)" : t.border,
+        // Longhands only: mixing the borderColor shorthand with borderLeftColor
+        // mis-renders on update (React warns about it).
+        borderTopColor: openId === post.id ? "var(--color-secondary)" : t.border,
+        borderRightColor: openId === post.id ? "var(--color-secondary)" : t.border,
+        borderBottomColor: openId === post.id ? "var(--color-secondary)" : t.border,
         borderLeftColor: post.isPinned ? "var(--color-accent)" : t.borderStrong,
         boxShadow: t.shadow,
       }}
@@ -375,6 +258,57 @@ const Announcements: React.FC = () => {
       </span>
     </button>
   );
+
+  const stepper = (
+    <div className="flex flex-none items-center gap-2 border-t px-5 py-3" style={{ borderColor: t.border, background: t.surface }}>
+      {/* Steps through the *filtered* list, so a search pages through matches. */}
+      <button
+        type="button"
+        onClick={() => step(-1)}
+        disabled={openIndex <= 0}
+        className="inline-flex items-center gap-1.5 rounded-[9px] border px-3 py-2 text-[12.5px] font-semibold transition disabled:cursor-not-allowed disabled:opacity-40"
+        style={{ borderColor: t.border, color: t.body, background: t.surface }}
+      >
+        <span aria-hidden="true">←</span> Newer
+      </button>
+      <button
+        type="button"
+        onClick={() => step(1)}
+        disabled={openIndex < 0 || openIndex >= visible.length - 1}
+        className="inline-flex items-center gap-1.5 rounded-[9px] border px-3 py-2 text-[12.5px] font-semibold transition disabled:cursor-not-allowed disabled:opacity-40"
+        style={{ borderColor: t.border, color: t.body, background: t.surface }}
+      >
+        Older <span aria-hidden="true">→</span>
+      </button>
+      <span className="text-[11.5px] tabular-nums" style={{ color: t.faint }}>
+        {openIndex >= 0 ? `${openIndex + 1} of ${visible.length}` : ""}
+      </span>
+    </div>
+  );
+
+  if (isDesktop && openPost) {
+    return (
+      <SplitView
+        section="News"
+        items={visible.map((post) => ({
+          id: post.id,
+          title: titleOf(post),
+          subtitle: [post.isPinned ? "Pinned" : "", post.category, fmtDate(post.createdAt)].filter(Boolean).join(" · "),
+        }))}
+        total={published.length}
+        activeId={openPost.id}
+        onSelect={(id) => setParam(PARAM.open, id)}
+        onClose={close}
+        search={search}
+        onSearch={(value) => setParam(PARAM.search, value)}
+        searchPlaceholder="Find news…"
+        current={titleOf(openPost)}
+        footer={stepper}
+      >
+        <AnnouncementView post={openPost} />
+      </SplitView>
+    );
+  }
 
   return (
     <div>
@@ -538,122 +472,15 @@ const Announcements: React.FC = () => {
         )}
       </div>
 
-      {/* --------------------------------------------------------- drawer */}
-      {/* Kept mounted so it can transition. `invisible` takes it out of the tab
-          order and the accessibility tree while closed. */}
-      <div
-        aria-hidden="true"
-        onClick={close}
-        className={`fixed inset-0 z-[100] bg-slate-900/55 backdrop-blur-[2px] transition-opacity duration-300 motion-reduce:transition-none ${
-          isOpen ? "opacity-100" : "pointer-events-none opacity-0"
-        }`}
-      />
-
-      <aside
-        ref={drawerRef}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="announcement-drawer-title"
-        className={`fixed bottom-0 right-0 top-0 z-[101] flex w-[min(540px,100vw)] flex-col border-l shadow-[-24px_0_60px_rgba(15,23,42,0.22)] transition-transform duration-300 ease-[cubic-bezier(.32,.72,0,1)] motion-reduce:transition-none max-sm:inset-x-0 max-sm:top-auto max-sm:max-h-[88vh] max-sm:w-full max-sm:rounded-t-[20px] max-sm:border-l-0 ${
-          isOpen
-            ? "translate-x-0 max-sm:translate-y-0"
-            : "invisible translate-x-full max-sm:translate-x-0 max-sm:translate-y-full"
-        }`}
-        style={{ background: t.surface, borderColor: t.border }}
-      >
-        <div
-          className="flex flex-none items-start gap-3 border-b px-5 pb-3.5 pt-[18px]"
-          style={{ borderColor: t.border }}
-        >
-          <p
-            className="text-[10.5px] font-extrabold uppercase tracking-[0.14em]"
-            style={{ color: t.faint }}
-          >
-            Announcement
-          </p>
-          <button
-            type="button"
-            onClick={close}
-            aria-label="Close announcement"
-            className="ml-auto grid h-[34px] w-[34px] flex-none place-items-center rounded-[9px] border transition"
-            style={{ borderColor: t.border, color: t.muted, background: t.surface }}
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true">
-              <path d="M6 6l12 12M18 6L6 18" strokeLinecap="round" />
-            </svg>
-          </button>
-        </div>
-
-        <div className="flex-1 overflow-y-auto overscroll-contain px-5 pb-6 pt-[22px]">
-          {openPost && (
-            <>
-              <div className="mb-3 flex flex-wrap items-center gap-2">
-                <Badges post={openPost} t={t} />
-              </div>
-              <h2
-                id="announcement-drawer-title"
-                ref={headingRef}
-                tabIndex={-1}
-                className="text-[22px] font-black leading-tight focus:outline-none"
-                style={{ fontFamily: "var(--font-heading)", color: t.title }}
-              >
-                {titleOf(openPost)}
-              </h2>
-              <p className="mt-2.5 text-[12.5px]" style={{ color: t.faint }}>
-                {fmtDate(openPost.createdAt)} · {relativeTo(openPost.createdAt)}
-              </p>
-              <div
-                className="mt-5 whitespace-pre-line text-[14.5px] leading-[1.85]"
-                style={{ color: t.body }}
-              >
-                {bodyOf(openPost)}
-              </div>
-              {openPost.link && (
-                <a
-                  href={openPost.link}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="mt-6 inline-flex items-center gap-2 rounded-[9px] px-4 py-2.5 text-[13px] font-bold text-[color:var(--hero-text)] no-underline"
-                  style={{ background: "var(--color-primary)" }}
-                >
-                  {/* The admin panel writes linkLabel precisely so this doesn't
-                      say "Open link" on every announcement. */}
-                  {openPost.linkLabel?.trim() || "Open link"} <span aria-hidden="true">↗</span>
-                </a>
-              )}
-            </>
-          )}
-        </div>
-
-        <div
-          className="flex flex-none items-center gap-2 border-t px-5 py-3"
-          style={{ borderColor: t.border, background: t.surface }}
-        >
-          {/* Steps through the *filtered* list, so a search for "award" pages
-              through matches rather than everything. */}
-          <button
-            type="button"
-            onClick={() => step(-1)}
-            disabled={openIndex <= 0}
-            className="inline-flex items-center gap-1.5 rounded-[9px] border px-3 py-2 text-[12.5px] font-semibold transition disabled:cursor-not-allowed disabled:opacity-40"
-            style={{ borderColor: t.border, color: t.body, background: t.surface }}
-          >
-            <span aria-hidden="true">←</span> Newer
-          </button>
-          <button
-            type="button"
-            onClick={() => step(1)}
-            disabled={openIndex < 0 || openIndex >= visible.length - 1}
-            className="inline-flex items-center gap-1.5 rounded-[9px] border px-3 py-2 text-[12.5px] font-semibold transition disabled:cursor-not-allowed disabled:opacity-40"
-            style={{ borderColor: t.border, color: t.body, background: t.surface }}
-          >
-            Older <span aria-hidden="true">→</span>
-          </button>
-          <span className="text-[11.5px] tabular-nums" style={{ color: t.faint }}>
-            {openIndex >= 0 ? `${openIndex + 1} of ${visible.length}` : ""}
-          </span>
-        </div>
-      </aside>
+      {/* --------------------------------------------------------- sheet (phones) */}
+      <SideDrawer open={!isDesktop && isOpen} onClose={close} eyebrow="Announcement" title={openPost ? titleOf(openPost) : ""} mobileHeight={80}>
+        {openPost && (
+          <>
+            <AnnouncementView post={openPost} />
+            <div className="sticky bottom-0">{stepper}</div>
+          </>
+        )}
+      </SideDrawer>
     </div>
   );
 };

@@ -1,4 +1,5 @@
 import { collection, getDocs, query, where } from "firebase/firestore";
+import { EllipsisVertical, X } from "lucide-react";
 import React, { useCallback, useEffect, useId, useRef, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
@@ -56,12 +57,22 @@ const TABS: { to: string; label: string; icon: AppIconName; id: string }[] = [
   { to: "/research-ideas", label: "Ideas", icon: "ideas", id: "nav-research-ideas" },
 ];
 
-const SECONDARY: { to: string; label: string; icon: AppIconName; id: string }[] = [
-  { to: "/about", label: "About the lab", icon: "building", id: "nav-about" },
+/** Every page, for the mobile menu grid. News was reachable from neither the
+ *  tab bar nor the old sheet, so phones had no way to get to it. */
+const ALL_PAGES: { to: string; label: string; icon: AppIconName; id: string }[] = [
+  { to: "/", label: "Home", icon: "home", id: "nav-home" },
+  { to: "/about", label: "The lab", icon: "building", id: "nav-about" },
   { to: "/lab-head", label: "Lab head", icon: "admin", id: "nav-lab-head" },
+  { to: "/publications", label: "Publications", icon: "publications", id: "nav-publications" },
+  { to: "/research-ideas", label: "Research ideas", icon: "ideas", id: "nav-research-ideas" },
   { to: "/gallery", label: "Gallery", icon: "gallery", id: "nav-gallery" },
+  { to: "/collaborators", label: "People", icon: "collaborators", id: "nav-collaborators" },
+  { to: "/announcements", label: "News", icon: "announcements", id: "nav-announcements" },
   { to: "/contact", label: "Contact", icon: "contact", id: "nav-contact" },
 ];
+
+const HINT_KEY = "rl_nav_swipe_hint";
+const clamp01 = (value: number) => Math.min(1, Math.max(0, value));
 
 /* ── desktop layout preference ─────────────────────────
    Two states, not three, and desktop only. Mobile always gets the tab bar,
@@ -213,22 +224,128 @@ const Navbar: React.FC = () => {
     return () => { live = false; };
   }, [role, appUser?.uid]);
 
+  /* ── Mobile menu sheet ──────────────────────────────────
+     Three pieces of state: `sheetOpen` is where it's heading, `sheetMounted`
+     keeps it in the DOM while it animates out, and `dragProgress` (0 = closed,
+     1 = open) is set only while a finger is dragging it. */
+  const [sheetMounted, setSheetMounted] = useState(false);
+  const [dragProgress, setDragProgress] = useState<number | null>(null);
+  const [showHint, setShowHint] = useState(false);
+  const sheetRef = useRef<HTMLDivElement>(null);
+  const dragState = useRef<{ from: "dock" | "sheet"; startY: number; startT: number; moved: boolean } | null>(null);
+  const suppressClick = useRef(false);
+
+  const dismissHint = useCallback(() => {
+    setShowHint(false);
+    try { localStorage.setItem(HINT_KEY, "1"); } catch { /* private mode */ }
+  }, []);
+
+  const openSheet = useCallback(() => {
+    dismissHint();
+    setSheetMounted(true);
+    // Two frames: mount off-screen first, then slide up.
+    requestAnimationFrame(() => requestAnimationFrame(() => setSheetOpen(true)));
+  }, [dismissHint]);
+
+  const closeSheet = useCallback(() => setSheetOpen(false), []);
+
   useEffect(() => {
     setOpenGroup(null);
     setUserOpen(false);
     setSheetOpen(false);
+    setSheetMounted(false);
+    setDragProgress(null);
   }, [location.pathname]);
 
+  /* Unmount once the slide-down has finished. */
   useEffect(() => {
-    if (!sheetOpen) return;
+    if (sheetOpen || dragProgress !== null || !sheetMounted) return;
+    const id = window.setTimeout(() => setSheetMounted(false), 300);
+    return () => window.clearTimeout(id);
+  }, [sheetOpen, dragProgress, sheetMounted]);
+
+  useEffect(() => {
+    if (!sheetMounted) return;
     const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";
-    return () => { document.body.style.overflow = prev; };
+    // Lets other floating UI (the chat launcher) step aside while the menu is up.
+    document.body.dataset.navSheet = "open";
+    return () => {
+      document.body.style.overflow = prev;
+      delete document.body.dataset.navSheet;
+    };
+  }, [sheetMounted]);
+
+  useEffect(() => {
+    if (sheetOpen) sheetRef.current?.focus({ preventScroll: true });
   }, [sheetOpen]);
+
+  /* One-time "swipe up" hint for phones, so the gesture is discoverable. */
+  useEffect(() => {
+    if (window.innerWidth >= NV_DESKTOP) return;
+    let seen = false;
+    try { seen = localStorage.getItem(HINT_KEY) === "1"; } catch { seen = true; }
+    if (seen) return;
+    const show = window.setTimeout(() => setShowHint(true), 1500);
+    const hide = window.setTimeout(dismissHint, 7500);
+    return () => { window.clearTimeout(show); window.clearTimeout(hide); };
+  }, [dismissHint]);
+
+  /* Drag: up on the dock opens, down on the sheet's header closes. The sheet
+     follows the finger; on release it settles by distance or flick speed. */
+  const sheetHeight = () => sheetRef.current?.offsetHeight || Math.min(window.innerHeight * 0.8, 560);
+
+  const onDragStart = (from: "dock" | "sheet") => (event: React.PointerEvent) => {
+    if (event.pointerType === "mouse" && event.button !== 0) return;
+    dragState.current = { from, startY: event.clientY, startT: performance.now(), moved: false };
+  };
+
+  const onDragMove = (event: React.PointerEvent) => {
+    const drag = dragState.current;
+    if (!drag) return;
+    const up = drag.startY - event.clientY;
+    if (!drag.moved) {
+      if (Math.abs(up) < 10) return;
+      // Only the direction that makes sense from each end starts a drag.
+      if ((drag.from === "dock" && up < 0) || (drag.from === "sheet" && up > 0)) {
+        dragState.current = null;
+        return;
+      }
+      drag.moved = true;
+      (event.currentTarget as Element).setPointerCapture?.(event.pointerId);
+      if (drag.from === "dock") {
+        dismissHint();
+        setSheetMounted(true);
+      }
+    }
+    const progress = drag.from === "dock" ? up / sheetHeight() : 1 + up / sheetHeight();
+    setDragProgress(clamp01(progress));
+  };
+
+  const onDragEnd = (event: React.PointerEvent) => {
+    const drag = dragState.current;
+    dragState.current = null;
+    if (!drag?.moved) return;
+    suppressClick.current = true;
+    window.setTimeout(() => { suppressClick.current = false; }, 80);
+    const velocity = (drag.startY - event.clientY) / Math.max(1, performance.now() - drag.startT); // px/ms, + = up
+    const progress = dragProgress ?? 0;
+    const open = velocity > 0.45 ? true : velocity < -0.45 ? false : progress > (drag.from === "dock" ? 0.3 : 0.7);
+    setDragProgress(null);
+    setSheetOpen(open);
+  };
+
+  /* A drag that started on a tab must not also count as a tap on it. */
+  const swallowClickAfterDrag = (event: React.MouseEvent) => {
+    if (!suppressClick.current) return;
+    event.preventDefault();
+    event.stopPropagation();
+    suppressClick.current = false;
+  };
 
   const groupBox = useDismissable(openGroup !== null, () => setOpenGroup(null));
   const userBox = useDismissable(userOpen, () => setUserOpen(false));
-  const sheetBox = useDismissable(sheetOpen, () => setSheetOpen(false));
+  const sheetBox = useDismissable(sheetOpen, closeSheet);
 
   const initials = appUser?.name
     ? appUser.name.split(" ").map((w: string) => w[0]).filter(Boolean).slice(0, 2).join("").toUpperCase()
@@ -441,84 +558,151 @@ const Navbar: React.FC = () => {
       )}
 
       {/* ══════════ MOBILE: brand bar ══════════ */}
-      <div className="nv-mobile nv-mobilebar"
-           style={{ boxShadow: scrolled ? "0 2px 14px rgba(0,0,0,.22)" : "none" }}>
+      <div className="nv-mobile nv-mobilebar" data-scrolled={scrolled || undefined}>
         <Brand logo={logo} compact />
         {signedIn ? (
-          <button type="button" onClick={() => setSheetOpen(true)} className="nv-avatar-btn"
-                  aria-label="Account and more">
-            <AvatarCircle photo={avatar} initials={initials} size={26} />
+          <button type="button" onClick={openSheet} className="nv-avatar-btn" aria-label="Account and menu">
+            <AvatarCircle photo={avatar} initials={initials} size={28} />
           </button>
         ) : (
-          <Link to="/login" className="nv-cta nv-cta-sm">Login</Link>
+          <Link to="/login" className="nv-cta nv-cta-sm">
+            <AppIcon name="login" size={14} /> Login
+          </Link>
         )}
       </div>
 
-      {/* ══════════ MOBILE: tab bar ══════════ */}
-      <nav aria-label="Main" className="nv-mobile nv-tabs">
-        {TABS.map((t) => {
-          const active = isActive(t.to);
-          return (
-            <Link key={t.id} to={t.to} className="nv-tab" data-active={active || undefined}
-                  aria-current={active ? "page" : undefined}>
-              <AppIcon name={t.icon} size={20} />
-              <span><EditableText id={t.id} defaultValue={t.label} className="inline" /></span>
-            </Link>
-          );
-        })}
-        <button type="button" ref={sheetBox.trigger} onClick={() => setSheetOpen(true)}
-                className="nv-tab" aria-expanded={sheetOpen}
-                data-active={SECONDARY.some((s) => isActive(s.to)) || undefined}>
-          <AppIcon name="switch" size={20} />
-          <span>More</span>
+      {/* ══════════ MOBILE: floating dock ══════════
+          Tap a tab to navigate; drag up anywhere on the dock to pull the menu. */}
+      {(() => {
+        const activeIndex = TABS.findIndex((t) => isActive(t.to));
+        const moreActive = activeIndex < 0 && ALL_PAGES.some((p) => isActive(p.to));
+        const pillIndex = activeIndex >= 0 ? activeIndex : moreActive || sheetOpen ? TABS.length : -1;
+        return (
+          <nav
+            aria-label="Main"
+            className="nv-mobile nv-dock"
+            onPointerDown={onDragStart("dock")}
+            onPointerMove={onDragMove}
+            onPointerUp={onDragEnd}
+            onPointerCancel={onDragEnd}
+            onClickCapture={swallowClickAfterDrag}
+          >
+            <span className="nv-dock-handle" aria-hidden="true" />
+            <div className="nv-dock-tabs" style={{ ["--i" as string]: pillIndex }}>
+              {pillIndex >= 0 && <span className="nv-dock-pill" aria-hidden="true" />}
+              {TABS.map((t) => {
+                const active = isActive(t.to);
+                return (
+                  <Link key={t.id} to={t.to} className="nv-dtab" data-active={active || undefined}
+                        aria-current={active ? "page" : undefined} draggable={false}>
+                    <span className="nv-dtab-icon"><AppIcon name={t.icon} size={19} /></span>
+                    <span className="nv-dtab-label"><EditableText id={t.id} defaultValue={t.label} className="inline" /></span>
+                  </Link>
+                );
+              })}
+              <button type="button" ref={sheetBox.trigger} onClick={() => (sheetOpen ? closeSheet() : openSheet())}
+                      className="nv-dtab" aria-expanded={sheetOpen} aria-haspopup="dialog"
+                      data-active={pillIndex === TABS.length || undefined}>
+                <span className="nv-dtab-icon"><EllipsisVertical size={19} strokeWidth={2.4} aria-hidden="true" /></span>
+                <span className="nv-dtab-label">More</span>
+              </button>
+            </div>
+          </nav>
+        );
+      })()}
+
+      {showHint && !sheetMounted && (
+        <button type="button" className="nv-mobile nv-hint" onClick={openSheet}>
+          <span aria-hidden="true">↑</span> Swipe up for the full menu
         </button>
-      </nav>
+      )}
 
-      {/* Rendered only while open. The old drawer stayed in the DOM at
-          translateX(100%), so its links kept receiving Tab focus off-screen. */}
-      {sheetOpen && (
-        <>
-          <div className="nv-mobile nv-scrim" onClick={() => setSheetOpen(false)} />
-          <div className="nv-mobile nv-sheet" role="dialog" aria-modal="true" aria-label="More" ref={sheetBox.wrap}>
-            <div className="nv-grabber" />
-
-            {signedIn && appUser && (
-              <div className="nv-sheet-user">
-                <AvatarCircle photo={avatar} initials={initials} size={42} />
-                <div className="nv-sheet-user-text">
-                  <p className="nv-sheet-user-name">{appUser.name}</p>
-                  <p className="nv-sheet-user-mail">{appUser.email}</p>
+      {/* ══════════ MOBILE: menu sheet ══════════
+          In the DOM only while open or animating, so its links never take
+          focus off-screen. */}
+      {sheetMounted && (() => {
+        const shown = dragProgress ?? (sheetOpen ? 1 : 0);
+        const dragging = dragProgress !== null;
+        return (
+          <div ref={sheetBox.wrap}>
+            <div className="nv-mobile nv-scrim" onClick={closeSheet}
+                 style={{ opacity: shown, transition: dragging ? "none" : undefined }} />
+            <div
+              ref={sheetRef}
+              className="nv-mobile nv-sheet"
+              role="dialog"
+              aria-modal="true"
+              aria-label="Site menu"
+              tabIndex={-1}
+              style={{ transform: `translateY(${(1 - shown) * 100}%)`, transition: dragging ? "none" : undefined }}
+            >
+              <div className="nv-sheet-head"
+                   onPointerDown={onDragStart("sheet")}
+                   onPointerMove={onDragMove}
+                   onPointerUp={onDragEnd}
+                   onPointerCancel={onDragEnd}>
+                <span className="nv-grabber" aria-hidden="true" />
+                <div className="nv-sheet-titlebar">
+                  <p className="nv-sheet-title">Menu</p>
+                  <button type="button" className="nv-sheet-close" onClick={closeSheet} aria-label="Close menu">
+                    <X size={16} aria-hidden="true" />
+                  </button>
                 </div>
               </div>
-            )}
 
-            <p className="nv-sheet-label">Pages</p>
-            {SECONDARY.map((s) => (
-              <Link key={s.id} to={s.to} className="nv-sheet-item" data-active={isActive(s.to) || undefined}>
-                <AppIcon name={s.icon} size={17} />
-                <EditableText id={s.id} defaultValue={s.label} className="inline" />
-              </Link>
-            ))}
-
-            {signedIn && (
-              <>
-                <p className="nv-sheet-label">Portal</p>
-                {isAdmin && <Link to="/admin" className="nv-sheet-item"><AppIcon name="admin" size={17} /> Admin dashboard</Link>}
-                {(role === "collaborator" || role === "lab_head") && (
-                  <Link to="/collaborator-portal" className="nv-sheet-item"><AppIcon name="portal" size={17} /> My portal</Link>
+              <div className="nv-sheet-body">
+                {signedIn && appUser && (
+                  <div className="nv-sheet-user">
+                    <AvatarCircle photo={avatar} initials={initials} size={42} />
+                    <div className="nv-sheet-user-text">
+                      <p className="nv-sheet-user-name">{appUser.name}</p>
+                      <p className="nv-sheet-user-mail">{roleLabel}</p>
+                    </div>
+                    {isAdmin ? (
+                      <Link to="/admin" className="nv-sheet-user-cta">Dashboard</Link>
+                    ) : (role === "collaborator" || role === "lab_head") ? (
+                      <Link to="/collaborator-portal" className="nv-sheet-user-cta">My portal</Link>
+                    ) : null}
+                  </div>
                 )}
-                <button type="button" onClick={logout} className="nv-sheet-signout">
-                  <AppIcon name="logout" size={16} /> Sign out
-                </button>
-              </>
-            )}
 
-            {!signedIn && (
-              <Link to="/login" className="nv-sheet-cta"><AppIcon name="login" size={16} /> Portal login</Link>
-            )}
+                <p className="nv-sheet-label">Explore</p>
+                <div className="nv-grid">
+                  {ALL_PAGES.map((page) => {
+                    const active = isActive(page.to);
+                    return (
+                      <Link key={page.id} to={page.to} className="nv-tile" data-active={active || undefined}
+                            aria-current={active ? "page" : undefined}>
+                        <span className="nv-tile-icon"><AppIcon name={page.icon} size={19} /></span>
+                        <span className="nv-tile-label"><EditableText id={page.id} defaultValue={page.label} className="inline" /></span>
+                      </Link>
+                    );
+                  })}
+                </div>
+
+                {signedIn ? (
+                  <>
+                    <p className="nv-sheet-label">Account</p>
+                    <div className="nv-sheet-list">
+                      {(role === "collaborator" || role === "lab_head") && (
+                        <Link to="/chat" className="nv-sheet-item"><AppIcon name="message" size={17} /> Messages</Link>
+                      )}
+                      {isAdmin && (role === "collaborator" || role === "lab_head") && (
+                        <Link to="/collaborator-portal" className="nv-sheet-item"><AppIcon name="portal" size={17} /> My portal</Link>
+                      )}
+                      <button type="button" onClick={logout} className="nv-sheet-item nv-sheet-signout">
+                        <AppIcon name="logout" size={17} /> Sign out
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  <Link to="/login" className="nv-sheet-cta"><AppIcon name="login" size={16} /> Portal login</Link>
+                )}
+              </div>
+            </div>
           </div>
-        </>
-      )}
+        );
+      })()}
     </>
   );
 };
@@ -672,53 +856,109 @@ const CSS = `
   font-weight:600;cursor:pointer;transition:background .15s}
 .nv-signout:hover{background:#fecaca}
 
-/* ── mobile ── */
+/* ── mobile: brand bar ── */
 .nv-mobilebar{position:sticky;top:0;z-index:100;display:flex;align-items:center;
-  justify-content:space-between;height:56px;padding:0 16px;background:var(--color-navbar)}
+  justify-content:space-between;height:54px;padding:0 14px;
+  background:color-mix(in srgb,var(--color-navbar) 94%,transparent);
+  -webkit-backdrop-filter:saturate(1.4) blur(12px);backdrop-filter:saturate(1.4) blur(12px);
+  border-bottom:1px solid transparent;transition:box-shadow .25s ease,border-color .25s ease}
+.nv-mobilebar[data-scrolled]{border-bottom-color:color-mix(in srgb,var(--nav-text) 10%,transparent);
+  box-shadow:0 6px 20px rgba(2,6,23,.22)}
 
-.nv-tabs{position:fixed;left:0;right:0;bottom:0;z-index:100;display:grid;
-  grid-template-columns:repeat(5,1fr);background:var(--site-surface);border-top:1px solid var(--site-border);
-  padding-bottom:env(safe-area-inset-bottom,0px);box-shadow:0 -2px 16px rgba(15,23,42,.08)}
-.nv-tab{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;
-  min-height:56px;padding:8px 4px;border:0;background:transparent;cursor:pointer;
-  color:var(--site-muted);font-size:10.5px;font-weight:500;text-decoration:none}
-.nv-tab[data-active]{color:var(--color-primary);font-weight:600}
-.nv-tab:focus-visible{outline:2px solid var(--color-secondary);outline-offset:-3px}
+/* ── mobile: floating dock ── */
+.nv-dock{position:fixed;left:10px;right:10px;bottom:calc(10px + env(safe-area-inset-bottom,0px));z-index:100;
+  height:64px;border-radius:22px;
+  background:color-mix(in srgb,var(--color-navbar) 90%,transparent);
+  -webkit-backdrop-filter:saturate(1.5) blur(16px);backdrop-filter:saturate(1.5) blur(16px);
+  border:1px solid color-mix(in srgb,var(--nav-text) 12%,transparent);
+  box-shadow:0 14px 34px rgba(2,6,23,.38),0 2px 8px rgba(2,6,23,.22),inset 0 1px 0 color-mix(in srgb,var(--nav-text) 10%,transparent);
+  touch-action:none;user-select:none;-webkit-user-select:none}
+.nv-dock-handle{position:absolute;top:5px;left:50%;width:30px;height:3px;margin-left:-15px;border-radius:99px;
+  background:color-mix(in srgb,var(--nav-text) 32%,transparent)}
+.nv-dock-tabs{position:relative;display:grid;grid-template-columns:repeat(5,1fr);height:100%;padding:9px 4px 5px}
+.nv-dock-pill{position:absolute;top:11px;height:30px;display:flex;justify-content:center;pointer-events:none;
+  width:calc((100% - 8px) / 5);left:calc(4px + var(--i) * ((100% - 8px) / 5));
+  transition:left .38s cubic-bezier(.32,.72,0,1)}
+.nv-dock-pill::before{content:"";width:54px;height:30px;border-radius:99px;background:var(--color-accent);
+  box-shadow:0 6px 16px color-mix(in srgb,var(--color-accent) 45%,transparent)}
+.nv-dtab{position:relative;z-index:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;gap:3px;
+  padding:0;border:0;background:transparent;cursor:pointer;text-decoration:none;
+  color:color-mix(in srgb,var(--nav-text) 66%,transparent);-webkit-tap-highlight-color:transparent}
+.nv-dtab-icon{display:grid;place-items:center;width:54px;height:30px;border-radius:99px;margin-top:2px;
+  transition:color .25s ease,transform .15s ease}
+.nv-dtab-label{font-size:10.5px;font-weight:600;letter-spacing:.01em;line-height:1.2;white-space:nowrap}
+.nv-dtab[data-active]{color:var(--nav-text)}
+.nv-dtab[data-active] .nv-dtab-icon{color:var(--on-accent)}
+.nv-dtab:active .nv-dtab-icon{transform:scale(.9)}
+.nv-dtab:focus-visible{outline:none}
+.nv-dtab:focus-visible .nv-dtab-icon{box-shadow:0 0 0 2px var(--nav-text)}
 
 @media (max-width:${NV_DESKTOP - 1}px){
-  body{padding-bottom:calc(60px + env(safe-area-inset-bottom,0px))}
+  body{padding-bottom:calc(84px + env(safe-area-inset-bottom,0px))}
 }
 
-.nv-scrim{position:fixed;inset:0;z-index:110;background:rgba(15,23,42,.5);
-  backdrop-filter:blur(3px);animation:nvFade .2s ease}
-@keyframes nvFade{from{opacity:0}to{opacity:1}}
-.nv-sheet{position:fixed;left:0;right:0;bottom:0;z-index:111;max-height:82vh;overflow-y:auto;
-  padding:12px 16px calc(20px + env(safe-area-inset-bottom,0px));
-  border-radius:22px 22px 0 0;background:var(--site-surface);box-shadow:0 -12px 40px rgba(15,23,42,.25);
-  animation:nvUp .28s cubic-bezier(.32,.72,0,1)}
-@keyframes nvUp{from{transform:translateY(100%)}to{transform:none}}
-.nv-grabber{width:40px;height:4px;margin:0 auto 16px;border-radius:99px;background:var(--site-border)}
-.nv-sheet-user{display:flex;align-items:center;gap:12px;margin-bottom:16px;padding:14px;
-  border-radius:16px;background:var(--site-surface-alt)}
+/* One-time discoverability hint */
+.nv-hint{position:fixed;left:50%;bottom:calc(84px + env(safe-area-inset-bottom,0px));z-index:101;
+  display:inline-flex;align-items:center;gap:6px;padding:7px 13px;border:0;border-radius:99px;
+  background:var(--color-accent);color:var(--on-accent);font-size:12px;font-weight:700;white-space:nowrap;
+  box-shadow:0 8px 22px rgba(2,6,23,.3);cursor:pointer;transform:translateX(-50%);
+  animation:nvHint 1.8s ease-in-out infinite}
+@keyframes nvHint{0%,100%{transform:translate(-50%,0)}50%{transform:translate(-50%,-6px)}}
+
+/* ── mobile: menu sheet ── */
+.nv-scrim{position:fixed;inset:0;z-index:110;background:rgba(2,6,23,.55);
+  -webkit-backdrop-filter:blur(3px);backdrop-filter:blur(3px);transition:opacity .3s ease}
+.nv-sheet{position:fixed;left:0;right:0;bottom:0;z-index:111;display:flex;flex-direction:column;max-height:86vh;
+  border-radius:24px 24px 0 0;background:var(--site-surface);outline:none;
+  box-shadow:0 -18px 48px rgba(2,6,23,.35);will-change:transform;
+  transition:transform .34s cubic-bezier(.32,.72,0,1)}
+.nv-sheet-head{flex-shrink:0;padding:8px 16px 6px;touch-action:none;cursor:grab}
+.nv-grabber{display:block;width:42px;height:5px;margin:0 auto 8px;border-radius:99px;background:var(--site-border)}
+.nv-sheet-titlebar{display:flex;align-items:center;justify-content:space-between}
+.nv-sheet-title{margin:0;font-size:16px;font-weight:800;color:var(--site-heading);font-family:var(--font-heading)}
+.nv-sheet-close{display:grid;place-items:center;width:30px;height:30px;border:0;border-radius:99px;
+  background:var(--site-surface-alt);color:var(--site-muted);cursor:pointer}
+.nv-sheet-body{overflow-y:auto;overscroll-behavior:contain;padding:6px 16px calc(18px + env(safe-area-inset-bottom,0px))}
+
+.nv-sheet-user{display:flex;align-items:center;gap:12px;padding:12px;border-radius:16px;
+  background:linear-gradient(135deg,var(--color-primary),color-mix(in srgb,var(--color-primary) 70%,var(--color-secondary)));
+  color:var(--hero-text)}
 .nv-sheet-user-text{min-width:0;flex:1}
-.nv-sheet-user-name{margin:0;font-size:14px;font-weight:700;color:var(--site-heading);
+.nv-sheet-user-name{margin:0;font-size:14px;font-weight:700;color:var(--hero-text);
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.nv-sheet-user-mail{margin:1px 0 0;font-size:12px;color:var(--site-muted);
+.nv-sheet-user-mail{margin:1px 0 0;font-size:11.5px;color:color-mix(in srgb,var(--hero-text) 72%,transparent);
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.nv-sheet-label{margin:14px 4px 6px;font-size:10.5px;font-weight:600;letter-spacing:.14em;
+.nv-sheet-user-cta{flex-shrink:0;padding:6px 11px;border-radius:99px;background:var(--color-accent);color:var(--on-accent);
+  font-size:12px;font-weight:700;text-decoration:none}
+
+.nv-sheet-label{margin:16px 2px 8px;font-size:10.5px;font-weight:700;letter-spacing:.14em;
   text-transform:uppercase;color:var(--site-muted)}
-.nv-sheet-item{display:flex;align-items:center;gap:12px;min-height:48px;padding:0 12px;
-  border-radius:12px;font-size:14px;font-weight:500;color:var(--site-text);text-decoration:none}
-.nv-sheet-item[data-active]{background:var(--site-surface-alt);color:var(--color-primary);font-weight:600}
-.nv-sheet-signout{display:flex;width:100%;align-items:center;gap:10px;min-height:48px;
-  margin-top:10px;padding:0 12px;border:0;border-radius:12px;background:#fee2e2;
-  color:#991b1b;font-size:14px;font-weight:600;cursor:pointer}
-.nv-sheet-cta{display:flex;align-items:center;justify-content:center;gap:10px;min-height:50px;
-  margin-top:14px;border-radius:12px;background:var(--color-accent);color:var(--on-accent);
-  font-size:14px;font-weight:600;text-decoration:none}
+.nv-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.nv-tile{display:flex;flex-direction:column;align-items:center;gap:7px;padding:12px 4px 10px;border-radius:16px;
+  border:1px solid var(--site-border);background:var(--site-surface-alt);color:var(--site-heading);
+  font-size:12px;font-weight:600;text-align:center;text-decoration:none;-webkit-tap-highlight-color:transparent;
+  transition:transform .15s ease,border-color .2s ease}
+.nv-tile:active{transform:scale(.96)}
+.nv-tile-icon{display:grid;place-items:center;width:40px;height:40px;border-radius:13px;
+  background:color-mix(in srgb,var(--color-primary) 12%,transparent);color:var(--primary-ink)}
+.nv-tile-label{line-height:1.2}
+.nv-tile[data-active]{border-color:color-mix(in srgb,var(--color-secondary) 55%,transparent);
+  background:color-mix(in srgb,var(--color-secondary) 9%,var(--site-surface))}
+.nv-tile[data-active] .nv-tile-icon{background:var(--color-secondary);color:var(--on-secondary)}
+
+.nv-sheet-list{overflow:hidden;border:1px solid var(--site-border);border-radius:14px}
+.nv-sheet-item{display:flex;width:100%;align-items:center;gap:12px;min-height:46px;padding:0 14px;border:0;
+  background:var(--site-surface);font-size:14px;font-weight:500;color:var(--site-text);text-decoration:none;cursor:pointer}
+.nv-sheet-item + .nv-sheet-item{border-top:1px solid var(--site-border)}
+.nv-sheet-signout{color:#e11d48;font-weight:600}
+body[data-nav-sheet] .chat-launcher{opacity:0;pointer-events:none}
+.nv-sheet-cta{display:flex;align-items:center;justify-content:center;gap:10px;min-height:46px;
+  margin-top:16px;border-radius:14px;background:var(--color-accent);color:var(--on-accent);
+  font-size:14px;font-weight:700;text-decoration:none}
 
 @media (prefers-reduced-motion:reduce){
-  .nv-panel,.nv-user-panel,.nv-sheet,.nv-scrim{animation:none}
+  .nv-panel,.nv-user-panel,.nv-scrim,.nv-hint{animation:none}
+  .nv-sheet,.nv-scrim,.nv-dock-pill{transition:none}
 }
 `;
 

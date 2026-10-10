@@ -66,4 +66,22 @@ const DrawerBody: React.FC<{ target: PublicationDrawerTarget }> = ({ target }) =
   return <PublicationView publication={publication} variant="drawer" />;
 };
 
+/** A shared publication record by id, for split views and sheets. */
+export const PublicationPanel: React.FC<{ id: string }> = ({ id }) => {
+  const state = usePublication(id);
+  if (state.status === "loading") {
+    return (
+      <div className="grid gap-4 p-6 motion-safe:animate-pulse" aria-busy="true">
+        <span className="sr-only">Loading publication</span>
+        <div className="h-40 rounded-2xl bg-slate-200" />
+        <div className="h-64 rounded-2xl bg-slate-200" />
+      </div>
+    );
+  }
+  if (state.status !== "ready") {
+    return <p className="p-8 text-[15px] text-slate-600">This publication isn't available.</p>;
+  }
+  return <PublicationView publication={state.publication} variant="drawer" />;
+};
+
 export default PublicationDrawer;

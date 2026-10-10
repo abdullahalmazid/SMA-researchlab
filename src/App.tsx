@@ -8,6 +8,7 @@ import BrandingHead from "./components/BrandingHead";
 import ProtectedRoute from "./components/ProtectedRoute";
 import ScrollToTop from "./components/ScrollToTop";
 import ChatLauncher from "./components/ChatLauncher";
+import { PersonDrawerProvider } from "./components/PersonDrawer";
 import AnalyticsTracker from "./analytics/AnalyticsTracker";
 import { AuthProvider } from "./context/AuthContext";
 import { EditableContentProvider } from "./context/EditableContentContext";
@@ -19,15 +20,12 @@ import About from "./pages/About";
 /* Loaded on demand: the messenger (and its emoji picker) is a large chunk
    that most visitors never open. */
 const Chat = lazy(() => import("./pages/Chat"));
-import CollaboratorProfilePage from "./pages/CollaboratorProfilePage";
 import Collaborators from "./pages/Collaborators";
 import Contact from "./pages/Contact";
 import Home from "./pages/Home";
-import IdeaDetail from "./pages/IdeaDetail";
 import LabHead from "./pages/LabHead";
 import Login from "./pages/Login";
 import Publications from "./pages/Publications";
-import PublicationDetail from "./pages/PublicationDetail";
 import ResearchIdeas from "./pages/ResearchIdeas";
 import Announcements from "./pages/Announcements";
 
@@ -48,6 +46,7 @@ const App: React.FC = () => {
         <ThemeProvider>
           <EditableContentProvider>
           <BrandingHead />
+          <PersonDrawerProvider>
           <div className="flex flex-col min-h-screen">
             <Navbar />
             <ChatLauncher />
@@ -64,15 +63,11 @@ const App: React.FC = () => {
                   <Route path="/" element={<Home />} />
                   <Route path="/about" element={<About />} />
                   <Route path="/lab-head" element={<LabHead />} />
-                  <Route path="/collaborators" element={<Collaborators />} />
-                  <Route
-                    path="/collaborators/:uid"
-                    element={<CollaboratorProfilePage />}
-                  />
-                  <Route path="/publications" element={<Publications />} />
-                  <Route path="/publications/:id" element={<PublicationDetail />} />
-                  <Route path="/research-ideas" element={<ResearchIdeas />} />
-                  <Route path="/research-ideas/:id" element={<IdeaDetail />} />
+                  {/* One route for the grid and an open profile, so moving between
+                      them keeps the page (and its scroll and filters) mounted. */}
+                  <Route path="/collaborators/:uid?" element={<Collaborators />} />
+                  <Route path="/publications/:id?" element={<Publications />} />
+                  <Route path="/research-ideas/:id?" element={<ResearchIdeas />} />
                   <Route path="/announcements" element={<Announcements />} />
                   <Route path="/contact" element={<Contact />} />
                   <Route
@@ -165,6 +160,7 @@ const App: React.FC = () => {
               <Footer />
             </div>
           </div>
+          </PersonDrawerProvider>
           </EditableContentProvider>
         </ThemeProvider>
         </AdminPreviewProvider>

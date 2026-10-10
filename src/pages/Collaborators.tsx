@@ -1,13 +1,17 @@
 import React, { useCallback, useDeferredValue, useEffect, useMemo, useState } from "react";
-import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
+import { useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import CollaboratorCard from "../components/CollaboratorCard";
+import CollaboratorProfileView, { CollaboratorName } from "../components/CollaboratorProfileView";
 import CollaboratorRequestForm from "../components/CollaboratorRequestForm";
 import EditableText from "../components/EditableText";
 import PageHero from "../components/PageHero";
 import PageSearchBar, { SearchBarSelect } from "../components/PageSearchBar";
 import SideDrawer from "../components/SideDrawer";
+import SplitView from "../components/SplitView";
 import { useAuth } from "../context/AuthContext";
 import { useCollaborators, useSiteContent } from "../firebase/hooks";
+import { useIsDesktop } from "../hooks/useMediaQuery";
+import type { CollaboratorProfile } from "../types";
 
 /**
  * Read once here rather than once per card — the page already knows who runs
@@ -92,7 +96,33 @@ const FilterChip: React.FC<{ label: string; value: string; onRemove: () => void 
   </button>
 );
 
+const RailAvatar: React.FC<{ person: CollaboratorProfile }> = ({ person }) => {
+  const [failed, setFailed] = useState(false);
+  const initials = person.name
+    .split(/\s+/)
+    .map((part) => part[0])
+    .filter(Boolean)
+    .slice(0, 2)
+    .join("")
+    .toUpperCase();
+  return person.photo && !failed ? (
+    <img src={person.photo} alt="" onError={() => setFailed(true)} className="h-9 w-9 shrink-0 rounded-lg object-cover" />
+  ) : (
+    <span
+      aria-hidden="true"
+      className="grid h-9 w-9 shrink-0 place-items-center rounded-lg text-[12px] font-bold"
+      style={{ background: "var(--color-primary)", color: "var(--hero-text)" }}
+    >
+      {initials}
+    </span>
+  );
+};
+
 const Collaborators: React.FC = () => {
+  /* An open profile is /collaborators/<uid>. Desktop shows it beside a list of
+     everyone; phones show it in a bottom sheet over the grid. */
+  const { uid: openUid = "" } = useParams<{ uid?: string }>();
+  const isDesktop = useIsDesktop();
   const { collaborators, loading } = useCollaborators();
   const { content } = useSiteContent();
   const navigate = useNavigate();
@@ -147,6 +177,24 @@ const Collaborators: React.FC = () => {
 
   const goToRequestForm = useCallback(() => setRequestOpen(true), []);
 
+  /* Opening from the grid pushes a history entry, so Back (or the close
+     button) returns to the grid with its filters and scroll intact. Switching
+     between people while one is open replaces it instead of piling up. */
+  const openProfile = useCallback(
+    (uid: string) =>
+      navigate(
+        { pathname: `/collaborators/${encodeURIComponent(uid)}`, search: location.search },
+        { replace: Boolean(openUid), state: { fromGrid: true } },
+      ),
+    [navigate, location.search, openUid],
+  );
+
+  const closeProfile = useCallback(() => {
+    if ((location.state as { fromGrid?: boolean } | null)?.fromGrid) navigate(-1);
+    else navigate({ pathname: "/collaborators", search: location.search }, { replace: true });
+  }, [navigate, location.state, location.search]);
+
+
   /** Lab head first, then alphabetical. Firestore order is arbitrary otherwise. */
   const ordered = useMemo(() => {
     const rank = (uid?: string) => (LAB_HEAD_UID !== "" && uid === LAB_HEAD_UID ? 0 : 1);
@@ -196,6 +244,34 @@ const Collaborators: React.FC = () => {
 
   const hasActiveFilter = Boolean(designationFilter || affiliationFilter || search);
   const bannerUrl = content["collaborators.bannerUrl"];
+
+  /* ── Desktop split view: everyone on the left, the profile on the right ── */
+  if (isDesktop && openUid) {
+    return (
+      <SplitView
+        section="Collaborators"
+        items={filtered
+          .filter((person) => person.uid)
+          .map((person) => ({
+            id: person.uid,
+            title: person.name,
+            subtitle: LAB_HEAD_UID && person.uid === LAB_HEAD_UID ? "Lab head" : person.designation || person.affiliation,
+            leading: <RailAvatar person={person} />,
+          }))}
+        total={collaborators.length}
+        activeId={openUid}
+        onSelect={openProfile}
+        onClose={closeProfile}
+        search={search}
+        onSearch={(value) => setParam(PARAM.search, value)}
+        searchPlaceholder="Find a person…"
+        current={<CollaboratorName uid={openUid} />}
+        loading={loading}
+      >
+        <CollaboratorProfileView uid={openUid} setDocumentTitle />
+      </SplitView>
+    );
+  }
 
   return (
     <div>
@@ -396,11 +472,7 @@ const Collaborators: React.FC = () => {
                   isLabHead={LAB_HEAD_UID !== "" && c.uid === LAB_HEAD_UID}
                   /* Guard the uid: without it this navigated to
                      /collaborators/undefined and rendered a dead profile page. */
-                  onClick={
-                    c.uid
-                      ? () => navigate(`/collaborators/${encodeURIComponent(c.uid)}`)
-                      : undefined
-                  }
+                  onClick={c.uid ? () => openProfile(c.uid) : undefined}
                   onMessage={
                     canMessage && c.uid && c.uid !== appUser?.uid
                       ? () => navigate(`/chat?to=${encodeURIComponent(c.uid)}`)
@@ -447,6 +519,17 @@ const Collaborators: React.FC = () => {
             <CollaboratorRequestForm />
           </div>
         </div>
+      </SideDrawer>
+
+      {/* ------------------------------------------------- Profile (phones) */}
+      <SideDrawer
+        open={!isDesktop && Boolean(openUid)}
+        onClose={closeProfile}
+        eyebrow="Collaborator"
+        title={openUid ? <CollaboratorName uid={openUid} /> : ""}
+        mobileHeight={86}
+      >
+        {openUid && <CollaboratorProfileView uid={openUid} setDocumentTitle />}
       </SideDrawer>
     </div>
   );

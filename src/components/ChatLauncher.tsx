@@ -26,7 +26,7 @@ const Launcher: React.FC<{ uid: string }> = ({ uid }) => {
     <button
       type="button"
       onClick={() => navigate("/chat")}
-      className="group fixed right-0 top-1/2 z-[2147480000] flex -translate-y-1/2 items-center gap-2 rounded-l-2xl border border-r-0 border-white/20 bg-slate-950 px-3 py-4 text-white shadow-2xl transition hover:pr-5"
+      className="chat-launcher group fixed right-0 top-1/2 z-[2147480000] flex -translate-y-1/2 items-center gap-2 rounded-l-2xl border border-r-0 border-white/20 bg-slate-950 px-3 py-4 text-white shadow-2xl transition hover:pr-5"
       aria-label={`Open team messenger${unreadCount ? `, ${unreadCount} unread ${unreadCount === 1 ? "chat" : "chats"}` : ""}`}
     >
       <MessageCircleMore size={21} />

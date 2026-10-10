@@ -255,7 +255,7 @@ const ProfileTab: React.FC<{
 
       {/* Save bar: only while there is something to save. */}
       {dirty && (
-        <div className="fixed inset-x-0 bottom-[calc(env(safe-area-inset-bottom,0px)+68px)] z-40 px-4 lg:bottom-4">
+        <div className="fixed inset-x-0 bottom-[calc(env(safe-area-inset-bottom,0px)+88px)] z-40 px-4 lg:bottom-4">
           <div className="mx-auto flex max-w-xl items-center gap-2 rounded-xl border border-[color:var(--site-border)] bg-[color:var(--site-surface)] px-3 py-2 shadow-[0_12px_32px_rgba(15,23,42,0.18)]">
             <span className="h-2 w-2 shrink-0 rounded-full bg-amber-500" aria-hidden="true" />
             <p className="flex-1 text-[12.5px] font-semibold text-[color:var(--site-heading)]">Unsaved changes</p>

@@ -7,9 +7,11 @@ import { useCanonicalCollaborator } from "../hooks/useCanonicalCollaborator";
 
 interface Props {
   idea: ResearchIdea;
+  /** Opens the idea in place; without it the card navigates to the idea. */
+  onOpen?: () => void;
 }
 
-const IdeaCard: React.FC<Props> = ({ idea }) => {
+const IdeaCard: React.FC<Props> = ({ idea, onOpen }) => {
   const [imgErr, setImgErr] = useState(false);
   const navigate = useNavigate();
   const { theme } = useThemeContext();
@@ -47,7 +49,7 @@ const IdeaCard: React.FC<Props> = ({ idea }) => {
     day: "numeric",
   });
 
-  const openIdea = () => navigate(`/research-ideas/${idea.id}`);
+  const openIdea = () => (onOpen ? onOpen() : navigate(`/research-ideas/${idea.id}`));
 
   const onCardKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
     if (e.key === "Enter" || e.key === " ") {

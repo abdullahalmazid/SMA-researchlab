@@ -1,4 +1,5 @@
 import { Bell, BellOff, LogOut, Pencil, UserMinus, UserPlus, X } from "lucide-react";
+import { PersonLink } from "../../components/PersonDrawer";
 import React, { useState } from "react";
 import { Link } from "react-router-dom";
 import type { CollaboratorProfile } from "../../types";
@@ -110,12 +111,12 @@ const InfoPanel: React.FC<{
         )}
         {person && other && (
           <div className="px-4 pb-3">
-            <Link
-              to={`/collaborators/${encodeURIComponent(other)}`}
+            <PersonLink
+              uid={other}
               className="block rounded-xl border border-slate-200 px-3 py-2.5 text-center text-[13px] font-semibold text-slate-700 no-underline hover:bg-slate-50"
             >
               View full profile
-            </Link>
+            </PersonLink>
           </div>
         )}
 
