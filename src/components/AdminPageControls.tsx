@@ -1,5 +1,6 @@
-﻿import { arrayRemove, arrayUnion, doc, setDoc } from "firebase/firestore";
+﻿import { arrayRemove, arrayUnion, doc, setDoc } from "../admin/core/auditedFirestore";
 import React, { useState } from "react";
+import { useConfirm } from "../admin/components/useConfirm";
 import { useAuth } from "../context/AuthContext";
 import { db } from "../firebase/config";
 import { type BlockType, type PageBlock } from "../types2";
@@ -21,6 +22,7 @@ const blockOptions: { type: BlockType; label: string }[] = [
 const AdminPageControls: React.FC<Props> = ({ pageId, blocks, onUpdate }) => {
   const { role } = useAuth();
   const [adding, setAdding] = useState(false);
+  const { confirm, inform, confirmElement } = useConfirm();
   const isAdmin = role === "admin";
 
   if (!isAdmin) return null;
@@ -49,12 +51,12 @@ const AdminPageControls: React.FC<Props> = ({ pageId, blocks, onUpdate }) => {
       setAdding(false);
     } catch (error) {
       console.error("Error adding block:", error);
-      alert("Failed to add section. Check console for errors.");
+      await inform("Couldn't add the section", String((error as Error)?.message || error));
     }
   };
 
   const removeBlock = async (block: PageBlock) => {
-    if (!confirm("Delete this section?")) return;
+    if (!(await confirm({ title: "Delete this section?", message: "It will be removed from the page for everyone.", confirmLabel: "Delete", danger: true }))) return;
     try {
       const ref = doc(db, "siteContent", "content");
       await setDoc(
@@ -68,7 +70,7 @@ const AdminPageControls: React.FC<Props> = ({ pageId, blocks, onUpdate }) => {
       onUpdate();
     } catch (error) {
       console.error("Error removing block:", error);
-      alert("Failed to remove section.");
+      await inform("Couldn't remove the section", String((error as Error)?.message || error));
     }
   };
 
@@ -97,12 +99,13 @@ const AdminPageControls: React.FC<Props> = ({ pageId, blocks, onUpdate }) => {
       onUpdate();
     } catch (error) {
       console.error("Error moving block:", error);
-      alert("Failed to move section.");
+      await inform("Couldn't move the section", String((error as Error)?.message || error));
     }
   };
 
   return (
     <div className="fixed bottom-4 right-4 z-50 flex flex-col gap-2">
+      {confirmElement}
       <div className="bg-white shadow-xl rounded-xl p-2 border border-gray-200 flex flex-col gap-2">
         <button
           onClick={() => setAdding(!adding)}

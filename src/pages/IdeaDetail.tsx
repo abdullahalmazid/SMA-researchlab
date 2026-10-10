@@ -114,7 +114,7 @@ const IdeaDetail: React.FC = () => {
               />
             ) : (
               <div
-                className="rounded-full flex items-center justify-center text-white text-sm font-black"
+                className="rounded-full flex items-center justify-center text-[color:var(--on-secondary)] text-sm font-black"
                 style={{
                   width: 44,
                   height: 44,
@@ -164,7 +164,7 @@ const IdeaDetail: React.FC = () => {
           <div className="lg:col-span-2">
             <div
               className="bg-white rounded-2xl p-8 shadow-sm border mb-8"
-              style={{ borderColor: "#e5e7eb" }}
+              style={{ borderColor: "var(--site-border)" }}
             >
               <h2
                 className="font-black text-xl mb-5"
@@ -192,7 +192,7 @@ const IdeaDetail: React.FC = () => {
           <div>
             <div
               className="bg-white rounded-2xl p-6 shadow-sm border sticky top-24"
-              style={{ borderColor: "#e5e7eb" }}
+              style={{ borderColor: "var(--site-border)" }}
             >
               <h3
                 className="font-black text-lg mb-5"
@@ -211,7 +211,7 @@ const IdeaDetail: React.FC = () => {
               <div className="space-y-4 text-sm">
                 <div
                   className="flex items-center gap-3 pb-4 border-b"
-                  style={{ borderColor: "#edf2f7" }}
+                  style={{ borderColor: "var(--site-border)" }}
                 >
                   {author.photo && !imgErr ? <img src={author.photo} alt={author.name} onError={() => setImgErr(true)} className="h-10 w-10 rounded-full object-cover" /> : <div className="w-10 h-10 rounded-full flex items-center justify-center text-white text-xs font-black" style={{ background: "linear-gradient(135deg, var(--color-primary), var(--color-secondary))" }}>{initials}</div>}
                   <div>
@@ -231,7 +231,7 @@ const IdeaDetail: React.FC = () => {
                 <div className="grid grid-cols-2 gap-3">
                   <div
                     className="rounded-xl border p-3"
-                    style={{ borderColor: "#edf2f7" }}
+                    style={{ borderColor: "var(--site-border)" }}
                   >
                     <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-1">
                       <EditableText
@@ -251,7 +251,7 @@ const IdeaDetail: React.FC = () => {
 
                   <div
                     className="rounded-xl border p-3"
-                    style={{ borderColor: "#edf2f7" }}
+                    style={{ borderColor: "var(--site-border)" }}
                   >
                     <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-1">
                       <EditableText

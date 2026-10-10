@@ -3,44 +3,22 @@ import React from "react";
 import { useCollaborators, usePublications } from "../firebase/hooks";
 import AppIcon, { type AppIconName } from "./AppIcon";
 import EditableText from "./EditableText";
+import PageHero from "./PageHero";
 
 // --- Hero Block ---
 export const HeroBlock: React.FC<{ blockId: string }> = ({ blockId }) => {
   return (
-    <section
-      className="relative min-h-[320px] overflow-hidden px-4 py-20 text-center flex items-center justify-center"
-      style={{ background: "var(--color-primary)" }}
-    >
-      <div className="relative z-10">
-        <h1
-          className="font-black text-white mb-4"
-          style={{
-            fontSize: "clamp(2.2rem, 4.5vw, 3.5rem)",
-            fontFamily: "var(--font-heading)",
-          }}
-        >
-          <EditableText
-            id={`${blockId}-title`}
-            defaultValue="About the Lab"
-            className="inline"
-          />
-        </h1>
-        <div
-          className="mx-auto mb-5 h-1 w-16 rounded-full"
-          style={{ background: "var(--color-accent)" }}
+    <PageHero
+      eyebrow={<EditableText id={`${blockId}-eyebrow`} defaultValue="Who we are" className="inline" />}
+      title={<EditableText id={`${blockId}-title`} defaultValue="About the Lab" className="inline" />}
+      subtitle={
+        <EditableText
+          id={`${blockId}-subtitle`}
+          defaultValue="Advancing impactful research through collaboration, innovation, and responsible scientific practice."
+          className="inline"
         />
-        <p
-          className="text-base max-w-2xl mx-auto leading-relaxed"
-          style={{ color: "rgba(255,255,255,0.72)" }}
-        >
-          <EditableText
-            id={`${blockId}-subtitle`}
-            defaultValue="Advancing impactful research through collaboration, innovation, and responsible scientific practice."
-            className="inline"
-          />
-        </p>
-      </div>
-    </section>
+      }
+    />
   );
 };
 
@@ -118,7 +96,7 @@ export const TextBlock: React.FC<{ blockId: string; index: number }> = ({
   return (
     <section
       className="px-4 py-10 md:py-12"
-      style={{ background: isEven ? "#ffffff" : "#f8fafc" }}
+      style={{ background: isEven ? "var(--site-surface)" : "var(--site-surface-alt)" }}
     >
       <div className="max-w-3xl mx-auto">
         <h2
@@ -258,7 +236,7 @@ export const MissionVisionBlock: React.FC<{ blockId: string }> = ({
 // --- CTA Block ---
 export const CTABlock: React.FC<{ blockId: string }> = ({ blockId }) => {
   return (
-    <section className="py-14 px-4" style={{ background: "#f1f5f9" }}>
+    <section className="py-14 px-4" style={{ background: "var(--site-surface-alt)" }}>
       <div className="max-w-3xl mx-auto text-center">
         <h3
           className="font-black text-2xl mb-3"
@@ -283,7 +261,7 @@ export const CTABlock: React.FC<{ blockId: string }> = ({ blockId }) => {
         <div className="flex flex-wrap gap-3 justify-center">
           <a
             href="/collaborators"
-            className="no-underline font-bold text-sm px-7 py-3 rounded-xl text-white"
+            className="no-underline font-bold text-sm px-7 py-3 rounded-xl text-[color:var(--hero-text)]"
             style={{ background: "var(--color-primary)" }}
           >
             Meet the Team →

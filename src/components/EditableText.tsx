@@ -52,12 +52,21 @@ export default function EditableText({ id, tag = "span", wrapperTag = "span", de
     wrapperTag,
     { className: `relative group ${wrapperClassName}`.trim() },
     editable,
-    isAdmin && !editing && React.createElement("button", {
-      type: "button",
-      className: "ml-1 inline-flex h-6 w-6 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-500 opacity-0 shadow-sm transition group-hover:opacity-100 focus:opacity-100",
+    /* A span with button semantics, not a <button>: editable labels sit inside
+       nav and CTA buttons, and a button inside a button is invalid HTML (React
+       warned on every page for admins). */
+    isAdmin && !editing && React.createElement("span", {
+      role: "button",
+      tabIndex: 0,
+      className: "ml-1 inline-flex h-6 w-6 cursor-pointer items-center justify-center rounded-md border border-slate-200 bg-white text-slate-500 opacity-0 shadow-sm transition group-hover:opacity-100 focus:opacity-100",
       title: "Edit this text",
       "aria-label": `Edit ${id}`,
       onClick: (event: React.MouseEvent) => {
+        event.preventDefault(); event.stopPropagation(); setEditing(true);
+        window.setTimeout(() => ref.current?.focus(), 0);
+      },
+      onKeyDown: (event: React.KeyboardEvent) => {
+        if (event.key !== "Enter" && event.key !== " ") return;
         event.preventDefault(); event.stopPropagation(); setEditing(true);
         window.setTimeout(() => ref.current?.focus(), 0);
       },

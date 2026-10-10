@@ -167,6 +167,19 @@ export interface ThemeSettings {
   footerColor: string;
   fontFamily: string;
   headingFont: string;
+  /* Fine-grained website colours. Empty string = derived automatically from
+     the colours above (see src/theme/tokens.ts). */
+  surfaceColor?: string;
+  surfaceAltColor?: string;
+  headingColor?: string;
+  textColor?: string;
+  mutedColor?: string;
+  borderColor?: string;
+  navbarTextColor?: string;
+  footerTextColor?: string;
+  heroTextColor?: string;
+  onAccentColor?: string;
+  onSecondaryColor?: string;
 }
 
 // Site content — keyed by tab + field

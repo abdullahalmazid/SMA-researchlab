@@ -1,4 +1,4 @@
-import { doc, setDoc } from "firebase/firestore";
+import { doc, setDoc } from "./core/auditedFirestore";
 import React, { useState } from "react";
 import { db } from "../firebase/config";
 import { useTheme } from "../firebase/hooks";

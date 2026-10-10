@@ -1,98 +1,113 @@
 import { collection, onSnapshot, query, where } from "firebase/firestore";
+import { EmailAuthProvider, reauthenticateWithCredential } from "firebase/auth";
+import { ChevronsLeft, ChevronsRight, CornerDownLeft, Lock, LogOut, Menu, Search, X } from "lucide-react";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { ContactMessages, ManageAnnouncements } from "../admin/AdminSections";
-import CollaboratorRequests from "../admin/features/requests/RequestsPage";
-import ContentEditor from "../admin/features/content/ContentPage";
-import DeliveryStatusDashboard from "../admin/features/delivery/DeliveryPage";
-import ManageCollaborators from "../admin/features/collaborators/CollaboratorsPage";
-import ManageGallery from "../admin/features/gallery/GalleryPage";
-import ManagePublications from "../admin/features/publications/PublicationsPage";
-import ManageResearchIdeas from "../admin/features/research-ideas/ResearchIdeasPage";
+import "../admin/adminConsole.css";
+import {
+  ADMIN_DESCRIPTIONS,
+  ADMIN_ROUTE_TO_SECTION,
+  ADMIN_SECTION_PERMISSION,
+  ADMIN_SECTION_TO_ROUTE,
+  buildAdminNavigation,
+  PRIMARY_ONLY_SECTIONS,
+  type AdminNavItem as NavItem,
+  type AdminSection as Section,
+} from "../admin/app/adminNavigation";
 import ThemeControl from "../admin/features/appearance/AppearancePage";
 import BrandingControl from "../admin/features/branding/BrandingPage";
+import ManageCollaborators from "../admin/features/collaborators/CollaboratorsPage";
+import ContentEditor from "../admin/features/content/ContentPage";
+import DeliveryStatusDashboard from "../admin/features/delivery/DeliveryPage";
+import ManageGallery from "../admin/features/gallery/GalleryPage";
 import RolesPermissions from "../admin/features/permissions/PermissionsPage";
-import AppIcon, { type AppIconName } from "../components/AppIcon";
-import { useThemeContext } from "../context/ThemeContext";
+import ManagePublications from "../admin/features/publications/PublicationsPage";
+import CollaboratorRequests from "../admin/features/requests/RequestsPage";
+import ManageResearchIdeas from "../admin/features/research-ideas/ResearchIdeasPage";
+import AnalyticsPage from "../admin/features/analytics/AnalyticsPage";
+import AuditLogPage from "../admin/features/audit/AuditLogPage";
+import AppIcon from "../components/AppIcon";
 import { useAuth } from "../context/AuthContext";
-import { db } from "../firebase/config";
-import {
-  useCollaborators,
-  usePublications,
-  useResearchIdeas,
-  useSiteContent,
-} from "../firebase/hooks";
+import { auth, db } from "../firebase/config";
+import { useAnnouncements, useCollaborators, usePublications, useResearchIdeas, useSiteContent } from "../firebase/hooks";
 import type { ContactMessage } from "../types";
-import { ADMIN_DESCRIPTIONS, ADMIN_ROUTE_TO_SECTION, ADMIN_SECTION_PERMISSION, ADMIN_SECTION_TO_ROUTE, buildAdminNavigation, type AdminNavItem as NavItem, type AdminSection as Section } from "../admin/app/adminNavigation";
 
-const SECTION_STORAGE_KEY = "rl_admin_section";
+const SIDEBAR_KEY = "rl_admin_sidebar_collapsed";
+const LOCK_KEY = "rl_admin_locked";
+/** Idle time before the console locks and asks for the password again. */
+const IDLE_LOCK_MS = 15 * 60_000;
 
-interface QuickAction {
-  id: Section;
-  title: string;
-  note: string;
-  icon: AppIconName;
-  highlight?: string;
-}
+/** Core copy the site needs; the overview flags any that are still empty. */
+const CORE_CONTENT_KEYS: { key: string; label: string }[] = [
+  { key: "home.heroTitle", label: "Home hero title" },
+  { key: "home.heroSubtitle", label: "Home hero subtitle" },
+  { key: "home.introTitle", label: "Home intro title" },
+  { key: "home.introText", label: "Home intro text" },
+  { key: "home.bannerUrl", label: "Home banner image" },
+  { key: "contact.email", label: "Contact email" },
+  { key: "contact.phone", label: "Contact phone" },
+];
 
-const CONTENT_TRACKED_KEYS = [
-  "home.heroTitle",
-  "home.heroSubtitle",
-  "home.introTitle",
-  "home.introText",
-  "about.pageTitle",
-  "about.pageSubtitle",
-  "collaborators.pageTitle",
-  "publications.pageTitle",
-  "ideas.pageTitle",
-  "ideas.pageSubtitle",
-  "contact.pageTitle",
-  "contact.pageSubtitle",
-  "contact.email",
-  "contact.phone",
-  "home.bannerUrl",
-  "about.bannerUrl",
-  "ideas.bannerUrl",
-  "contact.bannerUrl",
-] as const;
+const pad2 = (n: number) => String(n).padStart(2, "0");
 
 const AdminDashboard: React.FC = () => {
   const location = useLocation();
   const navigate = useNavigate();
-  const { appUser } = useAuth();
+  const { appUser, logout } = useAuth();
   const [section, setSection] = useState<Section>("overview");
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [collapsed, setCollapsed] = useState(() => {
+    try {
+      return localStorage.getItem(SIDEBAR_KEY) === "1";
+    } catch {
+      return false;
+    }
+  });
   const [mobileOpen, setMobileOpen] = useState(false);
   const [commandOpen, setCommandOpen] = useState(false);
   const [commandQuery, setCommandQuery] = useState("");
+  const [commandIndex, setCommandIndex] = useState(0);
   const [messages, setMessages] = useState<ContactMessage[]>([]);
-  const [pendingRequests, setPendingRequests] = useState(0);
+  const [pendingNames, setPendingNames] = useState<string[]>([]);
+  const [pendingAccess, setPendingAccess] = useState<{ target: string; by: string }[]>([]);
+  const [locked, setLocked] = useState(() => {
+    try {
+      return sessionStorage.getItem(LOCK_KEY) === "1";
+    } catch {
+      return false;
+    }
+  });
+  const [unlockPassword, setUnlockPassword] = useState("");
+  const [unlockError, setUnlockError] = useState("");
+  const [unlocking, setUnlocking] = useState(false);
+  const [now, setNow] = useState(() => new Date());
   const commandInputRef = useRef<HTMLInputElement>(null);
   const contentScrollRef = useRef<HTMLElement>(null);
 
   const { content } = useSiteContent();
-  const { theme } = useThemeContext();
   const { collaborators } = useCollaborators();
   const { ongoing, published } = usePublications();
   const { ideas } = useResearchIdeas();
+  const announcements = useAnnouncements();
 
-  const isDarkTheme = useMemo(() => {
-    const clean = theme.backgroundColor.replace("#", "").trim();
-    if (clean.length !== 6) return false;
-    const r = parseInt(clean.slice(0, 2), 16);
-    const g = parseInt(clean.slice(2, 4), 16);
-    const b = parseInt(clean.slice(4, 6), 16);
-    const luminance = 0.2126 * r + 0.7152 * g + 0.0722 * b;
-    return luminance < 140;
-  }, [theme.backgroundColor]);
+  /* The console skin is scoped to <body> so portalled modals get it too. */
+  useEffect(() => {
+    document.body.classList.add("admin-console-active");
+    return () => document.body.classList.remove("admin-console-active");
+  }, []);
 
-  const pageBg = isDarkTheme ? "#0b1220" : "#f1f5f9";
-  const surfaceBg = isDarkTheme ? "#111827" : "white";
-  const surfaceAltBg = isDarkTheme ? "#0f172a" : "#fbfdff";
-  const borderColor = isDarkTheme ? "rgba(255,255,255,0.12)" : "#e2e8f0";
-  const panelBorderColor = isDarkTheme ? "rgba(255,255,255,0.12)" : "#f0f4f8";
-  const titleColor = isDarkTheme ? "#e5e7eb" : "#1f2937";
-  const mutedColor = isDarkTheme ? "#9ca3af" : "#6b7280";
+  useEffect(() => {
+    const id = window.setInterval(() => setNow(new Date()), 1000);
+    return () => window.clearInterval(id);
+  }, []);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(SIDEBAR_KEY, collapsed ? "1" : "0");
+    } catch {
+      /* private mode */
+    }
+  }, [collapsed]);
 
   useEffect(() => {
     const slug = location.pathname.replace(/^\/admin\/?/, "");
@@ -100,145 +115,93 @@ const AdminDashboard: React.FC = () => {
   }, [location.pathname]);
 
   useEffect(() => {
-    localStorage.setItem(SECTION_STORAGE_KEY, section);
-  }, [section]);
-
-  useEffect(() => {
     const unsubMessages = onSnapshot(
       collection(db, "contactMessages"),
-      (snap) => {
-        setMessages(
-          snap.docs.map((d) => ({ id: d.id, ...d.data() }) as ContactMessage),
-        );
-      },
+      (snap) => setMessages(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as ContactMessage)),
       (error) => console.error("Admin messages error:", error),
     );
-
     const unsubPending = onSnapshot(
-      query(
-        collection(db, "pendingRequests"),
-        where("status", "==", "pending"),
-      ),
-      (snap) => {
-        setPendingRequests(snap.size);
-      },
+      query(collection(db, "pendingRequests"), where("status", "==", "pending")),
+      (snap) => setPendingNames(snap.docs.map((d) => String(d.data().name ?? "Unnamed applicant"))),
       (error) => console.error("Admin requests error:", error),
     );
-
+    const unsubAccess = onSnapshot(
+      query(collection(db, "permissionRequests"), where("status", "==", "pending")),
+      (snap) => setPendingAccess(snap.docs.map((d) => ({ target: String(d.data().targetName ?? "an account"), by: String(d.data().requestedByName ?? "a moderator") }))),
+      () => setPendingAccess([]),
+    );
     return () => {
       unsubMessages();
       unsubPending();
+      unsubAccess();
     };
   }, []);
 
-  const unreadMessages = messages.filter((m) => !m.isRead).length;
+  /* ── Auto-lock after inactivity ───────────────────────────────────── */
+  useEffect(() => {
+    try {
+      sessionStorage.setItem(LOCK_KEY, locked ? "1" : "0");
+    } catch {
+      /* private mode */
+    }
+    if (locked) return;
+    let timer = window.setTimeout(() => setLocked(true), IDLE_LOCK_MS);
+    let last = Date.now();
+    const activity = () => {
+      if (Date.now() - last < 2000) return;
+      last = Date.now();
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => setLocked(true), IDLE_LOCK_MS);
+    };
+    const events = ["mousemove", "mousedown", "keydown", "touchstart", "wheel"] as const;
+    events.forEach((name) => window.addEventListener(name, activity, { passive: true }));
+    return () => {
+      window.clearTimeout(timer);
+      events.forEach((name) => window.removeEventListener(name, activity));
+    };
+  }, [locked]);
 
-  const progress = useMemo(() => {
-    const contentFilled = CONTENT_TRACKED_KEYS.filter((key) =>
-      Boolean(content[key]?.toString().trim()),
-    ).length;
-    const contentPercent = Math.round(
-      (contentFilled / CONTENT_TRACKED_KEYS.length) * 100,
-    );
+  const unlock = async (event: React.FormEvent) => {
+    event.preventDefault();
+    const user = auth.currentUser;
+    if (!user?.email) return;
+    setUnlocking(true);
+    setUnlockError("");
+    try {
+      await reauthenticateWithCredential(user, EmailAuthProvider.credential(user.email, unlockPassword));
+      setLocked(false);
+      setUnlockPassword("");
+    } catch {
+      setUnlockError("That password didn't work.");
+    } finally {
+      setUnlocking(false);
+    }
+  };
 
-    const collaboratorsGoal = 8;
-    const collaboratorsPercent = Math.min(
-      100,
-      Math.round((collaborators.length / collaboratorsGoal) * 100),
-    );
+  const unread = useMemo(
+    () => messages.filter((m) => !m.isRead).sort((a, b) => String(b.submittedAt).localeCompare(String(a.submittedAt))),
+    [messages],
+  );
 
-    const publicationsTotal = ongoing.length + published.length;
-    const publicationsGoal = 12;
-    const publicationsPercent = Math.min(
-      100,
-      Math.round((publicationsTotal / publicationsGoal) * 100),
-    );
-
-    const ideasGoal = 10;
-    const ideasPercent = Math.min(
-      100,
-      Math.round((ideas.length / ideasGoal) * 100),
-    );
-
-    const totalMessages = messages.length;
-    const handledMessages = totalMessages - unreadMessages;
-    const inboxPercent =
-      totalMessages === 0
-        ? 100
-        : Math.round((handledMessages / totalMessages) * 100);
-
-    const metrics = [
-      {
-        id: "content" as Section,
-        label: "Content Completion",
-        hint: `${contentFilled}/${CONTENT_TRACKED_KEYS.length} core fields set`,
-        percent: contentPercent,
-        stat: `${contentPercent}%`,
-      },
-      {
-        id: "collaborators" as Section,
-        label: "Collaborator Network",
-        hint: `${collaborators.length} active collaborators`,
-        percent: collaboratorsPercent,
-        stat: `${collaborators.length}`,
-      },
-      {
-        id: "publications" as Section,
-        label: "Research Output",
-        hint: `${publicationsTotal} publications uploaded`,
-        percent: publicationsPercent,
-        stat: `${publicationsTotal}`,
-      },
-      {
-        id: "ideas" as Section,
-        label: "Idea Pipeline",
-        hint: `${ideas.length} ideas in repository`,
-        percent: ideasPercent,
-        stat: `${ideas.length}`,
-      },
-      {
-        id: "messages" as Section,
-        label: "Inbox Health",
-        hint: `${handledMessages}/${totalMessages} handled`,
-        percent: inboxPercent,
-        stat: `${unreadMessages} unread`,
-      },
-    ];
-
-    const overall = Math.round(
-      metrics.reduce((acc, item) => acc + item.percent, 0) / metrics.length,
-    );
-
-    return { metrics, overall };
-  }, [
-    collaborators.length,
-    content,
-    ideas.length,
-    messages.length,
-    ongoing.length,
-    published.length,
-    unreadMessages,
-  ]);
-
-  const allNavItems: NavItem[] = buildAdminNavigation(pendingRequests, unreadMessages);
-
+  /* ── Navigation & permissions ─────────────────────────────────────── */
+  const allNavItems: NavItem[] = buildAdminNavigation(pendingNames.length, unread.length, pendingAccess.length);
   const primaryAdmin = appUser?.adminLevel === "primary" || appUser?.role === "admin";
   const granted = new Set(appUser?.adminPermissions ?? []);
   const navItems = allNavItems.filter((item) => {
-    if (primaryAdmin) return true;
-    if (item.id === "overview") return true;
-    if (item.id === "roles") return false;
+    if (primaryAdmin || item.id === "overview") return true;
+    if (PRIMARY_ONLY_SECTIONS.includes(item.id)) return false;
+    // Moderators can open Roles to *request* changes; the primary admin approves.
+    if (item.id === "roles") return appUser?.adminLevel === "moderator";
     const permission = ADMIN_SECTION_PERMISSION[item.id];
     return permission ? granted.has(permission) : false;
   });
-
   const groups = Array.from(new Set(navItems.map((i) => i.group)));
+  const codeOf = (id: Section) => pad2(navItems.findIndex((i) => i.id === id) + 1);
 
   useEffect(() => {
     if (!navItems.some((item) => item.id === section)) setSection("overview");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [appUser?.adminLevel, appUser?.adminPermissions, section]);
-
-  const sectionDescriptions = ADMIN_DESCRIPTIONS;
 
   const activateSection = (id: Section) => {
     setSection(id);
@@ -249,57 +212,30 @@ const AdminDashboard: React.FC = () => {
     requestAnimationFrame(() => contentScrollRef.current?.scrollTo({ top: 0, behavior: "auto" }));
   };
 
-  const quickActions: QuickAction[] = [
-    {
-      id: "content",
-      title: "Edit Core Content",
-      note: "Home, about, contact and page sections",
-      icon: "content",
-    },
-    {
-      id: "requests",
-      title: "Review Requests",
-      note: `${pendingRequests} pending applications`,
-      icon: "requests",
-      highlight: pendingRequests > 0 ? "#ef4444" : undefined,
-    },
-    {
-      id: "messages",
-      title: "Check Inbox",
-      note: `${unreadMessages} unread messages`,
-      icon: "contact",
-      highlight: unreadMessages > 0 ? "#ef4444" : undefined,
-    },
-    {
-      id: "theme",
-      title: "Theme Studio",
-      note: "Apply premium color and typography presets",
-      icon: "theme",
-    },
-  ];
-
-  const filteredCommandItems = useMemo(() => {
+  /* ── Command palette (Ctrl/⌘+K) ───────────────────────────────────── */
+  const commandItems = useMemo(() => {
     const q = commandQuery.trim().toLowerCase();
-    if (!q) return navItems;
-    return navItems.filter(
-      (item) =>
-        item.label.toLowerCase().includes(q) ||
-        item.group.toLowerCase().includes(q) ||
-        sectionDescriptions[item.id].toLowerCase().includes(q),
-    );
-  }, [commandQuery, navItems]);
+    return q
+      ? navItems.filter(
+          (item) =>
+            item.label.toLowerCase().includes(q) ||
+            item.group.toLowerCase().includes(q) ||
+            ADMIN_DESCRIPTIONS[item.id].toLowerCase().includes(q),
+        )
+      : navItems;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [commandQuery, navItems.length, pendingNames.length, unread.length]);
+
+  useEffect(() => setCommandIndex(0), [commandQuery, commandOpen]);
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
         e.preventDefault();
-        setCommandOpen(true);
+        setCommandOpen((open) => !open);
       }
-      if (e.key === "Escape") {
-        setCommandOpen(false);
-      }
+      if (e.key === "Escape") setCommandOpen(false);
     };
-
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
@@ -312,8 +248,6 @@ const AdminDashboard: React.FC = () => {
 
   const renderSection = () => {
     switch (section) {
-      case "overview":
-        return null;
       case "content":
         return <ContentEditor />;
       case "theme":
@@ -338,704 +272,477 @@ const AdminDashboard: React.FC = () => {
         return <DeliveryStatusDashboard />;
       case "gallery":
         return <ManageGallery />;
+      case "analytics":
+        return <AnalyticsPage />;
+      case "audit":
+        return <AuditLogPage />;
       default:
         return null;
     }
   };
 
   const currentItem = navItems.find((i) => i.id === section);
+  const route = ADMIN_SECTION_TO_ROUTE[section] || "overview";
+  const operator = appUser?.name || appUser?.email || "operator";
+  const clearance = primaryAdmin ? "ROOT" : appUser?.adminLevel === "moderator" ? "MOD" : "LIMITED";
 
-  const SidebarContent = () => (
-    <>
-      {/* Logo area */}
-      <div
-        className="px-5 py-6"
-        style={{ borderBottom: "1px solid rgba(255,255,255,0.08)" }}
-      >
-        <div className="flex items-center gap-3">
-          <div
-            className="w-9 h-9 rounded-xl flex items-center justify-center text-lg flex-shrink-0"
-            style={{
-              background:
-                "linear-gradient(135deg, var(--color-accent), #f97316)",
-              boxShadow: "0 4px 12px rgba(245,158,11,0.4)",
-            }}
-          >
-            <AppIcon name="lab" size={18} />
-          </div>
-          <div>
-            <p
-              className="text-white font-black text-sm leading-tight"
-              style={{ fontFamily: "var(--font-heading)" }}
-            >
-              Admin Panel
+  const exitConsole = async () => {
+    await logout();
+    navigate("/", { replace: true });
+  };
+
+  /* ── Sidebar ──────────────────────────────────────────────────────── */
+  const sidebar = (compact: boolean) => (
+    <div className="flex h-full flex-col">
+      <div className="flex h-12 shrink-0 items-center gap-2.5 border-b px-3.5" style={{ borderColor: "var(--ac-line)" }}>
+        <span
+          className="grid h-7 w-7 shrink-0 place-items-center rounded-md"
+          style={{ background: "var(--ac-accent-dim)", color: "var(--ac-accent)", boxShadow: "inset 0 0 0 1px rgba(34,211,238,.4)" }}
+          aria-hidden="true"
+        >
+          <AppIcon name="lab" size={15} />
+        </span>
+        {!compact && (
+          <div className="min-w-0 leading-tight">
+            <p className="ac-mono m-0 truncate text-[12.5px] font-bold tracking-[0.14em]" style={{ color: "var(--ac-text)" }}>
+              LAB//CONTROL
             </p>
-            <p
-              className="text-xs mt-0.5"
-              style={{ color: "rgba(255,255,255,0.4)" }}
-            >
-              Rahman Research Lab
+            <p className="ac-mono m-0 flex items-center gap-1.5 text-[10px] tracking-[0.12em]" style={{ color: "var(--ac-ok)" }}>
+              <span className="ac-dot ac-dot-ok" style={{ width: 5, height: 5 }} /> SECURE LINK
             </p>
           </div>
-        </div>
+        )}
       </div>
 
-      {/* Nav groups */}
-      <nav
-        className="flex-1 py-4 overflow-y-auto"
-        style={{ scrollbarWidth: "none" }}
-      >
+      <nav className="min-h-0 flex-1 overflow-y-auto py-2" aria-label="Admin sections">
         {groups.map((group) => (
-          <div key={group} className="mb-1">
-            <p
-              className="px-5 py-1.5 text-xs font-black uppercase tracking-widest"
-              style={{ color: "rgba(255,255,255,0.25)" }}
-            >
-              {group}
-            </p>
+          <div key={group} className="mb-2">
+            {!compact && <p className="ac-label m-0 px-4 pb-1 pt-2">// {group}</p>}
             {navItems
               .filter((i) => i.group === group)
-              .map((item) => {
-                const isActive = section === item.id;
-                return (
-                  <button
-                    key={item.id}
-                    onClick={() => activateSection(item.id)}
-                    aria-current={isActive ? "page" : undefined}
-                    aria-label={`Open ${item.label}`}
-                    className="w-full flex items-center gap-3 px-4 mx-1 py-2.5 text-left border-none cursor-pointer transition-all rounded-xl"
-                    style={{
-                      width: "calc(100% - 8px)",
-                      background: isActive
-                        ? "rgba(255,255,255,0.12)"
-                        : "transparent",
-                      color: isActive ? "white" : "rgba(255,255,255,0.6)",
-                      fontWeight: isActive ? 700 : 500,
-                      fontSize: 13.5,
-                      marginBottom: 2,
-                    }}
-                  >
-                    {/* Active indicator */}
-                    <div
-                      className="w-1 h-5 rounded-full flex-shrink-0 transition-all"
-                      style={{
-                        background: isActive
-                          ? "var(--color-accent)"
-                          : "transparent",
-                        boxShadow: isActive
-                          ? "0 0 8px var(--color-accent)"
-                          : "none",
-                      }}
-                    />
-                    <AppIcon name={item.icon} size={15} />
-                    <span className="whitespace-nowrap flex-1">
-                      {item.label}
+              .map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => activateSection(item.id)}
+                  aria-current={section === item.id ? "page" : undefined}
+                  title={compact ? item.label : undefined}
+                  aria-label={item.label}
+                  className="ac-nav-item"
+                  style={compact ? { justifyContent: "center", padding: "9px 0" } : undefined}
+                >
+                  {!compact && (
+                    <span className="ac-mono w-5 shrink-0 text-[10.5px]" style={{ color: "var(--ac-faint)" }}>
+                      {codeOf(item.id)}
                     </span>
-                    {item.badge !== undefined && item.badge > 0 && (
-                      <span
-                        className="text-xs font-black px-1.5 py-0.5 rounded-full"
-                        style={{
-                          background: "#ef4444",
-                          color: "white",
-                          fontSize: 10,
-                        }}
-                      >
-                        {item.badge}
-                      </span>
-                    )}
-                  </button>
-                );
-              })}
+                  )}
+                  <span className="relative shrink-0 opacity-90">
+                    <AppIcon name={item.icon} size={15} />
+                    {compact && item.badge ? (
+                      <span className="absolute -right-1.5 -top-1.5 h-2 w-2 rounded-full" style={{ background: "var(--ac-warn)" }} />
+                    ) : null}
+                  </span>
+                  {!compact && <span className="min-w-0 flex-1 truncate">{item.label}</span>}
+                  {!compact && item.badge ? (
+                    <span
+                      className="ac-mono rounded px-1.5 text-[10.5px] font-bold"
+                      style={{ background: "rgba(251,191,36,.14)", color: "var(--ac-warn)" }}
+                    >
+                      {item.badge}
+                    </span>
+                  ) : null}
+                </button>
+              ))}
           </div>
         ))}
       </nav>
 
-      {/* Footer */}
-      <div
-        className="px-5 py-4"
-        style={{ borderTop: "1px solid rgba(255,255,255,0.08)" }}
-      >
-        <a
-          href="/"
-          className="flex items-center gap-2 text-xs font-semibold no-underline py-2 px-3 rounded-lg transition-all"
-          style={{
-            color: "rgba(255,255,255,0.45)",
-            background: "rgba(255,255,255,0.05)",
-          }}
-          onMouseEnter={(e) => {
-            (e.currentTarget as HTMLElement).style.color = "white";
-            (e.currentTarget as HTMLElement).style.background =
-              "rgba(255,255,255,0.1)";
-          }}
-          onMouseLeave={(e) => {
-            (e.currentTarget as HTMLElement).style.color =
-              "rgba(255,255,255,0.45)";
-            (e.currentTarget as HTMLElement).style.background =
-              "rgba(255,255,255,0.05)";
-          }}
-        >
-          <AppIcon name="back" size={14} />
-          <span>Back to Website</span>
-        </a>
-      </div>
-    </>
-  );
-
-  return (
-    <div
-      className="admin-dashboard-theme fixed inset-0 z-[2147481000] flex overflow-hidden"
-      data-admin-dark={isDarkTheme ? "true" : "false"}
-      style={{ background: pageBg }}
-    >
-      {/* ── Desktop Sidebar ── */}
-      <aside
-        className="hidden lg:flex flex-col flex-shrink-0 sticky top-0 h-screen"
-        style={{
-          width: sidebarOpen ? 240 : 64,
-          background: "var(--color-primary)",
-          transition: "width 0.25s cubic-bezier(0.4,0,0.2,1)",
-          overflow: "hidden",
-          zIndex: 30,
-          boxShadow: "4px 0 24px rgba(0,0,0,0.12)",
-        }}
-      >
-        {sidebarOpen ? (
-          <SidebarContent />
-        ) : (
-          /* Collapsed sidebar — icons only */
-          <div className="flex flex-col items-center py-4 gap-1">
-            <div
-              className="w-9 h-9 rounded-xl flex items-center justify-center text-lg mb-4"
-              style={{
-                background:
-                  "linear-gradient(135deg, var(--color-accent), #f97316)",
-                color: "#ffffff",
-              }}
+      <div className="shrink-0 border-t p-2.5" style={{ borderColor: "var(--ac-line)" }}>
+        {!compact && (
+          <div className="mb-2 flex items-center gap-2.5 px-1">
+            <span
+              className="ac-mono grid h-8 w-8 shrink-0 place-items-center rounded-md text-[11px] font-bold"
+              style={{ background: "var(--ac-panel-3)", color: "var(--ac-accent)" }}
             >
-              <AppIcon name="lab" size={18} />
-            </div>
-            {navItems.map((item) => {
-              const isActive = section === item.id;
-              return (
-                <button
-                  key={item.id}
-                  onClick={() => activateSection(item.id)}
-                  title={item.label}
-                  aria-label={`Open ${item.label}`}
-                  className="w-10 h-10 rounded-xl flex items-center justify-center border-none cursor-pointer transition-all"
-                  style={{
-                    background: isActive
-                      ? "rgba(255,255,255,0.18)"
-                      : "rgba(255,255,255,0.04)",
-                    color: isActive ? "#ffffff" : "rgba(255,255,255,0.72)",
-                    fontSize: 16,
-                  }}
-                  onMouseEnter={(e) => {
-                    if (!isActive) {
-                      e.currentTarget.style.background =
-                        "rgba(255,255,255,0.12)";
-                      e.currentTarget.style.color = "#ffffff";
-                    }
-                  }}
-                  onMouseLeave={(e) => {
-                    if (!isActive) {
-                      e.currentTarget.style.background =
-                        "rgba(255,255,255,0.04)";
-                      e.currentTarget.style.color = "rgba(255,255,255,0.72)";
-                    }
-                  }}
-                >
-                  <AppIcon name={item.icon} size={16} />
-                </button>
-              );
-            })}
+              {operator.slice(0, 2).toUpperCase()}
+            </span>
+            <span className="min-w-0 flex-1 leading-tight">
+              <span className="block truncate text-[12.5px] font-semibold" style={{ color: "var(--ac-text)" }}>
+                {operator}
+              </span>
+              <span className="ac-mono block text-[10px] tracking-[0.12em]" style={{ color: "var(--ac-muted)" }}>
+                CLEARANCE: {clearance}
+              </span>
+            </span>
           </div>
         )}
+        <div className={`flex gap-1.5 ${compact ? "flex-col items-center" : ""}`}>
+          <a href="/" className={`ac-btn ${compact ? "ac-btn-icon" : "flex-1 justify-center"}`} title="Back to website">
+            <AppIcon name="back" size={13} />
+            {!compact && "SITE"}
+          </a>
+          <button type="button" onClick={() => void exitConsole()} className={`ac-btn ${compact ? "ac-btn-icon" : "flex-1 justify-center"}`} title="Sign out">
+            <LogOut size={13} />
+            {!compact && "EXIT"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
+  /* ── Overview ─────────────────────────────────────────────────────── */
+  const missingContent = CORE_CONTENT_KEYS.filter(({ key }) => !String(content[key] ?? "").trim());
+  const stats = [
+    { id: "collaborators" as Section, label: "Collaborators", value: collaborators.length },
+    { id: "publications" as Section, label: "Publications", value: published.length, note: `${ongoing.length} ongoing` },
+    { id: "ideas" as Section, label: "Research ideas", value: ideas.length },
+    { id: "announcements" as Section, label: "Announcements", value: announcements.filter((a) => !a.isHidden).length },
+    { id: "requests" as Section, label: "Pending requests", value: pendingNames.length, alert: pendingNames.length > 0 },
+    { id: "messages" as Section, label: "Unread messages", value: unread.length, alert: unread.length > 0 },
+  ].filter((stat) => navItems.some((item) => item.id === stat.id));
+
+  type QueueItem = { tone: "warn" | "info"; text: string; target: Section };
+  const queue: QueueItem[] = [
+    ...(primaryAdmin
+      ? pendingAccess.map((r) => ({ tone: "warn" as const, text: `Access change for ${r.target} requested by ${r.by}`, target: "roles" as Section }))
+      : []),
+    ...pendingNames.slice(0, 4).map((name) => ({ tone: "warn" as const, text: `Collaborator request from ${name} awaiting review`, target: "requests" as Section })),
+    ...(pendingNames.length > 4 ? [{ tone: "warn" as const, text: `+${pendingNames.length - 4} more requests`, target: "requests" as Section }] : []),
+    ...unread.slice(0, 4).map((m) => ({
+      tone: "info" as const,
+      text: `Message from ${m.name || m.email}: ${m.subject || "(no subject)"}`,
+      target: "messages" as Section,
+    })),
+    ...(unread.length > 4 ? [{ tone: "info" as const, text: `+${unread.length - 4} more unread messages`, target: "messages" as Section }] : []),
+    ...missingContent.map((item) => ({ tone: "info" as const, text: `Content field empty: ${item.label}`, target: "content" as Section })),
+  ].filter((item) => navItems.some((nav) => nav.id === item.target));
+
+  const overview = (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <p className="ac-label m-0">// system overview</p>
+          <h1 className="m-0 mt-1 text-[20px] font-semibold" style={{ color: "var(--ac-text)" }}>
+            Welcome back, {operator.split(" ")[0]}
+          </h1>
+        </div>
+        <p className="ac-mono m-0 text-[11.5px]" style={{ color: "var(--ac-muted)" }}>
+          {queue.length === 0 ? "ALL SYSTEMS NOMINAL" : `${queue.length} ITEM${queue.length === 1 ? "" : "S"} NEED ATTENTION`}
+        </p>
+      </div>
+
+      <div className="grid grid-cols-2 gap-2.5 md:grid-cols-3 xl:grid-cols-6">
+        {stats.map((stat) => (
+          <button
+            key={stat.id}
+            type="button"
+            onClick={() => activateSection(stat.id)}
+            className="ac-panel ac-corners group cursor-pointer p-3.5 text-left transition hover:border-[rgba(34,211,238,.45)]"
+          >
+            <p className="ac-label m-0">{stat.label}</p>
+            <p
+              className="ac-mono m-0 mt-2 text-[26px] font-bold leading-none tabular-nums"
+              style={{ color: stat.alert ? "var(--ac-warn)" : "var(--ac-text)" }}
+            >
+              {pad2(stat.value)}
+            </p>
+            <p className="ac-mono m-0 mt-1.5 text-[10.5px]" style={{ color: "var(--ac-faint)" }}>
+              {stat.note ?? (stat.alert ? "action required" : "nominal")}
+            </p>
+          </button>
+        ))}
+      </div>
+
+      <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_320px]">
+        <section className="ac-panel overflow-hidden" aria-label="Action queue">
+          <header className="flex items-center justify-between border-b px-4 py-2.5" style={{ borderColor: "var(--ac-line)" }}>
+            <p className="ac-label m-0" style={{ color: "var(--ac-muted)" }}>
+              action_queue
+            </p>
+            <span className="ac-mono text-[10.5px]" style={{ color: "var(--ac-faint)" }}>
+              {queue.length} open
+            </span>
+          </header>
+          {queue.length === 0 ? (
+            <p className="ac-mono m-0 px-4 py-8 text-center text-[12px]" style={{ color: "var(--ac-muted)" }}>
+              <span style={{ color: "var(--ac-ok)" }}>✓</span> queue empty — nothing needs you right now
+            </p>
+          ) : (
+            <ul className="m-0 list-none p-0">
+              {queue.map((item, index) => (
+                <li key={`${item.target}-${index}`}>
+                  <button
+                    type="button"
+                    onClick={() => activateSection(item.target)}
+                    className="flex w-full items-center gap-3 border-0 border-b bg-transparent px-4 py-2.5 text-left transition hover:bg-[rgba(34,211,238,.04)]"
+                    style={{ borderColor: "var(--ac-line)" }}
+                  >
+                    <span
+                      className="ac-mono shrink-0 text-[11px] font-bold"
+                      style={{ color: item.tone === "warn" ? "var(--ac-warn)" : "var(--ac-accent)" }}
+                    >
+                      {item.tone === "warn" ? "[!]" : "[i]"}
+                    </span>
+                    <span className="min-w-0 flex-1 truncate text-[13px]" style={{ color: "var(--ac-text-2)" }}>
+                      {item.text}
+                    </span>
+                    <span className="ac-mono shrink-0 text-[10.5px]" style={{ color: "var(--ac-faint)" }}>
+                      /{ADMIN_SECTION_TO_ROUTE[item.target]} →
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+
+        <section className="ac-panel p-4" aria-label="Session">
+          <p className="ac-label m-0" style={{ color: "var(--ac-muted)" }}>
+            session
+          </p>
+          <dl className="ac-mono m-0 mt-3 grid gap-2 text-[11.5px]">
+            {[
+              ["operator", operator],
+              ["clearance", clearance],
+              ["modules", `${navItems.length} available`],
+              ["local time", now.toLocaleTimeString([], { hour12: false })],
+              ["date", now.toLocaleDateString([], { year: "numeric", month: "short", day: "2-digit" })],
+            ].map(([k, v]) => (
+              <div key={k} className="flex justify-between gap-3 border-b pb-2" style={{ borderColor: "var(--ac-line)" }}>
+                <dt style={{ color: "var(--ac-faint)" }}>{k}</dt>
+                <dd className="m-0 truncate text-right" style={{ color: "var(--ac-text-2)" }}>
+                  {v}
+                </dd>
+              </div>
+            ))}
+          </dl>
+          <button type="button" onClick={() => setCommandOpen(true)} className="ac-btn mt-4 w-full justify-center">
+            <Search size={12} /> JUMP TO MODULE
+            <kbd className="ml-1 rounded border px-1 text-[10px]" style={{ borderColor: "var(--ac-line-strong)" }}>
+              Ctrl K
+            </kbd>
+          </button>
+        </section>
+      </div>
+    </div>
+  );
+
+  /* ── Layout ───────────────────────────────────────────────────────── */
+  return (
+    <div className="admin-console fixed inset-0 z-[2147481000] flex overflow-hidden ac-grid-bg" style={{ color: "var(--ac-text)" }}>
+      <aside
+        className="hidden shrink-0 border-r lg:block"
+        style={{
+          width: collapsed ? 60 : 232,
+          background: "rgba(7,10,15,.92)",
+          borderColor: "var(--ac-line)",
+          transition: "width .2s ease",
+        }}
+      >
+        {sidebar(collapsed)}
       </aside>
 
-      {/* ── Mobile Sidebar Overlay ── */}
       {mobileOpen && (
-        <div
-          className="fixed inset-0 z-40 lg:hidden"
-          style={{ background: "rgba(0,0,0,0.5)", backdropFilter: "blur(4px)" }}
-          onClick={() => setMobileOpen(false)}
-        />
+        <div className="fixed inset-0 z-40 bg-black/70 lg:hidden" onClick={() => setMobileOpen(false)}>
+          <aside
+            className="h-full w-[260px] border-r"
+            style={{ background: "var(--ac-panel)", borderColor: "var(--ac-line)" }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {sidebar(false)}
+          </aside>
+        </div>
+      )}
+
+      <div className="flex min-w-0 flex-1 flex-col">
+        <header
+          className="flex h-12 shrink-0 items-center gap-2 border-b px-3 lg:px-4"
+          style={{ borderColor: "var(--ac-line)", background: "rgba(5,7,11,.85)", backdropFilter: "blur(8px)" }}
+        >
+          <button type="button" onClick={() => setMobileOpen(true)} className="ac-btn ac-btn-icon lg:hidden" aria-label="Open menu">
+            <Menu size={15} />
+          </button>
+          <button
+            type="button"
+            onClick={() => setCollapsed((v) => !v)}
+            className="ac-btn ac-btn-icon hidden lg:inline-flex"
+            aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+          >
+            {collapsed ? <ChevronsRight size={15} /> : <ChevronsLeft size={15} />}
+          </button>
+
+          <p className="ac-mono ac-cursor m-0 min-w-0 truncate text-[12px]" style={{ color: "var(--ac-muted)" }}>
+            <span style={{ color: "var(--ac-ok)" }}>root@lab</span>
+            <span style={{ color: "var(--ac-faint)" }}>:</span>
+            <span style={{ color: "var(--ac-accent)" }}>~/admin/{route}</span>
+          </p>
+
+          <div className="ml-auto flex items-center gap-2">
+            <button type="button" onClick={() => setCommandOpen(true)} className="ac-btn hidden md:inline-flex" aria-label="Search modules">
+              <Search size={12} />
+              <span>search</span>
+              <kbd className="rounded border px-1 text-[10px]" style={{ borderColor: "var(--ac-line-strong)", color: "var(--ac-faint)" }}>
+                Ctrl K
+              </kbd>
+            </button>
+            <span className="ac-mono hidden text-[11.5px] tabular-nums sm:inline" style={{ color: "var(--ac-muted)" }}>
+              {now.toLocaleTimeString([], { hour12: false })}
+            </span>
+          </div>
+        </header>
+
+        <main ref={contentScrollRef} className="relative min-h-0 flex-1 overflow-y-auto" aria-label="Admin content">
+          <div className="mx-auto w-full max-w-[1240px] px-3 py-4 lg:px-5 lg:py-5">
+            {section === "overview" ? (
+              overview
+            ) : (
+              <>
+                <div className="mb-3 flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                  <span className="ac-mono text-[11px]" style={{ color: "var(--ac-accent)" }}>
+                    [{codeOf(section)}]
+                  </span>
+                  <h1 className="m-0 text-[17px] font-semibold" style={{ color: "var(--ac-text)" }}>
+                    {currentItem?.label}
+                  </h1>
+                  <p className="m-0 text-[12.5px]" style={{ color: "var(--ac-muted)" }}>
+                    {ADMIN_DESCRIPTIONS[section]}
+                  </p>
+                </div>
+                <div className="admin-section ac-panel p-3 sm:p-4 lg:p-5">{renderSection()}</div>
+              </>
+            )}
+          </div>
+        </main>
+
+        <footer
+          className="ac-mono flex h-7 shrink-0 items-center gap-4 overflow-hidden border-t px-3 text-[10.5px] tracking-[0.06em] lg:px-4"
+          style={{ borderColor: "var(--ac-line)", background: "rgba(5,7,11,.92)", color: "var(--ac-faint)" }}
+        >
+          <span className="flex items-center gap-1.5" style={{ color: "var(--ac-ok)" }}>
+            <span className="ac-dot ac-dot-ok" style={{ width: 5, height: 5 }} /> ONLINE
+          </span>
+          <span className="hidden sm:inline">{collaborators.length} COLLABORATORS</span>
+          <span style={{ color: pendingNames.length ? "var(--ac-warn)" : undefined }}>{pendingNames.length} PENDING</span>
+          <span style={{ color: unread.length ? "var(--ac-warn)" : undefined }}>{unread.length} UNREAD</span>
+          <span className="ml-auto hidden truncate md:inline">SESSION {operator.toUpperCase()}</span>
+        </footer>
+      </div>
+
+      {locked && (
+        <div className="fixed inset-0 z-[2147482900] grid place-items-center bg-black/90 p-4 ac-grid-bg" role="dialog" aria-modal="true" aria-labelledby="lock-title">
+          <form onSubmit={unlock} className="ac-panel ac-corners w-full max-w-sm p-6">
+            <span className="grid h-10 w-10 place-items-center rounded-md" style={{ background: "var(--ac-accent-dim)", color: "var(--ac-accent)" }}>
+              <Lock size={18} />
+            </span>
+            <h2 id="lock-title" className="m-0 mt-4 text-[17px] font-semibold" style={{ color: "var(--ac-text)" }}>
+              Console locked
+            </h2>
+            <p className="ac-mono m-0 mt-1 text-[11.5px]" style={{ color: "var(--ac-muted)" }}>
+              idle for 15 minutes · re-enter the password for {auth.currentUser?.email ?? operator}
+            </p>
+            <input
+              type="password"
+              autoFocus
+              autoComplete="current-password"
+              value={unlockPassword}
+              onChange={(e) => setUnlockPassword(e.target.value)}
+              aria-label="Password"
+              placeholder="Password"
+              className="mt-4 h-10 w-full rounded-md border px-3 text-sm"
+            />
+            {unlockError && (
+              <p role="alert" className="m-0 mt-2 text-[12.5px]" style={{ color: "var(--ac-danger)" }}>
+                {unlockError}
+              </p>
+            )}
+            <div className="mt-4 flex gap-2">
+              <button type="button" onClick={() => void exitConsole()} className="ac-btn flex-1 justify-center">
+                <LogOut size={13} /> SIGN OUT
+              </button>
+              <button type="submit" disabled={unlocking || !unlockPassword} className="ac-btn flex-1 justify-center" style={{ borderColor: "rgba(34,211,238,.6)", color: "#ecfeff" }}>
+                {unlocking ? "CHECKING…" : "UNLOCK"}
+              </button>
+            </div>
+          </form>
+        </div>
       )}
 
       {commandOpen && (
-        <div
-          className="fixed inset-0 z-[70] flex items-start justify-center px-4 pt-20"
-          style={{
-            background: "rgba(2,6,23,0.5)",
-            backdropFilter: "blur(6px)",
-          }}
-          onClick={() => setCommandOpen(false)}
-        >
+        <div className="fixed inset-0 z-[70] flex items-start justify-center bg-black/70 px-4 pt-[12vh]" onClick={() => setCommandOpen(false)}>
           <div
-            className="w-full max-w-2xl rounded-2xl overflow-hidden"
-            style={{
-              background: surfaceBg,
-              border: `1px solid ${borderColor}`,
-              boxShadow: "0 24px 64px rgba(0,0,0,0.25)",
-            }}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Jump to module"
+            className="ac-panel ac-corners w-full max-w-xl overflow-hidden"
+            style={{ boxShadow: "0 0 0 1px rgba(34,211,238,.15), 0 30px 80px rgba(0,0,0,.6)" }}
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="px-4 py-3 border-b" style={{ borderColor }}>
+            <div className="flex items-center gap-2 border-b px-3.5" style={{ borderColor: "var(--ac-line)" }}>
+              <span className="ac-mono text-[13px]" style={{ color: "var(--ac-accent)" }}>
+                &gt;
+              </span>
               <input
                 ref={commandInputRef}
                 value={commandQuery}
                 onChange={(e) => setCommandQuery(e.target.value)}
                 onKeyDown={(e) => {
-                  if (e.key === "Enter" && filteredCommandItems.length > 0) {
-                    activateSection(filteredCommandItems[0].id);
+                  if (e.key === "ArrowDown") {
+                    e.preventDefault();
+                    setCommandIndex((i) => Math.min(i + 1, commandItems.length - 1));
+                  } else if (e.key === "ArrowUp") {
+                    e.preventDefault();
+                    setCommandIndex((i) => Math.max(i - 1, 0));
+                  } else if (e.key === "Enter" && commandItems[commandIndex]) {
+                    activateSection(commandItems[commandIndex].id);
                   }
                 }}
-                placeholder="Jump to section... (type: content, inbox, research)"
-                className="w-full text-sm bg-transparent border-none outline-none"
-                style={{ color: titleColor }}
+                placeholder="goto module…"
+                aria-label="Search modules"
+                className="ac-mono h-12 flex-1 border-0 bg-transparent text-[13px] outline-none"
+                style={{ background: "transparent", border: 0, boxShadow: "none", color: "var(--ac-text)" }}
               />
+              <button type="button" onClick={() => setCommandOpen(false)} className="ac-btn ac-btn-icon" aria-label="Close">
+                <X size={13} />
+              </button>
             </div>
-            <div className="max-h-[360px] overflow-y-auto p-2">
-              {filteredCommandItems.map((item) => (
-                <button
-                  key={item.id}
-                  onClick={() => activateSection(item.id)}
-                  className="w-full text-left px-3 py-2.5 rounded-xl border-none cursor-pointer transition-all"
-                  style={{
-                    background:
-                      section === item.id ? surfaceAltBg : "transparent",
-                    color: titleColor,
-                  }}
-                >
-                  <div className="flex items-center gap-3">
-                    <AppIcon name={item.icon} size={16} />
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-bold">{item.label}</p>
-                      <p
-                        className="text-xs mt-0.5"
-                        style={{ color: mutedColor }}
-                      >
-                        {sectionDescriptions[item.id]}
-                      </p>
-                    </div>
-                    <span
-                      className="text-[11px] font-bold"
-                      style={{ color: mutedColor }}
-                    >
-                      {item.group}
+            <ul className="m-0 max-h-[50vh] list-none overflow-y-auto p-1.5">
+              {commandItems.map((item, index) => (
+                <li key={item.id}>
+                  <button
+                    type="button"
+                    onClick={() => activateSection(item.id)}
+                    onMouseEnter={() => setCommandIndex(index)}
+                    className="flex w-full items-center gap-3 rounded-md border-0 px-3 py-2 text-left"
+                    style={{
+                      background: index === commandIndex ? "rgba(34,211,238,.08)" : "transparent",
+                      color: "var(--ac-text-2)",
+                    }}
+                  >
+                    <span className="ac-mono w-6 text-[10.5px]" style={{ color: "var(--ac-faint)" }}>
+                      {codeOf(item.id)}
                     </span>
-                  </div>
-                </button>
+                    <AppIcon name={item.icon} size={14} />
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-[13px] font-semibold" style={{ color: "var(--ac-text)" }}>
+                        {item.label}
+                      </span>
+                      <span className="block truncate text-[11.5px]" style={{ color: "var(--ac-muted)" }}>
+                        {ADMIN_DESCRIPTIONS[item.id]}
+                      </span>
+                    </span>
+                    {index === commandIndex && <CornerDownLeft size={13} style={{ color: "var(--ac-accent)" }} />}
+                  </button>
+                </li>
               ))}
-              {filteredCommandItems.length === 0 && (
-                <p
-                  className="px-3 py-6 text-sm text-center"
-                  style={{ color: mutedColor }}
-                >
-                  No matching admin section found.
-                </p>
+              {commandItems.length === 0 && (
+                <li className="ac-mono px-3 py-6 text-center text-[12px]" style={{ color: "var(--ac-muted)" }}>
+                  no module matches “{commandQuery}”
+                </li>
               )}
-            </div>
+            </ul>
           </div>
         </div>
       )}
-
-      <aside
-        className="fixed top-0 left-0 h-full z-50 flex flex-col lg:hidden"
-        style={{
-          width: 260,
-          background: "var(--color-primary)",
-          transform: mobileOpen ? "translateX(0)" : "translateX(-100%)",
-          transition: "transform 0.3s cubic-bezier(0.4,0,0.2,1)",
-          boxShadow: mobileOpen ? "8px 0 32px rgba(0,0,0,0.2)" : "none",
-        }}
-      >
-        <SidebarContent />
-      </aside>
-
-      {/* ── Main Content ── */}
-      <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-        {/* Top bar */}
-        <header
-          className="sticky top-0 z-20 flex items-center gap-3 px-4 lg:px-6"
-          style={{
-            background: isDarkTheme
-              ? "rgba(15,23,42,0.88)"
-              : "rgba(255,255,255,0.85)",
-            backdropFilter: "blur(12px)",
-            borderBottom: `1px solid ${borderColor}`,
-            height: 56,
-            boxShadow: "0 1px 12px rgba(0,0,0,0.06)",
-          }}
-        >
-          {/* Mobile menu button */}
-          <button
-            onClick={() => setMobileOpen((o) => !o)}
-            aria-label="Toggle mobile menu"
-            className="lg:hidden flex flex-col justify-center gap-1 w-8 h-8 bg-transparent border-none cursor-pointer"
-          >
-            <div
-              className="w-5 h-0.5 rounded-full"
-              style={{ background: "#374151" }}
-            />
-            <div
-              className="w-4 h-0.5 rounded-full"
-              style={{ background: "#374151" }}
-            />
-            <div
-              className="w-5 h-0.5 rounded-full"
-              style={{ background: "#374151" }}
-            />
-          </button>
-
-          {/* Desktop collapse button */}
-          <button
-            onClick={() => setSidebarOpen((o) => !o)}
-            aria-label="Toggle desktop sidebar"
-            className="hidden lg:flex flex-col justify-center gap-1 w-8 h-8 bg-transparent border-none cursor-pointer"
-          >
-            <div
-              className="w-5 h-0.5 rounded-full"
-              style={{ background: "#374151" }}
-            />
-            <div
-              className="w-4 h-0.5 rounded-full"
-              style={{ background: "#374151" }}
-            />
-            <div
-              className="w-5 h-0.5 rounded-full"
-              style={{ background: "#374151" }}
-            />
-          </button>
-
-          {/* Breadcrumb */}
-          <div className="flex items-center gap-2">
-            <span
-              className="text-sm hidden sm:block"
-              style={{ color: isDarkTheme ? "#94a3b8" : "#9ca3af" }}
-            >
-              Dashboard
-            </span>
-            <span
-              className="hidden sm:block"
-              style={{ color: isDarkTheme ? "#64748b" : "#d1d5db" }}
-            >
-              ›
-            </span>
-            <div className="flex items-center gap-2">
-              {currentItem && <AppIcon name={currentItem.icon} size={16} />}
-              <h1 className="font-black text-sm" style={{ color: titleColor }}>
-                {currentItem?.label}
-              </h1>
-            </div>
-          </div>
-
-          {/* Right side */}
-          <div className="ml-auto flex items-center gap-2">
-            <button
-              onClick={() => setCommandOpen(true)}
-              className="hidden md:flex items-center gap-2 text-xs font-bold px-3 py-1.5 rounded-lg border-none cursor-pointer"
-              style={{
-                color: titleColor,
-                background: isDarkTheme ? "rgba(148,163,184,0.12)" : "#eef2ff",
-              }}
-            >
-              <AppIcon name="menu" size={13} />
-              <span>Quick Jump</span>
-              <span style={{ opacity: 0.7 }}>Ctrl+K</span>
-            </button>
-            <a
-              href="/"
-              className="hidden sm:flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-lg no-underline transition-all"
-              style={{
-                color: "var(--color-primary)",
-                background: "rgba(30,58,95,0.08)",
-                border: "1px solid rgba(30,58,95,0.12)",
-              }}
-              onMouseEnter={(e) => {
-                (e.currentTarget as HTMLElement).style.background =
-                  "var(--color-primary)";
-                (e.currentTarget as HTMLElement).style.color = "white";
-              }}
-              onMouseLeave={(e) => {
-                (e.currentTarget as HTMLElement).style.background =
-                  "rgba(30,58,95,0.08)";
-                (e.currentTarget as HTMLElement).style.color =
-                  "var(--color-primary)";
-              }}
-            >
-              <AppIcon name="back" size={14} />
-              <span>Website</span>
-            </a>
-          </div>
-        </header>
-
-        {/* Mobile bottom nav */}
-        <nav
-          className="lg:hidden fixed bottom-0 left-0 right-0 z-30 flex items-center justify-around px-2 py-1"
-          style={{
-            background: isDarkTheme
-              ? "rgba(15,23,42,0.95)"
-              : "rgba(255,255,255,0.95)",
-            backdropFilter: "blur(12px)",
-            borderTop: `1px solid ${borderColor}`,
-            boxShadow: "0 -4px 24px rgba(0,0,0,0.08)",
-            height: 60,
-          }}
-        >
-          {navItems.slice(0, 5).map((item) => {
-            const isActive = section === item.id;
-            return (
-              <button
-                key={item.id}
-                onClick={() => activateSection(item.id)}
-                aria-current={isActive ? "page" : undefined}
-                aria-label={`Open ${item.label}`}
-                className="flex flex-col items-center gap-0.5 border-none bg-transparent cursor-pointer px-2 py-1 rounded-xl transition-all"
-                style={{
-                  color: isActive ? "var(--color-primary)" : "#9ca3af",
-                  minWidth: 44,
-                }}
-              >
-                <AppIcon name={item.icon} size={18} />
-                <span
-                  className="text-center font-semibold"
-                  style={{
-                    fontSize: 9,
-                    letterSpacing: "-0.2px",
-                    color: isActive
-                      ? "var(--color-primary)"
-                      : isDarkTheme
-                        ? "#94a3b8"
-                        : "#9ca3af",
-                  }}
-                >
-                  {item.label.split(" ")[0]}
-                </span>
-                {isActive && (
-                  <div
-                    className="w-1 h-1 rounded-full"
-                    style={{ background: "var(--color-accent)" }}
-                  />
-                )}
-              </button>
-            );
-          })}
-          {/* More button for remaining items */}
-          <button
-            onClick={() => setMobileOpen(true)}
-            className="flex flex-col items-center gap-0.5 border-none bg-transparent cursor-pointer px-2 py-1 rounded-xl"
-            style={{ color: "#9ca3af", minWidth: 44 }}
-          >
-            <AppIcon name="more" size={18} />
-            <span style={{ fontSize: 9, fontWeight: 600 }}>More</span>
-          </button>
-        </nav>
-
-        {/* Page content */}
-        <main
-          ref={contentScrollRef}
-          className="flex-1 overflow-y-auto"
-          aria-label="Admin content"
-          style={{ padding: "24px 16px 80px", maxWidth: "100%" }}
-        >
-          <div style={{ maxWidth: 1100, margin: "0 auto" }}>
-            {/* Page header card */}
-            {section === "overview" && <div
-              className="rounded-2xl px-6 py-5 mb-6 flex items-center gap-4"
-              style={{
-                background:
-                  "linear-gradient(135deg, var(--color-primary) 0%, var(--color-secondary) 100%)",
-                boxShadow: "0 8px 32px rgba(30,58,95,0.2)",
-              }}
-            >
-              <div
-                className="w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0"
-                style={{
-                  background: "rgba(255,255,255,0.15)",
-                  backdropFilter: "blur(8px)",
-                }}
-              >
-                {currentItem && <AppIcon name={currentItem.icon} size={24} />}
-              </div>
-              <div>
-                <h2
-                  className="text-white font-black text-lg leading-tight"
-                  style={{ fontFamily: "var(--font-heading)" }}
-                >
-                  {currentItem?.label}
-                </h2>
-                <p
-                  className="text-xs mt-0.5"
-                  style={{ color: "rgba(255,255,255,0.6)" }}
-                >
-                  {sectionDescriptions[section]} · {progress.overall}% overall
-                  progress
-                </p>
-              </div>
-            </div>}
-
-            {section === "overview" && (
-              <>
-                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3 mb-6">
-                  {quickActions.map((action) => (
-                    <button
-                      key={action.title}
-                      onClick={() => activateSection(action.id)}
-                      className="text-left p-3 rounded-xl border transition-all cursor-pointer"
-                      style={{
-                        borderColor,
-                        background: surfaceAltBg,
-                      }}
-                    >
-                      <div className="flex items-center justify-between gap-3 mb-1.5">
-                        <span
-                          className="inline-flex"
-                          style={{ color: "var(--color-primary)" }}
-                        >
-                          <AppIcon name={action.icon} size={16} />
-                        </span>
-                        {action.highlight && (
-                          <span
-                            className="w-2 h-2 rounded-full"
-                            style={{ background: action.highlight }}
-                          />
-                        )}
-                      </div>
-                      <p
-                        className="text-xs font-black"
-                        style={{ color: titleColor }}
-                      >
-                        {action.title}
-                      </p>
-                      <p
-                        className="text-[11px] mt-1"
-                        style={{ color: mutedColor }}
-                      >
-                        {action.note}
-                      </p>
-                    </button>
-                  ))}
-                </div>
-
-                <div
-                  className="rounded-2xl p-5 lg:p-6 mb-6"
-                  style={{
-                    background: surfaceBg,
-                    boxShadow: "0 2px 16px rgba(0,0,0,0.06)",
-                    border: `1px solid ${panelBorderColor}`,
-                  }}
-                >
-                  <div className="flex items-center justify-between flex-wrap gap-3 mb-4">
-                    <div>
-                      <p
-                        className="text-sm font-black"
-                        style={{
-                          color: "var(--color-primary)",
-                          letterSpacing: 0.2,
-                        }}
-                      >
-                        Website Progress Overview
-                      </p>
-                      <p className="text-xs mt-1" style={{ color: mutedColor }}>
-                        Live completion status of site content and operations.
-                      </p>
-                    </div>
-                    <div className="text-right">
-                      <p
-                        className="text-2xl font-black leading-none"
-                        style={{ color: "var(--color-primary)" }}
-                      >
-                        {progress.overall}%
-                      </p>
-                      <p
-                        className="text-[11px] mt-1"
-                        style={{ color: mutedColor }}
-                      >
-                        overall readiness
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-                    {progress.metrics.map((item) => (
-                      <button
-                        key={item.label}
-                        onClick={() => setSection(item.id)}
-                        className="text-left p-3 rounded-xl border transition-all cursor-pointer"
-                        style={{
-                          borderColor,
-                          background: surfaceAltBg,
-                        }}
-                        onMouseEnter={(e) => {
-                          (e.currentTarget as HTMLElement).style.background =
-                            isDarkTheme ? "#1e293b" : "#f3f8ff";
-                          (e.currentTarget as HTMLElement).style.borderColor =
-                            isDarkTheme ? "#334155" : "#cbdcf4";
-                        }}
-                        onMouseLeave={(e) => {
-                          (e.currentTarget as HTMLElement).style.background =
-                            surfaceAltBg;
-                          (e.currentTarget as HTMLElement).style.borderColor =
-                            borderColor;
-                        }}
-                      >
-                        <div className="flex items-center justify-between gap-3 mb-2">
-                          <p
-                            className="text-xs font-black"
-                            style={{ color: titleColor }}
-                          >
-                            {item.label}
-                          </p>
-                          <span
-                            className="text-xs font-bold"
-                            style={{ color: mutedColor }}
-                          >
-                            {item.stat}
-                          </span>
-                        </div>
-                        <div
-                          className="w-full h-2 rounded-full overflow-hidden"
-                          style={{ background: "#e8eef7" }}
-                        >
-                          <div
-                            className="h-full rounded-full transition-all"
-                            style={{
-                              width: `${item.percent}%`,
-                              background:
-                                "linear-gradient(90deg, var(--color-secondary), var(--color-accent))",
-                            }}
-                          />
-                        </div>
-                        <p
-                          className="text-[11px] mt-2"
-                          style={{ color: mutedColor }}
-                        >
-                          {item.hint}
-                        </p>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </>
-            )}
-
-            {/* Section content */}
-            {section !== "overview" && (
-              <div
-                className="rounded-2xl p-5 lg:p-7"
-                style={{
-                  background: surfaceBg,
-                  boxShadow: "0 2px 16px rgba(0,0,0,0.06)",
-                  border: `1px solid ${panelBorderColor}`,
-                }}
-              >
-                {renderSection()}
-              </div>
-            )}
-          </div>
-        </main>
-      </div>
     </div>
   );
 };

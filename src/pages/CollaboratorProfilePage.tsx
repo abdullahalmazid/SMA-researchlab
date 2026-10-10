@@ -2,6 +2,7 @@ import React, { useCallback, useMemo } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import CollaboratorPublicProfile from "../components/CollaboratorPublicProfile";
 import EditableText from "../components/EditableText";
+import { useAuth } from "../context/AuthContext";
 import { useThemeContext } from "../context/ThemeContext";
 import {
   isContributor,
@@ -60,6 +61,8 @@ const titleKey = (value: string) =>
 const CollaboratorProfilePage: React.FC = () => {
   const { uid = "" } = useParams<{ uid: string }>();
   const navigate = useNavigate();
+  const { appUser } = useAuth();
+  const canMessage = appUser?.role === "collaborator" || appUser?.role === "lab_head";
   const location = useLocation();
   const { theme } = useThemeContext();
 
@@ -85,7 +88,7 @@ const CollaboratorProfilePage: React.FC = () => {
     [collaborators, uid],
   );
 
-  const linkedPublications = useMemo<CollaboratorPublication[]>(() => {
+  const contributorPublications = useMemo(() => {
     if (!uid) return [];
 
     /**
@@ -103,13 +106,15 @@ const CollaboratorProfilePage: React.FC = () => {
     /* The hook already merges duplicate documents; this guards the remaining
        case of two records that share no key at all. */
     const seen = new Set<string>();
-    const unique = mine.filter((publication) => {
+    return mine.filter((publication) => {
       const keys = publicationKeys(publication);
       if (keys.some((key) => seen.has(key))) return false;
       keys.forEach((key) => seen.add(key));
       return true;
     });
+  }, [allPublications, uid]);
 
+  const linkedPublications = useMemo<CollaboratorPublication[]>(() => {
     /* `CollaboratorProfile.publications` is a separate hand-typed list in the
        portal. A paper entered there *and* added as a shared record showed up
        twice; the manual copy wins, since it's the one the person curated. */
@@ -117,7 +122,7 @@ const CollaboratorProfilePage: React.FC = () => {
       (collaborator?.publications ?? []).map((entry) => titleKey(entry.title)),
     );
 
-    return unique
+    return contributorPublications
       .filter((publication) => !manual.has(titleKey(publication.title)))
       .map((publication) => ({
         id: publication.id,
@@ -127,7 +132,18 @@ const CollaboratorProfilePage: React.FC = () => {
         url: publication.url,
       }))
       .sort((a, b) => (b.year ?? 0) - (a.year ?? 0) || a.title.localeCompare(b.title));
-  }, [allPublications, collaborator, uid]);
+  }, [contributorPublications, collaborator]);
+
+  /* Every paper with a shared record gets its detail page — including a
+     hand-typed copy, which wins the dedupe above but has no page of its own. */
+  const getDetailId = useMemo(() => {
+    const ids = new Set(contributorPublications.map((publication) => publication.id));
+    const byTitle = new Map(
+      contributorPublications.map((publication) => [titleKey(publication.title), publication.id]),
+    );
+    return (entry: CollaboratorPublication) =>
+      (entry.id && ids.has(entry.id) ? entry.id : undefined) ?? byTitle.get(titleKey(entry.title ?? ""));
+  }, [contributorPublications]);
 
   const galleryItems = useMemo(
     () => (collaborator ? gallery.filter((item) => item.uploaderUid === collaborator.uid) : []),
@@ -262,9 +278,18 @@ const CollaboratorProfilePage: React.FC = () => {
         <meta name="description" content={collaborator.bio.replace(/\s+/g, " ").slice(0, 300)} />
       )}
 
+      {/* Keyed by uid so an open drawer closes when a co-author link inside it
+          moves to another profile. */}
       <CollaboratorPublicProfile
+        key={uid}
         c={collaborator}
         linkedPublications={linkedPublications}
+        getDetailId={getDetailId}
+        onMessage={
+          canMessage && uid !== appUser?.uid
+            ? () => navigate(`/chat?to=${encodeURIComponent(uid)}`)
+            : undefined
+        }
         galleryItems={galleryItems}
         onBack={handleBack}
       />

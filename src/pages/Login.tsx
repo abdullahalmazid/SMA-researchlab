@@ -197,7 +197,8 @@ const Login: React.FC<{ forceShow?: boolean; portal?: "team" | "admin" }> = ({ f
               block
             />
           </h1>
-          <p className="text-sm mt-2" style={{ color: textMuted }}>
+          {/* A div, not a <p>: the block EditableText renders a div, which a <p> can't contain. */}
+          <div className="text-sm mt-2" style={{ color: textMuted }}>
             <EditableText
               id="login.pageSubtitle"
               defaultValue={
@@ -207,7 +208,7 @@ const Login: React.FC<{ forceShow?: boolean; portal?: "team" | "admin" }> = ({ f
               className="text-sm mt-2"
               block
             />
-          </p>
+          </div>
         </div>
 
         <form onSubmit={submit} className="flex flex-col gap-4">

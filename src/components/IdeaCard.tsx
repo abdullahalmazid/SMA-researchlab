@@ -27,12 +27,12 @@ const IdeaCard: React.FC<Props> = ({ idea }) => {
         })()
       : false;
 
-  const surfaceBg = isDarkTheme ? "#111827" : "white";
-  const surfaceAltBg = isDarkTheme ? "#0f172a" : "#f8fafc";
-  const borderColor = isDarkTheme ? "rgba(148,163,184,0.25)" : "#e8eef4";
-  const titleColor = isDarkTheme ? "#e5e7eb" : "var(--color-primary)";
-  const bodyColor = isDarkTheme ? "#cbd5e1" : "#4b5563";
-  const mutedColor = isDarkTheme ? "#94a3b8" : "#9ca3af";
+  const surfaceBg = "var(--site-surface)";
+  const surfaceAltBg = "var(--site-surface-alt)";
+  const borderColor = "var(--site-border)";
+  const titleColor = isDarkTheme ? "var(--site-heading)" : "var(--color-primary)";
+  const bodyColor = "var(--site-text)";
+  const mutedColor = "var(--site-muted)";
 
   const initials = author.name
     .split(" ")
@@ -93,7 +93,7 @@ const IdeaCard: React.FC<Props> = ({ idea }) => {
       />
 
       <div className="p-6 flex flex-col flex-1">
-        <div className="flex items-center gap-3 mb-4">
+        <div className="flex items-center gap-3 mb-3">
           {author.photo && !imgErr ? (
             <img
               src={author.photo}
@@ -108,7 +108,7 @@ const IdeaCard: React.FC<Props> = ({ idea }) => {
             />
           ) : (
             <div
-              className="rounded-full flex items-center justify-center text-white font-black flex-shrink-0"
+              className="rounded-full flex items-center justify-center text-[color:var(--hero-text)] font-black flex-shrink-0"
               style={{
                 width: 46,
                 height: 46,
@@ -131,27 +131,28 @@ const IdeaCard: React.FC<Props> = ({ idea }) => {
               {createdLabel}
             </p>
           </div>
-          <div
-            className="w-9 h-9 rounded-lg flex items-center justify-center text-lg flex-shrink-0"
-            style={{
-              background: surfaceAltBg,
-              border: `1px solid ${borderColor}`,
-              color: "var(--color-secondary)",
-            }}
-          >
-            <AppIcon name="ideas" size={16} />
+          {/* Comments and the action live in the header row — no footer row needed. */}
+          <div className="flex flex-shrink-0 items-center gap-3 text-xs">
+            <span className="flex items-center gap-1 font-medium" style={{ color: mutedColor }} title="Comments">
+              <AppIcon name="message" size={13} />
+              <span className="sr-only">Comments: </span>
+              {idea.commentCount ?? 0}
+            </span>
+            <span className="flex items-center gap-1 font-semibold" style={{ color: "var(--secondary-ink)" }}>
+              Details <span aria-hidden="true">→</span>
+            </span>
           </div>
         </div>
 
         <h3
-          className="font-bold text-lg leading-snug mb-3"
+          className="font-bold text-lg leading-snug mb-2"
           style={{ color: titleColor, lineHeight: 1.4 }}
         >
           {idea.title}
         </h3>
 
         <p
-          className="text-sm leading-relaxed mb-4 flex-1"
+          className="text-sm leading-relaxed mb-3 flex-1"
           style={{
             display: "-webkit-box",
             WebkitLineClamp: 3,
@@ -165,11 +166,11 @@ const IdeaCard: React.FC<Props> = ({ idea }) => {
         </p>
 
         {idea.tags && idea.tags.length > 0 && (
-          <div className="flex flex-wrap gap-1.5 mb-4">
+          <div className="flex gap-1.5 overflow-hidden">
             {idea.tags.slice(0, 3).map((t) => (
               <span
                 key={t}
-                className="text-xs px-2 py-0.5 rounded font-medium"
+                className="shrink-0 whitespace-nowrap text-xs px-2 py-0.5 rounded font-medium"
                 style={{
                   background: surfaceAltBg,
                   color: mutedColor,
@@ -181,7 +182,7 @@ const IdeaCard: React.FC<Props> = ({ idea }) => {
             ))}
             {idea.tags.length > 3 && (
               <span
-                className="text-xs px-2 py-0.5 rounded font-medium"
+                className="shrink-0 whitespace-nowrap text-xs px-2 py-0.5 rounded font-medium"
                 style={{
                   background: surfaceAltBg,
                   color: mutedColor,
@@ -194,26 +195,6 @@ const IdeaCard: React.FC<Props> = ({ idea }) => {
           </div>
         )}
 
-        <div
-          className="flex items-center justify-between pt-3"
-          style={{ borderTop: `1px solid ${borderColor}` }}
-        >
-          <div className="flex items-center gap-1.5">
-            <div
-              className="flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded"
-              style={{ background: surfaceAltBg, color: mutedColor }}
-            >
-              <AppIcon name="message" size={13} />
-              <span>{idea.commentCount ?? 0}</span>
-            </div>
-          </div>
-          <span
-            className="text-xs font-semibold flex items-center gap-1"
-            style={{ color: "var(--color-secondary)" }}
-          >
-            Details <span style={{ fontSize: 14 }}>→</span>
-          </span>
-        </div>
       </div>
     </div>
   );

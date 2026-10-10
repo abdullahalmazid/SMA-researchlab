@@ -1,4 +1,4 @@
-import { arrayRemove, doc, onSnapshot, setDoc } from "firebase/firestore";
+import { arrayRemove, doc, onSnapshot, setDoc } from "../admin/core/auditedFirestore";
 import React, { useEffect, useState } from "react";
 import AdminPageControls from "../components/AdminPageControls";
 import {
@@ -8,6 +8,7 @@ import {
   StatsBlock,
   TextBlock,
 } from "../components/ContentBlocks";
+import { useConfirm } from "../admin/components/useConfirm";
 import { useAuth } from "../context/AuthContext";
 import { db } from "../firebase/config";
 import { type PageBlock } from "../types2";
@@ -21,6 +22,7 @@ const DEFAULT_ABOUT_BLOCKS: PageBlock[] = [
 ];
 
 const About: React.FC = () => {
+  const { confirm, inform, confirmElement } = useConfirm();
   const { role } = useAuth();
   const isAdmin = role === "admin";
   const [blocks, setBlocks] = useState<PageBlock[]>([]);
@@ -42,7 +44,7 @@ const About: React.FC = () => {
   // --- Admin Actions ---
 
   const deleteBlock = async (block: PageBlock) => {
-    if (!confirm("Are you sure you want to delete this section?")) return;
+    if (!(await confirm({ title: "Delete this section?", message: "It will be removed from the About page for everyone.", confirmLabel: "Delete", danger: true }))) return;
     try {
       const ref = doc(db, "siteContent", "content");
       await setDoc(
@@ -54,7 +56,7 @@ const About: React.FC = () => {
       );
     } catch (error) {
       console.error("Error deleting block:", error);
-      alert("Failed to delete section.");
+      await inform("Couldn't delete the section", String((error as Error)?.message || error));
     }
   };
 
@@ -89,6 +91,7 @@ const About: React.FC = () => {
 
   return (
     <div style={{ background: "var(--color-bg)" }}>
+      {confirmElement}
       {blocks.map((block, index) => {
         const props = { blockId: block.id, index };
 

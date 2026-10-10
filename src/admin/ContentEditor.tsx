@@ -1,5 +1,5 @@
-import { doc, setDoc } from "firebase/firestore";
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import { doc, setDoc } from "./core/auditedFirestore";
+import React, { useEffect, useMemo, useState } from "react";
 import CloudinaryUpload from "../components/CloudinaryUpload";
 import { db } from "../firebase/config";
 import { useSiteContent } from "../firebase/hooks";
@@ -720,19 +720,15 @@ const sectionOf = (field: FieldConfig) => field.section ?? sectionTitleFromKey(f
 const ContentEditor: React.FC = () => {
   const { content } = useSiteContent();
   const [activeTab, setActiveTab] = useState("Home");
+  const [activeSection, setActiveSection] = useState<string>("");
   const [values, setValues] = useState<Record<string, string>>({});
-  const [baselineValues, setBaselineValues] = useState<Record<string, string>>(
-    {},
-  );
+  const [baselineValues, setBaselineValues] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState<Record<string, boolean>>({});
   const [saved, setSaved] = useState<Record<string, boolean>>({});
   const [dirty, setDirty] = useState<Record<string, boolean>>({});
   const [savingAll, setSavingAll] = useState(false);
-  const [openSections, setOpenSections] = useState<Record<string, boolean>>({});
   const [searchQuery, setSearchQuery] = useState("");
-  const [compactMode, setCompactMode] = useState(false);
   const [notice, setNotice] = useState<{ type: "success" | "error"; text: string } | null>(null);
-  const sectionRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
   // Sync values from Firestore content
   useEffect(() => {
@@ -767,11 +763,11 @@ const ContentEditor: React.FC = () => {
   const saveAll = async (groupFields: FieldConfig[]) => {
     const dirtyKeys = groupFields.filter((f) => dirty[f.key]).map((f) => f.key);
 
-    /* Previously, with nothing modified this fell through to writing *every*
-       field on the tab from local state — which, if it ran before content had
-       loaded, wrote empty strings over live values. */
+    /* With nothing modified this used to fall through to writing *every* field
+       from local state — which, before content had loaded, wrote empty strings
+       over live values. */
     if (dirtyKeys.length === 0) {
-      setNotice({ type: "success", text: "Nothing to publish — every field on this tab is already saved." });
+      setNotice({ type: "success", text: "Nothing to publish — every field on this page is already saved." });
       return;
     }
 
@@ -781,7 +777,7 @@ const ContentEditor: React.FC = () => {
       for (const key of dirtyKeys) {
         await saveField(key);
       }
-      setNotice({ type: "success", text: `${dirtyKeys.length} field${dirtyKeys.length === 1 ? "" : "s"} saved successfully.` });
+      setNotice({ type: "success", text: `${dirtyKeys.length} field${dirtyKeys.length === 1 ? "" : "s"} published.` });
     } catch {
       // The field-level error contains the exact Firestore failure.
     } finally {
@@ -789,596 +785,319 @@ const ContentEditor: React.FC = () => {
     }
   };
 
-  const resetTab = (groupFields: FieldConfig[]) => {
+  const resetFields = (groupFields: FieldConfig[]) => {
     setValues((prev) => {
       const next = { ...prev };
-      groupFields.forEach((f) => {
-        next[f.key] = baselineValues[f.key] ?? "";
-      });
+      groupFields.forEach((f) => (next[f.key] = baselineValues[f.key] ?? ""));
       return next;
     });
     setDirty((prev) => {
       const next = { ...prev };
-      groupFields.forEach((f) => {
-        next[f.key] = false;
-      });
-      return next;
-    });
-    setSaved((prev) => {
-      const next = { ...prev };
-      groupFields.forEach((f) => {
-        next[f.key] = false;
-      });
+      groupFields.forEach((f) => (next[f.key] = false));
       return next;
     });
   };
 
   const setFieldValue = (key: string, value: string) => {
     setValues((p) => ({ ...p, [key]: value }));
-    setDirty((p) => ({
-      ...p,
-      [key]: value !== (baselineValues[key] ?? ""),
-    }));
+    setDirty((p) => ({ ...p, [key]: value !== (baselineValues[key] ?? "") }));
   };
 
   /* No non-null assertion: an unknown activeTab would have crashed the page. */
-  const activeGroup =
-    FIELD_GROUPS.find((g) => g.tab === activeTab) ?? FIELD_GROUPS[0];
-  const activeDirtyCount = activeGroup.fields.filter(
-    (f) => dirty[f.key],
-  ).length;
+  const activeGroup = FIELD_GROUPS.find((g) => g.tab === activeTab) ?? FIELD_GROUPS[0];
 
-  const fieldsBySection = useMemo(() => {
-    const grouped: Record<string, FieldConfig[]> = {};
-    activeGroup.fields.forEach((field) => {
+  const sectionsOf = (group: FieldGroup) => {
+    const grouped: [string, FieldConfig[]][] = [];
+    group.fields.forEach((field) => {
       const section = sectionOf(field);
-      grouped[section] = [...(grouped[section] ?? []), field];
+      const bucket = grouped.find(([name]) => name === section);
+      if (bucket) bucket[1].push(field);
+      else grouped.push([section, [field]]);
     });
-    return Object.entries(grouped);
-  }, [activeGroup]);
-
-  useEffect(() => {
-    setOpenSections((prev) => {
-      const next: Record<string, boolean> = {};
-      fieldsBySection.forEach(([section, fields]) => {
-        const key = `${activeTab}:${section}`;
-        const hasUnsaved = fields.some((field) => dirty[field.key]);
-        next[key] = hasUnsaved ? true : (prev[key] ?? true);
-      });
-      return next;
-    });
-  }, [activeTab, fieldsBySection, dirty]);
-
-  const tabDirtyCount = (tab: string) => {
-    const group = FIELD_GROUPS.find((g) => g.tab === tab);
-    if (!group) return 0;
-    return group.fields.filter((f) => dirty[f.key]).length;
+    return grouped;
   };
 
-  const sectionDirtyCount = (fields: FieldConfig[]) =>
-    fields.filter((field) => dirty[field.key]).length;
+  const activeSections = useMemo(() => sectionsOf(activeGroup), [activeGroup]);
+  const currentSection =
+    activeSections.find(([name]) => name === activeSection) ?? activeSections[0] ?? ["", []];
 
-  const toggleSection = (section: string) => {
-    const key = `${activeTab}:${section}`;
-    setOpenSections((prev) => ({ ...prev, [key]: !prev[key] }));
-  };
+  const dirtyIn = (fields: FieldConfig[]) => fields.filter((f) => dirty[f.key]).length;
+  const totalDirty = FIELD_GROUPS.reduce((sum, group) => sum + dirtyIn(group.fields), 0);
+  const pageDirty = dirtyIn(activeGroup.fields);
 
-  const setAllSections = (expanded: boolean) => {
-    setOpenSections((prev) => {
-      const next = { ...prev };
-      fieldsBySection.forEach(([section]) => {
-        next[`${activeTab}:${section}`] = expanded;
-      });
-      return next;
-    });
-  };
-
-  const filteredSections = useMemo(() => {
+  /* Search spans every page, so you don't have to know where a field lives. */
+  const searchResults = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
-    if (!q) return fieldsBySection;
-
-    return fieldsBySection
-      .map(([section, fields]) => {
-        const matchedFields = fields.filter(
+    if (!q) return null;
+    return FIELD_GROUPS.flatMap((group) =>
+      group.fields
+        .filter(
           (field) =>
             field.label.toLowerCase().includes(q) ||
-            field.key.toLowerCase().includes(q),
-        );
-        return [section, matchedFields] as [string, FieldConfig[]];
-      })
-      .filter(([, fields]) => fields.length > 0);
-  }, [fieldsBySection, searchQuery]);
+            field.key.toLowerCase().includes(q) ||
+            (values[field.key] ?? "").toLowerCase().includes(q),
+        )
+        .map((field) => ({ group: group.tab, section: sectionOf(field), field })),
+    );
+  }, [searchQuery, values]);
 
-  useEffect(() => {
-    if (!searchQuery.trim()) return;
-    setOpenSections((prev) => {
-      const next = { ...prev };
-      filteredSections.forEach(([section]) => {
-        next[`${activeTab}:${section}`] = true;
-      });
-      return next;
-    });
-  }, [activeTab, filteredSections, searchQuery]);
-
-  const jumpToSection = (section: string) => {
-    const key = `${activeTab}:${section}`;
-    setOpenSections((prev) => ({ ...prev, [key]: true }));
-    const el = sectionRefs.current[key];
-    if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+  const selectPage = (tab: string) => {
+    setActiveTab(tab);
+    setActiveSection("");
+    setSearchQuery("");
   };
 
-  /** Shared by the field header and, for lists, repeated at the bottom — a
-   *  26-row list puts the header's Save button several screens away. */
-  const saveButton = (field: FieldConfig) => (
-    <button
-      type="button"
-      onClick={() => saveField(field.key)}
-      disabled={saving[field.key]}
-      className="text-xs font-bold px-4 py-1.5 rounded-lg text-white disabled:opacity-60"
-      style={{
-        background: saved[field.key] ? "#22c55e" : "var(--color-primary)",
-        border: "none",
-        cursor: "pointer",
-        minWidth: 74,
-      }}
-    >
-      {saved[field.key] ? "✓ Saved" : saving[field.key] ? "..." : "Save"}
-    </button>
-  );
-
-  return (
-    <div>
-      {notice && <div role="status" className={`mb-5 rounded-2xl border px-4 py-3 text-sm font-bold ${notice.type === "success" ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-rose-200 bg-rose-50 text-rose-800"}`}>{notice.text}</div>}
-      <section className="mb-6 overflow-hidden rounded-[28px] bg-gradient-to-br from-slate-950 via-indigo-950 to-cyan-700 p-6 text-white shadow-xl md:p-8">
-        <div className="flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
-        <div><span className="rounded-full border border-white/15 bg-white/10 px-3 py-1 text-[10px] font-black uppercase tracking-[.18em]">Visual content studio</span>
-          <h2 className="mt-4 text-3xl font-black tracking-tight">Edit the website by page</h2>
-          <p className="mt-2 max-w-2xl text-sm leading-6 text-cyan-50/75">Choose a page, open a content card, preview its purpose, and publish only the fields you changed.</p>
+  /* ── One field: label column + editor column, no nested cards. ── */
+  const renderField = (field: FieldConfig, context?: string) => {
+    const isDirty = Boolean(dirty[field.key]);
+    return (
+      <div key={field.key} className="grid gap-2 border-b border-slate-200 py-4 last:border-b-0 md:grid-cols-[220px_minmax(0,1fr)] md:gap-6">
+        <div className="min-w-0">
+          {context && <p className="m-0 mb-0.5 text-[11px] font-semibold uppercase tracking-wider text-slate-400">{context}</p>}
+          <label htmlFor={`field-${field.key}`} className="block text-[13.5px] font-semibold text-slate-800">
+            {field.label}
+          </label>
+          <p className="m-0 mt-0.5 font-mono text-[11px] text-slate-400">{field.key}</p>
+          {field.hint && <p className="m-0 mt-1.5 text-[12px] leading-relaxed text-slate-500">{field.hint}</p>}
         </div>
-        <button
-          onClick={() => saveAll(activeGroup.fields)}
-          disabled={savingAll || activeDirtyCount === 0}
-          className="rounded-2xl bg-white px-5 py-3 text-sm font-black text-slate-900 shadow-lg disabled:opacity-50"
-        >
-          {savingAll ? "Publishing…" : activeDirtyCount ? `Publish ${activeDirtyCount} change${activeDirtyCount === 1 ? "" : "s"}` : "Everything saved"}
-        </button>
-        </div>
-      </section>
 
-      <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5">
-        {FIELD_GROUPS.map((group) => { const changed = tabDirtyCount(group.tab); const selected = group.tab === activeTab; return <button type="button" key={`page-card-${group.tab}`} onClick={() => setActiveTab(group.tab)} className={`rounded-2xl border p-4 text-left shadow-sm transition hover:-translate-y-0.5 ${selected ? "border-indigo-400 bg-indigo-50 ring-4 ring-indigo-100" : "border-slate-200 bg-white hover:border-indigo-200"}`}><span className={`mb-3 flex h-9 w-9 items-center justify-center rounded-xl text-sm font-black ${selected ? "bg-indigo-600 text-white" : "bg-slate-100 text-slate-500"}`}>{group.tab.slice(0, 1)}</span><span className="block text-sm font-black text-slate-900">{group.tab}</span><span className={`mt-1 block text-[11px] font-bold ${changed ? "text-amber-600" : "text-slate-400"}`}>{changed ? `${changed} unsaved` : `${group.fields.length} fields`}</span></button>; })}
-      </div>
-
-      <div className="grid gap-5 lg:grid-cols-[260px_minmax(0,1fr)]">
-        <aside className="hidden lg:block">
-          <div
-            className="sticky top-4 rounded-[22px] border border-slate-200 bg-slate-950 p-3 text-white shadow-xl"
-          >
-            <p className="px-2 pb-2 text-xs font-semibold uppercase tracking-[0.18em] text-gray-400">
-              Pages
-            </p>
-            <div className="flex flex-col gap-1.5">
-              {FIELD_GROUPS.map((g) => (
-                <button
-                  key={g.tab}
-                  onClick={() => setActiveTab(g.tab)}
-                  className="flex items-center justify-between rounded-xl border px-3 py-2 text-left text-sm font-bold transition-colors"
-                  style={{
-                    background: activeTab === g.tab ? "linear-gradient(135deg,#4f46e5,#0891b2)" : "transparent",
-                    color: activeTab === g.tab ? "white" : "#cbd5e1",
-                    borderColor:
-                      activeTab === g.tab ? "#6366f1" : "transparent",
-                    cursor: "pointer",
-                  }}
-                >
-                  <span className="flex items-center gap-1.5">
-                    {g.tab}
-                    {(g.tab === "Announcements" || g.tab === "Branding") && (
-                      <span
-                        className="text-[11px] px-1.5 py-0.5 rounded-full"
-                        style={{
-                          background:
-                            activeTab === g.tab
-                              ? "rgba(255,255,255,0.2)"
-                              : "var(--color-accent)",
-                          color: activeTab === g.tab ? "white" : "#1f2937",
-                        }}
-                      >
-                        New
-                      </span>
-                    )}
-                  </span>
-                  {tabDirtyCount(g.tab) > 0 && (
-                    <span
-                      className="text-[11px] px-1.5 py-0.5 rounded-full"
-                      style={{
-                        background:
-                          activeTab === g.tab
-                            ? "rgba(255,255,255,0.2)"
-                            : "#fee2e2",
-                        color: activeTab === g.tab ? "white" : "#991b1b",
-                      }}
-                    >
-                      {tabDirtyCount(g.tab)}
-                    </span>
-                  )}
-                </button>
-              ))}
-            </div>
-
-            {/* Section jump list. On a tab with five sections and twenty-nine
-                fields, scrolling to find one is the slowest part of the job. */}
-            {fieldsBySection.length > 1 && (
-              <>
-                <p className="mt-4 px-2 pb-2 text-xs font-semibold uppercase tracking-[0.18em] text-gray-400">
-                  {activeTab} sections
-                </p>
-                <div className="flex flex-col gap-1">
-                  {fieldsBySection.map(([section, fields]) => (
-                    <button
-                      key={`side-${section}`}
-                      type="button"
-                      onClick={() => jumpToSection(section)}
-                      className="flex items-center justify-between rounded-lg px-3 py-1.5 text-left text-[12.5px] font-semibold text-slate-300 hover:bg-white/10 hover:text-white"
-                    >
-                      <span className="truncate">{section}</span>
-                      <span className="ml-2 shrink-0 text-[11px] tabular-nums text-slate-500">
-                        {sectionDirtyCount(fields) > 0
-                          ? `${sectionDirtyCount(fields)} ●`
-                          : fields.length}
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              </>
-            )}
-          </div>
-        </aside>
-
-        <div>
-          {/* Mobile tab pills */}
-          <div className="flex flex-wrap gap-2 mb-8 lg:hidden">
-            {FIELD_GROUPS.map((g) => (
-              <button
-                key={g.tab}
-                onClick={() => setActiveTab(g.tab)}
-                className="text-sm font-bold px-4 py-2 rounded-xl border transition-colors"
-                style={{
-                  background:
-                    activeTab === g.tab ? "var(--color-primary)" : "white",
-                  color: activeTab === g.tab ? "white" : "#374151",
-                  borderColor:
-                    activeTab === g.tab ? "var(--color-primary)" : "#e5e7eb",
-                  cursor: "pointer",
-                }}
-              >
-                {g.tab}
-                {tabDirtyCount(g.tab) > 0 && (
-                  <span
-                    className="ml-1.5 text-[11px] px-1.5 py-0.5 rounded-full"
-                    style={{
-                      background:
-                        activeTab === g.tab
-                          ? "rgba(255,255,255,0.2)"
-                          : "#fee2e2",
-                      color: activeTab === g.tab ? "white" : "#991b1b",
-                    }}
-                  >
-                    {tabDirtyCount(g.tab)}
-                  </span>
-                )}
-              </button>
-            ))}
-          </div>
-
-          <div
-            className="mb-5 rounded-2xl border bg-white p-4 flex flex-wrap items-center justify-between gap-3"
-            style={{ borderColor: "#e5e7eb" }}
-          >
+        <div className="min-w-0">
+          {field.type === "image" ? (
             <div>
-              <p className="text-sm font-bold text-gray-800">
-                {activeTab} Content
-              </p>
-              <p className="text-xs text-gray-500 mt-0.5">
-                {activeDirtyCount > 0
-                  ? `${activeDirtyCount} unsaved field${activeDirtyCount > 1 ? "s" : ""}`
-                  : "All fields saved"}
-              </p>
-            </div>
-            <div className="flex gap-2 flex-wrap">
-              <button
-                type="button"
-                onClick={() => setCompactMode((v) => !v)}
-                className="text-xs font-bold px-4 py-2 rounded-lg border"
-                style={{
-                  borderColor: compactMode ? "var(--color-primary)" : "#d1d5db",
-                  background: compactMode ? "#eff6ff" : "white",
-                  color: compactMode ? "var(--color-primary)" : "#374151",
+              <CloudinaryUpload
+                currentUrl={values[field.key]}
+                aspectHint={field.hint}
+                onUpload={(r: CloudinaryUploadResult) => {
+                  setFieldValue(field.key, r.secure_url);
+                  void persistFieldValue(field.key, r.secure_url);
                 }}
-              >
-                {compactMode ? "Comfortable" : "Compact"}
-              </button>
-              <button
-                type="button"
-                onClick={() => setAllSections(false)}
-                className="text-xs font-bold px-4 py-2 rounded-lg border"
-                style={{
-                  borderColor: "#d1d5db",
-                  background: "white",
-                  color: "#374151",
-                }}
-              >
-                Collapse All
-              </button>
-              <button
-                type="button"
-                onClick={() => setAllSections(true)}
-                className="text-xs font-bold px-4 py-2 rounded-lg border"
-                style={{
-                  borderColor: "#d1d5db",
-                  background: "white",
-                  color: "#374151",
-                }}
-              >
-                Expand All
-              </button>
-              <button
-                type="button"
-                onClick={() => resetTab(activeGroup.fields)}
-                disabled={activeDirtyCount === 0}
-                className="text-xs font-bold px-4 py-2 rounded-lg border disabled:opacity-50"
-                style={{
-                  borderColor: "#d1d5db",
-                  background: "white",
-                  color: "#374151",
-                }}
-              >
-                Reset Changes
-              </button>
-              <button
-                type="button"
-                onClick={() => saveAll(activeGroup.fields)}
-                disabled={savingAll}
-                className="text-xs font-bold px-4 py-2 rounded-lg text-white disabled:opacity-60"
-                style={{ background: "var(--color-primary)", border: "none" }}
-              >
-                {savingAll ? "Saving..." : "Save Tab"}
-              </button>
-            </div>
-          </div>
-
-          <div
-            className="mb-4 rounded-2xl border bg-white p-3"
-            style={{ borderColor: "#e5e7eb" }}
-          >
-            <div className="flex flex-wrap items-center gap-2">
-              <label htmlFor="content-search" className="sr-only">
-                Search fields
-              </label>
-              <input
-                id="content-search"
-                type="search"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search field by label or key (e.g. hero, banner, contact.email)..."
-                className="min-w-[260px] flex-1 rounded-xl border px-3 py-2 text-sm outline-none"
-                style={{ borderColor: "#e5e7eb" }}
               />
-              {searchQuery && (
+              {values[field.key] && (
                 <button
                   type="button"
-                  onClick={() => setSearchQuery("")}
-                  className="text-xs font-bold px-3 py-2 rounded-lg border"
-                  style={{
-                    borderColor: "#d1d5db",
-                    background: "white",
-                    color: "#374151",
+                  onClick={() => {
+                    setFieldValue(field.key, "");
+                    void persistFieldValue(field.key, "");
                   }}
+                  className="mt-2 rounded-lg bg-rose-50 px-3 py-1.5 text-xs font-semibold text-rose-700"
                 >
-                  Clear
+                  Remove image
                 </button>
               )}
             </div>
+          ) : field.type === "list" ? (
+            <ListEditor
+              columns={field.columns ?? [{ key: "value", label: "Value" }]}
+              value={values[field.key] ?? ""}
+              onChange={(next) => setFieldValue(field.key, next)}
+              addLabel={field.addLabel}
+              compact
+            />
+          ) : field.type === "textarea" ? (
+            <>
+              <textarea
+                id={`field-${field.key}`}
+                rows={4}
+                value={values[field.key] ?? ""}
+                onChange={(e) => setFieldValue(field.key, e.target.value)}
+                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none"
+                style={{ resize: "vertical", fontFamily: "var(--font-body)" }}
+                placeholder={`Enter ${field.label.toLowerCase()}…`}
+              />
+              <p className="m-0 mt-1 text-right text-[11px] text-slate-400">{(values[field.key] ?? "").length} chars</p>
+            </>
+          ) : (
+            <input
+              id={`field-${field.key}`}
+              type="text"
+              value={values[field.key] ?? ""}
+              onChange={(e) => setFieldValue(field.key, e.target.value)}
+              className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none"
+              placeholder={`Enter ${field.label.toLowerCase()}…`}
+            />
+          )}
 
-            {filteredSections.length > 0 && (
-              <div className="mt-3 flex flex-wrap gap-2">
-                {filteredSections.map(([section, fields]) => (
+          {field.type !== "image" && (isDirty || saved[field.key]) && (
+            <div className="mt-2 flex items-center gap-2">
+              {isDirty && <span className="text-[12px] font-semibold text-amber-700">Unsaved</span>}
+              {isDirty && (
+                <button
+                  type="button"
+                  onClick={() => resetFields([field])}
+                  className="rounded-md px-2 py-1 text-[12px] font-semibold text-slate-500 hover:text-slate-800"
+                >
+                  Undo
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => void saveField(field.key)}
+                disabled={saving[field.key] || !isDirty}
+                className="ml-auto rounded-md px-3 py-1 text-[12px] font-semibold text-white disabled:opacity-60"
+                style={{ background: saved[field.key] ? "#16a34a" : "var(--color-primary)" }}
+              >
+                {saved[field.key] ? "✓ Saved" : saving[field.key] ? "Saving…" : "Save"}
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div className="flex flex-col gap-3">
+      {notice && (
+        <div
+          role="status"
+          className={`flex items-center gap-3 rounded-lg border px-3 py-2 text-[13px] font-semibold ${
+            notice.type === "success" ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-rose-200 bg-rose-50 text-rose-800"
+          }`}
+        >
+          <span className="flex-1">{notice.text}</span>
+          <button type="button" onClick={() => setNotice(null)} aria-label="Dismiss" className="text-current opacity-60 hover:opacity-100">
+            ×
+          </button>
+        </div>
+      )}
+
+      {/* Toolbar: global search, unsaved count, page actions. */}
+      <div className="flex flex-wrap items-center gap-2">
+        <input
+          type="search"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder="Search every field — label, key or current text…"
+          aria-label="Search all content fields"
+          className="h-9 min-w-[220px] flex-1 rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none"
+        />
+        {totalDirty > 0 && (
+          <span className="text-[12px] font-semibold text-amber-700">
+            {totalDirty} unsaved across all pages
+          </span>
+        )}
+        <button
+          type="button"
+          onClick={() => resetFields(activeGroup.fields)}
+          disabled={pageDirty === 0}
+          className="h-9 rounded-lg border border-slate-200 bg-white px-3 text-[13px] font-semibold text-slate-600 disabled:opacity-40"
+        >
+          Discard page changes
+        </button>
+        <button
+          type="button"
+          onClick={() => void saveAll(activeGroup.fields)}
+          disabled={savingAll || pageDirty === 0}
+          className="h-9 rounded-lg bg-indigo-600 px-4 text-[13px] font-semibold text-white disabled:opacity-40"
+        >
+          {savingAll ? "Publishing…" : pageDirty ? `Publish ${pageDirty} change${pageDirty === 1 ? "" : "s"}` : "All saved"}
+        </button>
+      </div>
+
+      <div className="grid gap-3 lg:grid-cols-[220px_minmax(0,1fr)]">
+        {/* Page → section tree. On phones it's a horizontal strip. */}
+        <nav aria-label="Pages and sections" className="lg:sticky lg:top-0 lg:self-start">
+          <ul className="m-0 flex list-none gap-1 overflow-x-auto p-0 lg:flex-col lg:overflow-visible">
+            {FIELD_GROUPS.map((group) => {
+              const active = group.tab === activeGroup.tab && !searchResults;
+              const pending = dirtyIn(group.fields);
+              return (
+                <li key={group.tab} className="shrink-0">
                   <button
-                    key={`jump-${section}`}
                     type="button"
-                    onClick={() => jumpToSection(section)}
-                    className="rounded-full border px-3 py-1 text-xs font-semibold"
-                    style={{
-                      borderColor: "#d1d5db",
-                      background: "white",
-                      color: "#374151",
-                    }}
+                    onClick={() => selectPage(group.tab)}
+                    aria-current={active ? "page" : undefined}
+                    className={`flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-[13px] font-semibold transition ${
+                      active ? "bg-indigo-50 text-indigo-700" : "text-slate-600 hover:bg-slate-50 hover:text-slate-800"
+                    }`}
                   >
-                    {section} ({fields.length})
+                    <span className="flex-1 truncate">{group.tab}</span>
+                    {pending > 0 ? (
+                      <span className="text-[11px] font-bold text-amber-700">{pending}</span>
+                    ) : (
+                      <span className="hidden text-[11px] text-slate-400 lg:inline">{group.fields.length}</span>
+                    )}
+                  </button>
+                  {active && (
+                    <ul className="m-0 mb-1 ml-3 hidden list-none border-l border-slate-200 p-0 pl-2 lg:block">
+                      {activeSections.map(([section, fields]) => {
+                        const current = section === currentSection[0];
+                        return (
+                          <li key={section}>
+                            <button
+                              type="button"
+                              onClick={() => setActiveSection(section)}
+                              aria-current={current ? "true" : undefined}
+                              className={`flex w-full items-center gap-2 rounded px-2 py-1 text-left text-[12.5px] ${
+                                current ? "font-semibold text-indigo-700" : "text-slate-500 hover:text-slate-800"
+                              }`}
+                            >
+                              <span className="flex-1 truncate">{section}</span>
+                              {dirtyIn(fields) > 0 ? (
+                                <span className="h-1.5 w-1.5 rounded-full bg-amber-500" aria-label="Unsaved" />
+                              ) : (
+                                <span className="text-[11px] text-slate-400">{fields.length}</span>
+                              )}
+                            </button>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        </nav>
+
+        <section className="min-w-0 rounded-lg border border-slate-200 bg-white">
+          {searchResults ? (
+            <>
+              <header className="flex items-center gap-2 border-b border-slate-200 px-4 py-2.5">
+                <h3 className="m-0 text-[13.5px] font-semibold text-slate-800">
+                  {searchResults.length} field{searchResults.length === 1 ? "" : "s"} match “{searchQuery.trim()}”
+                </h3>
+                <button type="button" onClick={() => setSearchQuery("")} className="ml-auto text-[12px] font-semibold text-slate-500 hover:text-slate-800">
+                  Clear search
+                </button>
+              </header>
+              <div className="px-4">
+                {searchResults.length === 0 ? (
+                  <p className="m-0 py-10 text-center text-sm text-slate-500">No field matches that search.</p>
+                ) : (
+                  searchResults.map(({ group, section, field }) => renderField(field, `${group} › ${section}`))
+                )}
+              </div>
+            </>
+          ) : (
+            <>
+              {/* Section tabs for phones (the tree covers desktop). */}
+              <div className="flex gap-1 overflow-x-auto border-b border-slate-200 px-3 py-2 lg:hidden">
+                {activeSections.map(([section]) => (
+                  <button
+                    key={section}
+                    type="button"
+                    onClick={() => setActiveSection(section)}
+                    className={`shrink-0 rounded-md px-2.5 py-1 text-[12.5px] font-semibold ${
+                      section === currentSection[0] ? "bg-indigo-50 text-indigo-700" : "text-slate-500"
+                    }`}
+                  >
+                    {section}
                   </button>
                 ))}
               </div>
-            )}
-          </div>
-
-          {/* Fields */}
-          <div className="flex flex-col gap-5">
-            {filteredSections.map(([section, fields]) => (
-              <div
-                key={section}
-                ref={(el) => {
-                  sectionRefs.current[`${activeTab}:${section}`] = el;
-                }}
-                className={`overflow-hidden rounded-[22px] border border-slate-200 bg-white shadow-sm transition hover:shadow-md ${compactMode ? "p-3" : "p-5"}`}
-                style={{ scrollMarginTop: 16 }}
-              >
-                <button
-                  type="button"
-                  onClick={() => toggleSection(section)}
-                  aria-expanded={Boolean(openSections[`${activeTab}:${section}`])}
-                  className="mb-1 flex w-full items-center justify-between rounded-2xl border border-slate-200 bg-gradient-to-r from-slate-50 to-indigo-50/60 px-4 py-3 text-left hover:border-indigo-200"
-                >
-                  <span>
-                    <span className="text-sm font-black text-gray-900">
-                      {section}
-                    </span>
-                    <span className="mt-0.5 block text-xs text-gray-500">
-                      {fields.length} editable field
-                      {fields.length > 1 ? "s" : ""}
-                      {sectionDirtyCount(fields) > 0
-                        ? ` · ${sectionDirtyCount(fields)} unsaved`
-                        : ""}
-                    </span>
-                  </span>
-                  <span className="text-sm font-bold text-gray-500">
-                    {openSections[`${activeTab}:${section}`] ? "−" : "+"}
-                  </span>
-                </button>
-
-                {openSections[`${activeTab}:${section}`] && (
-                  <div
-                    className={`mt-4 flex flex-col ${compactMode ? "gap-2" : "gap-4"}`}
-                  >
-                    {fields.map((field) => (
-                      <div
-                        key={field.key}
-                        className={`rounded-xl border ${compactMode ? "p-3" : "p-4"}`}
-                        style={{ borderColor: "#eef2f7" }}
-                      >
-                        <div className="flex items-start justify-between gap-3 mb-3">
-                          <div>
-                            <label className="text-sm font-bold text-gray-800">
-                              {field.label}
-                            </label>
-                            {!compactMode && (
-                              <p className="text-xs text-gray-400 mt-0.5 font-mono">
-                                {field.key}
-                              </p>
-                            )}
-                          </div>
-                          <div className="flex items-center gap-2">
-                            {dirty[field.key] && (
-                              <span
-                                className="text-[11px] font-bold px-2 py-0.5 rounded-full"
-                                style={{
-                                  background: "#fff7ed",
-                                  color: "#9a3412",
-                                }}
-                              >
-                                Unsaved
-                              </span>
-                            )}
-                            {saveButton(field)}
-                          </div>
-                        </div>
-
-                        {field.hint && (
-                          <p className="mb-3 text-xs leading-relaxed text-gray-400">
-                            {field.hint}
-                          </p>
-                        )}
-
-                        {field.type === "image" ? (
-                          <div>
-                            <CloudinaryUpload
-                              currentUrl={values[field.key]}
-                              aspectHint={field.hint}
-                              onUpload={(r: CloudinaryUploadResult) => {
-                                const nextValue = r.secure_url;
-                                setFieldValue(field.key, nextValue);
-                                void persistFieldValue(field.key, nextValue);
-                              }}
-                            />
-                            {values[field.key] && (
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  const nextValue = "";
-                                  setFieldValue(field.key, nextValue);
-                                  void persistFieldValue(field.key, nextValue);
-                                }}
-                                className="mt-2 text-xs font-bold px-4 py-1.5 rounded-lg border-none cursor-pointer"
-                                style={{
-                                  background: "#fee2e2",
-                                  color: "#991b1b",
-                                }}
-                              >
-                                Remove Image
-                              </button>
-                            )}
-                          </div>
-                        ) : field.type === "list" ? (
-                          <>
-                            <ListEditor
-                              columns={field.columns ?? [{ key: "value", label: "Value" }]}
-                              value={values[field.key] ?? ""}
-                              onChange={(next) => setFieldValue(field.key, next)}
-                              addLabel={field.addLabel}
-                              compact={compactMode}
-                            />
-                            {dirty[field.key] && (
-                              <div className="mt-3 flex items-center gap-3">
-                                <span className="text-xs font-semibold text-amber-700">
-                                  Unsaved changes to this list
-                                </span>
-                                <span className="ml-auto">{saveButton(field)}</span>
-                              </div>
-                            )}
-                          </>
-                        ) : field.type === "textarea" ? (
-                          <div>
-                            <textarea
-                              rows={5}
-                              value={values[field.key] ?? ""}
-                              onChange={(e) =>
-                                setFieldValue(field.key, e.target.value)
-                              }
-                              className="w-full px-4 py-2.5 text-sm rounded-xl border outline-none"
-                              style={{
-                                borderColor: "#e5e7eb",
-                                resize: "vertical",
-                                fontFamily: "var(--font-body)",
-                              }}
-                              placeholder={`Enter ${field.label.toLowerCase()}...`}
-                            />
-                            <p className="text-[11px] text-gray-400 mt-1 text-right">
-                              {(values[field.key] ?? "").length} chars
-                            </p>
-                          </div>
-                        ) : (
-                          <input
-                            type="text"
-                            value={values[field.key] ?? ""}
-                            onChange={(e) =>
-                              setFieldValue(field.key, e.target.value)
-                            }
-                            className="w-full px-4 py-2.5 text-sm rounded-xl border outline-none"
-                            style={{ borderColor: "#e5e7eb" }}
-                            placeholder={`Enter ${field.label.toLowerCase()}...`}
-                          />
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            ))}
-            {filteredSections.length === 0 && (
-              <div
-                className="rounded-2xl border bg-white p-8 text-center"
-                style={{ borderColor: "#e5e7eb" }}
-              >
-                <p className="text-sm font-semibold text-gray-700">
-                  No matching fields found.
-                </p>
-                <p className="text-xs text-gray-500 mt-1">
-                  Try a different keyword like hero, title, banner, or
-                  contact.email.
-                </p>
-              </div>
-            )}
-          </div>
-        </div>
+              <header className="flex flex-wrap items-baseline gap-x-2 border-b border-slate-200 px-4 py-2.5">
+                <h3 className="m-0 text-[14px] font-semibold text-slate-800">
+                  {activeGroup.tab} <span className="text-slate-400">›</span> {currentSection[0]}
+                </h3>
+                <span className="text-[12px] text-slate-500">
+                  {currentSection[1].length} field{currentSection[1].length === 1 ? "" : "s"}
+                </span>
+              </header>
+              <div className="px-4">{currentSection[1].map((field) => renderField(field))}</div>
+            </>
+          )}
+        </section>
       </div>
     </div>
   );

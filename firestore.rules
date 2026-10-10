@@ -28,14 +28,6 @@ service cloud.firestore {
     function isStrictCollaborator() {
       return isSignedIn() && (getRole() == 'collaborator' || getRole() == 'lab_head');
     }
-    function isChatParticipant(chatId) {
-      return isStrictCollaborator()
-        && get(/databases/$(database)/documents/privateChats/$(chatId)).data.participants.hasAny([request.auth.uid]);
-    }
-    function isOtherChatParticipant(chatId, uid) {
-      return get(/databases/$(database)/documents/privateChats/$(chatId)).data.participants.hasAny([uid])
-        && uid != request.auth.uid;
-    }
     function isPublicationOwner() {
       return isSignedIn()
         && (
@@ -156,77 +148,182 @@ service cloud.firestore {
         && request.resource.data.isRead == false;
       allow read, update, delete: if hasAdminPermission('messages.manage');
     }
+    // ── Private chat ──────────────────────────────────────────────────────
+    // Direct chats have exactly two participants and a deterministic id
+    // ("<uidA>__<uidB>", sorted). Group chats have a random id, a title and a
+    // list of admins. Every per-person field (readAt, typingBy, mutedBy,
+    // clearedAtBy, …) is a map keyed by uid, and a member may only change their
+    // own key — so nobody can mark someone else's chat read, hide it for them,
+    // or clear their history.
+    function chatOwnKeyOnly(field) {
+      return request.resource.data.get(field, {})
+        .diff(resource.data.get(field, {}))
+        .affectedKeys()
+        .hasOnly([request.auth.uid]);
+    }
+    function chatChanged(field) {
+      return request.resource.data.diff(resource.data).affectedKeys().hasAny([field]);
+    }
+    function chatIsGroupAdmin() {
+      return resource.data.get('type', 'direct') == 'group'
+        && resource.data.get('admins', []).hasAny([request.auth.uid]);
+    }
+    // Anyone may un-hide a conversation (sending a message does that for all
+    // members); a member may only add themselves.
+    function chatHiddenForOk() {
+      return request.resource.data.get('hiddenFor', []).toSet()
+        .difference(resource.data.get('hiddenFor', []).toSet())
+        .hasOnly([request.auth.uid]);
+    }
+    function chatLeavingOnly() {
+      return resource.data.get('type', 'direct') == 'group'
+        && request.resource.data.participants.toSet()
+          == resource.data.participants.toSet().difference([request.auth.uid].toSet());
+    }
+    function chatMembersAfter(chatId) {
+      return getAfter(/databases/$(database)/documents/privateChats/$(chatId)).data.participants;
+    }
+    function chatMembersBefore(chatId) {
+      return get(/databases/$(database)/documents/privateChats/$(chatId)).data.participants;
+    }
+
+    function chatMessageCreateOk(chatId, members) {
+      let data = request.resource.data;
+      return members.hasAny([request.auth.uid])
+        && data.conversationId == chatId
+        && data.senderId == request.auth.uid
+        && data.encryptedByUser is map
+        && data.encryptedByUser.keys().hasAny([request.auth.uid])
+        && data.encryptedByUser.keys().size() <= 50
+        && data.encryptedByUser.keys().toSet().difference(members.toSet()).size() == 0
+        && (
+          !('recipientId' in data)
+          || (data.recipientId is string
+            && data.recipientId != request.auth.uid
+            && members.hasAny([data.recipientId]))
+        )
+        && data.createdAt == request.time
+        && data.expiresAt is timestamp
+        && data.expiresAt > request.time
+        && data.expiresAt <= request.time + duration.value(74, 'h')
+        && data.keys().hasOnly([
+          'conversationId', 'senderId', 'recipientId', 'encryptedByUser',
+          'createdAt', 'expiresAt', 'replyToMessageId'
+        ]);
+    }
+
     match /privateChats/{chatId} {
+      // `uid in participants` (not hasAny) is the form Firestore can prove
+      // for an array-contains list query. With hasAny, listing your own
+      // conversations was always denied — the old client hid that behind a
+      // localStorage "recent chats" fallback.
       allow read: if isStrictCollaborator()
-        && resource.data.participants is list
-        && resource.data.participants.hasAny([request.auth.uid]);
+        && request.auth.uid in resource.data.participants;
 
       allow create: if isStrictCollaborator()
         && request.resource.data.participants is list
-        && request.resource.data.participants.size() == 2
-        && request.resource.data.participants[0] != request.resource.data.participants[1]
         && request.resource.data.participants.hasAny([request.auth.uid])
         && request.resource.data.keys().hasOnly([
-          'participants', 'participantNames', 'unreadCounts', 'typingBy', 'createdAt', 'updatedAt'
-        ]);
+          'type', 'participants', 'participantNames', 'title', 'admins', 'createdBy',
+          'createdAt', 'updatedAt', 'lastMessageAt', 'lastSenderId', 'previewByUser',
+          'readAt', 'typingBy', 'mutedBy', 'hiddenFor', 'clearedAtBy', 'clearedForAllAt',
+          'pinnedMessageId', 'unreadCounts'
+        ])
+        && (
+          (
+            request.resource.data.get('type', 'direct') == 'direct'
+            && request.resource.data.participants.size() == 2
+            && request.resource.data.participants[0] < request.resource.data.participants[1]
+            && chatId == request.resource.data.participants[0] + '__' + request.resource.data.participants[1]
+          )
+          ||
+          (
+            request.resource.data.get('type', 'direct') == 'group'
+            && request.resource.data.participants.size() >= 2
+            && request.resource.data.participants.size() <= 50
+            && request.resource.data.createdBy == request.auth.uid
+            && request.resource.data.admins == [request.auth.uid]
+            && request.resource.data.title is string
+            && request.resource.data.title.size() > 0
+            && request.resource.data.title.size() <= 80
+          )
+        );
 
       allow update: if isStrictCollaborator()
         && resource.data.participants is list
         && resource.data.participants.hasAny([request.auth.uid])
-        && request.resource.data.participants == resource.data.participants;
+        && request.resource.data.get('type', 'direct') == resource.data.get('type', 'direct')
+        && request.resource.data.keys().hasOnly([
+          'type', 'participants', 'participantNames', 'title', 'admins', 'createdBy',
+          'createdAt', 'updatedAt', 'lastMessageAt', 'lastSenderId', 'previewByUser',
+          'readAt', 'typingBy', 'mutedBy', 'hiddenFor', 'clearedAtBy', 'clearedForAllAt',
+          'pinnedMessageId', 'unreadCounts', 'lastMessagePreview', 'deletedForEveryoneAt'
+        ])
+        && !chatChanged('createdBy')
+        && chatOwnKeyOnly('readAt')
+        && chatOwnKeyOnly('typingBy')
+        && chatOwnKeyOnly('mutedBy')
+        && chatOwnKeyOnly('clearedAtBy')
+        && chatOwnKeyOnly('unreadCounts')
+        && chatHiddenForOk()
+        && (!chatChanged('lastSenderId') || request.resource.data.lastSenderId == request.auth.uid)
+        && (!chatChanged('participants')
+          || chatLeavingOnly()
+          || (chatIsGroupAdmin()
+            && request.resource.data.participants.size() >= 1
+            && request.resource.data.participants.size() <= 50))
+        && (!chatChanged('participantNames') || chatIsGroupAdmin() || chatOwnKeyOnly('participantNames'))
+        && (!chatChanged('title') || chatIsGroupAdmin())
+        && (!chatChanged('admins') || chatIsGroupAdmin() || chatLeavingOnly())
+        && (!chatChanged('clearedForAllAt')
+          || resource.data.get('type', 'direct') == 'direct'
+          || chatIsGroupAdmin());
 
       allow delete: if false;
 
       match /messages/{messageId} {
-        allow read: if isChatParticipant(chatId);
+        allow read: if isStrictCollaborator()
+          && chatMembersBefore(chatId).hasAny([request.auth.uid]);
 
-        allow create: if isChatParticipant(chatId)
-          && request.resource.data.conversationId == chatId
-          && request.resource.data.senderId == request.auth.uid
-          && request.resource.data.recipientId is string
-          && isOtherChatParticipant(chatId, request.resource.data.recipientId)
-          && request.resource.data.encryptedByUser is map
-          && request.resource.data.encryptedByUser.keys().hasAll([
-            request.auth.uid, request.resource.data.recipientId
-          ])
-          && request.resource.data.createdAt is timestamp
-          && request.resource.data.expiresAt is timestamp
-          && request.resource.data.expiresAt > request.resource.data.createdAt
-          && request.resource.data.expiresAt <= request.resource.data.createdAt + duration.value(72, 'h')
-          && request.resource.data.keys().hasOnly([
-            'conversationId', 'senderId', 'recipientId', 'encryptedByUser',
-            'createdAt', 'expiresAt', 'replyToMessageId'
-          ]);
+        // getAfter: the conversation may be created in the same batch. The
+        // member list is fetched once and passed in, so this costs one read.
+        allow create: if isStrictCollaborator()
+          && chatMessageCreateOk(chatId, chatMembersAfter(chatId));
 
-        allow update: if isChatParticipant(chatId)
+        // Only the sender may edit or delete-for-everyone. Anyone in the chat
+        // may set their own reaction or hide a message for themselves.
+        allow update: if isStrictCollaborator()
+          && chatMembersBefore(chatId).hasAny([request.auth.uid])
           && (
             (
-              request.resource.data.diff(resource.data).changedKeys().hasOnly([
-                'encryptedByUser',
-                'deletedForEveryoneAt',
-                'reactions'
-              ])
-              && request.resource.data.encryptedByUser is map
-              && request.resource.data.encryptedByUser.keys().size() == 0
-              && request.resource.data.reactions is map
-              && request.resource.data.reactions.keys().size() == 0
-              && request.resource.data.deletedForEveryoneAt is timestamp
-            )
-            ||
-            (
-              resource.data.recipientId == request.auth.uid
-              && request.resource.data.diff(resource.data).changedKeys().hasOnly(['readAt', 'deliveredAt', 'reactions', 'hiddenFor'])
-            )
-            ||
-            (
               resource.data.senderId == request.auth.uid
-              && request.resource.data.diff(resource.data).changedKeys().hasOnly([
-                'encryptedByUser',
-                'editedAt',
-                'deletedForEveryoneAt',
-                'reactions',
-                'hiddenFor'
+              && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+                'encryptedByUser', 'editedAt', 'deletedForEveryoneAt', 'reactions', 'hiddenFor'
               ])
+              && (
+                !request.resource.data.diff(resource.data).affectedKeys().hasAny(['reactions'])
+                || request.resource.data.reactions.size() == 0
+                || request.resource.data.get('reactions', {})
+                  .diff(resource.data.get('reactions', {})).affectedKeys().hasOnly([request.auth.uid])
+              )
+              && request.resource.data.get('hiddenFor', []).toSet()
+                .difference(resource.data.get('hiddenFor', []).toSet()).hasOnly([request.auth.uid])
+            )
+            ||
+            (
+              request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+                'reactions', 'hiddenFor', 'readAt', 'deliveredAt'
+              ])
+              && request.resource.data.get('reactions', {})
+                .diff(resource.data.get('reactions', {})).affectedKeys().hasOnly([request.auth.uid])
+              && request.resource.data.get('hiddenFor', []).toSet()
+                .difference(resource.data.get('hiddenFor', []).toSet()).hasOnly([request.auth.uid])
+              && resource.data.get('hiddenFor', []).toSet()
+                .difference(request.resource.data.get('hiddenFor', []).toSet()).size() == 0
+              && (
+                !request.resource.data.diff(resource.data).affectedKeys().hasAny(['readAt', 'deliveredAt'])
+                || resource.data.get('recipientId', '') == request.auth.uid
+              )
             )
           );
 
@@ -243,6 +340,22 @@ service cloud.firestore {
           'ownerUid', 'chatPublicKeyJwk', 'chatKeyUpdatedAt'
         ]);
       allow delete: if isAdmin() || (isStrictCollaborator() && request.auth.uid == userId);
+    }
+    // The private chat key, encrypted with the member's chat passphrase
+    // (PBKDF2 + AES-GCM) before it leaves the browser. Only its owner can read
+    // it, and it is useless without the passphrase.
+    match /chatKeyBackups/{userId} {
+      allow read, delete: if isStrictCollaborator() && request.auth.uid == userId;
+      allow create, update: if isStrictCollaborator()
+        && request.auth.uid == userId
+        && request.resource.data.keys().hasOnly([
+          'ciphertextB64', 'ivB64', 'saltB64', 'iterations', 'version', 'publicKeyJwk', 'createdAt'
+        ])
+        && request.resource.data.ciphertextB64 is string
+        && request.resource.data.ciphertextB64.size() < 20000
+        && request.resource.data.publicKeyJwk is map
+        && request.resource.data.iterations is int
+        && request.resource.data.iterations >= 100000;
     }
     match /presence/{userId} {
       allow read: if isStrictCollaborator() || isAdmin();
@@ -287,11 +400,85 @@ service cloud.firestore {
           ])
         );
     }
+    // ── Admin change log ─────────────────────────────────────────────────
+    // Every admin and moderator writes an entry for their own actions; only the
+    // primary administrator can read them. Entries can't be edited or deleted.
     match /adminAuditLog/{docId} {
-      allow read: if isAdmin();
-      allow create: if isPrimaryAdmin()
-        && request.resource.data.actorUid == request.auth.uid;
+      allow read: if isPrimaryAdmin();
+      allow create: if isAdmin()
+        && request.resource.data.actorUid == request.auth.uid
+        && request.resource.data.keys().hasOnly([
+          'actorUid', 'actorName', 'actorLevel', 'action', 'targetPath', 'targetLabel',
+          'details', 'createdAt', 'serverAt', 'targetUid', 'targetName', 'permissions'
+        ])
+        && request.resource.data.createdAt is string;
       allow update, delete: if false;
+    }
+
+    // ── Moderator permission requests ────────────────────────────────────
+    // A moderator proposes a permission change; only the primary admin can
+    // approve or reject it. The requester may withdraw it while pending.
+    match /permissionRequests/{requestId} {
+      allow read: if isAdmin();
+      allow create: if isAdmin()
+        && request.resource.data.requestedByUid == request.auth.uid
+        && request.resource.data.status == 'pending'
+        && request.resource.data.requestedPermissions is list
+        && request.resource.data.requestedPermissions.size() <= 20
+        && request.resource.data.targetUid is string
+        && request.resource.data.targetUid != request.auth.uid
+        && request.resource.data.keys().hasOnly([
+          'targetUid', 'targetName', 'targetEmail', 'requestedByUid', 'requestedByName',
+          'currentPermissions', 'requestedPermissions', 'note', 'status', 'createdAt'
+        ]);
+      allow update: if isPrimaryAdmin()
+        && resource.data.status == 'pending'
+        && request.resource.data.status in ['approved', 'rejected']
+        && request.resource.data.decidedByUid == request.auth.uid
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['status', 'decidedByUid', 'decidedByName', 'decidedAt', 'decisionNote']);
+      allow delete: if isPrimaryAdmin()
+        || (isAdmin() && resource.data.requestedByUid == request.auth.uid && resource.data.status == 'pending');
+    }
+
+    // ── Analytics ─────────────────────────────────────────────────────────
+    // Anonymous counters. Each write may only add one view (and at most one
+    // session); maps are size-capped. Only the primary admin can read them.
+    match /analyticsDaily/{day} {
+      allow read: if isPrimaryAdmin();
+      allow create: if day.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
+        && request.resource.data.keys().hasOnly(['day', 'views', 'paths', 'sessions', 'devices', 'referrers'])
+        && request.resource.data.day == day
+        && request.resource.data.views == 1
+        && request.resource.data.get('sessions', 0) in [0, 1]
+        && request.resource.data.get('paths', {}).size() <= 1;
+      allow update: if request.resource.data.keys().hasOnly(['day', 'views', 'paths', 'sessions', 'devices', 'referrers'])
+        && request.resource.data.day == day
+        && request.resource.data.views == resource.data.get('views', 0) + 1
+        && request.resource.data.get('sessions', 0) - resource.data.get('sessions', 0) in [0, 1]
+        && request.resource.data.get('paths', {}).size() <= 400
+        && request.resource.data.get('referrers', {}).size() <= 400
+        && request.resource.data.get('devices', {}).size() <= 5;
+      allow delete: if false;
+
+      match /visitors/{visitorId} {
+        allow read: if isPrimaryAdmin();
+        allow create: if visitorId.matches('^[a-f0-9]{24}$')
+          && request.resource.data.keys().hasOnly(['firstSeenAt', 'device', 'firstPath', 'member']);
+        allow update, delete: if false;
+      }
+    }
+
+    // Collaborator activity: each member updates only their own record.
+    match /memberActivity/{uid} {
+      allow read: if isPrimaryAdmin();
+      allow create, update: if isSignedIn()
+        && request.auth.uid == uid
+        && request.resource.data.uid == uid
+        && request.resource.data.keys().hasOnly([
+          'uid', 'name', 'role', 'lastSeenAt', 'lastPath', 'pageViews', 'days', 'sessions', 'lastSessionAt'
+        ]);
+      allow delete: if isPrimaryAdmin();
     }
   }
 }

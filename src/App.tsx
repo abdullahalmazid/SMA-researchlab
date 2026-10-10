@@ -1,4 +1,4 @@
-import React from "react";
+import React, { Suspense, lazy } from "react";
 import { BrowserRouter, Route, Routes } from "react-router-dom";
 import Footer from "./components/Footer";
 import Navbar from "./components/Navbar";
@@ -8,6 +8,7 @@ import BrandingHead from "./components/BrandingHead";
 import ProtectedRoute from "./components/ProtectedRoute";
 import ScrollToTop from "./components/ScrollToTop";
 import ChatLauncher from "./components/ChatLauncher";
+import AnalyticsTracker from "./analytics/AnalyticsTracker";
 import { AuthProvider } from "./context/AuthContext";
 import { EditableContentProvider } from "./context/EditableContentContext";
 import { AdminPreviewProvider } from "./context/AdminPreviewContext";
@@ -15,7 +16,9 @@ import { ThemeProvider } from "./context/ThemeContext";
 
 // Pages
 import About from "./pages/About";
-import Chat from "./pages/Chat";
+/* Loaded on demand: the messenger (and its emoji picker) is a large chunk
+   that most visitors never open. */
+const Chat = lazy(() => import("./pages/Chat"));
 import CollaboratorProfilePage from "./pages/CollaboratorProfilePage";
 import Collaborators from "./pages/Collaborators";
 import Contact from "./pages/Contact";
@@ -29,7 +32,8 @@ import ResearchIdeas from "./pages/ResearchIdeas";
 import Announcements from "./pages/Announcements";
 
 // Portals
-import AdminDashboard from "./portals/AdminDashboard";
+/* Admin console (and its stylesheet) loads on demand — visitors never need it. */
+const AdminDashboard = lazy(() => import("./portals/AdminDashboard"));
 import CollaboratorPortal from "./portals/CollaboratorPortal";
 
 import DeveloperProfile from "./pages/DeveloperProfile";
@@ -47,6 +51,7 @@ const App: React.FC = () => {
           <div className="flex flex-col min-h-screen">
             <Navbar />
             <ChatLauncher />
+            <AnalyticsTracker />
             <AdminPreviewBar />
             <div
               id="app-layout-content"
@@ -77,7 +82,15 @@ const App: React.FC = () => {
                         allowedRoles={["collaborator", "lab_head"]}
                         redirectTo="/login"
                       >
-                        <Chat />
+                        <Suspense
+                          fallback={
+                            <div className="fixed inset-0 z-[2147482000] grid place-items-center bg-slate-950">
+                              <span className="h-8 w-8 animate-spin rounded-full border-[3px] border-white/30 border-t-transparent" />
+                            </div>
+                          }
+                        >
+                          <Chat />
+                        </Suspense>
                       </ProtectedRoute>
                     }
                   />
@@ -97,7 +110,15 @@ const App: React.FC = () => {
                         requireAdminAccess
                         redirectTo="/admin-login"
                       >
-                        <AdminDashboard />
+                        <Suspense
+                          fallback={
+                            <div className="fixed inset-0 z-[2147481000] grid place-items-center" style={{ background: "#05070b" }}>
+                              <span className="h-7 w-7 animate-spin rounded-full border-2 border-cyan-400/40 border-t-transparent" />
+                            </div>
+                          }
+                        >
+                          <AdminDashboard />
+                        </Suspense>
                       </ProtectedRoute>
                     }
                   />

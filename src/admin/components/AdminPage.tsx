@@ -1,3 +1,24 @@
 import React from "react";
-const AdminPage: React.FC<React.PropsWithChildren<{ eyebrow?: string; title: string; description: string; actions?: React.ReactNode; toolbar?: React.ReactNode }>> = ({ eyebrow, title, description, actions, toolbar, children }) => <div className="space-y-6"><header className="rounded-[26px] border border-slate-200 bg-white p-6 shadow-sm"><div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between"><div>{eyebrow && <p className="text-[11px] font-black uppercase tracking-[.18em] text-indigo-600">{eyebrow}</p>}<h2 className="mt-1 text-2xl font-black tracking-tight text-slate-900">{title}</h2><p className="mt-1 max-w-3xl text-sm leading-6 text-slate-500">{description}</p></div>{actions && <div className="flex flex-wrap gap-2">{actions}</div>}</div>{toolbar && <div className="mt-5 border-t border-slate-100 pt-5">{toolbar}</div>}</header>{children}</div>;
+
+/**
+ * Section frame. The console shell already shows the section's code, title
+ * and one-line description, so this only renders what's specific to the
+ * page: its actions and toolbar. `title`/`description` stay in the props for
+ * screen readers and for anyone rendering a section outside the shell.
+ */
+const AdminPage: React.FC<
+  React.PropsWithChildren<{ eyebrow?: string; title: string; description: string; actions?: React.ReactNode; toolbar?: React.ReactNode }>
+> = ({ title, actions, toolbar, children }) => (
+  <div className="space-y-4">
+    <h2 className="sr-only">{title}</h2>
+    {(actions || toolbar) && (
+      <header className="flex flex-col gap-3 lg:flex-row lg:items-center">
+        {toolbar && <div className="min-w-0 flex-1">{toolbar}</div>}
+        {actions && <div className="flex flex-wrap gap-2">{actions}</div>}
+      </header>
+    )}
+    {children}
+  </div>
+);
+
 export default AdminPage;

@@ -7,7 +7,7 @@ import {
   query,
   setDoc,
   updateDoc,
-} from "firebase/firestore";
+} from "./core/auditedFirestore";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import AppIcon from "../components/AppIcon";
 import { db } from "../firebase/config";

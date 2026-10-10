@@ -3,6 +3,8 @@ import React, { useState } from "react";
 import AppIcon from "../components/AppIcon";
 import EditableText from "../components/EditableText";
 import IdeaCard from "../components/IdeaCard";
+import PageHero from "../components/PageHero";
+import PageSearchBar from "../components/PageSearchBar";
 import { useAuth } from "../context/AuthContext";
 import { db } from "../firebase/config";
 import { useResearchIdeas, useSiteContent } from "../firebase/hooks";
@@ -39,91 +41,66 @@ const ResearchIdeas: React.FC = () => {
   return (
     <div>
       {/* Hero */}
-      <section
-        className="relative min-h-[320px] overflow-hidden py-20 text-center px-4 flex items-center justify-center"
-        style={{ background: "var(--color-primary)" }}
-      >
-        {content["ideas.bannerUrl"] && (
-          <img
-            src={content["ideas.bannerUrl"]}
-            alt=""
-            className="absolute inset-0 w-full h-full object-cover"
-            style={{ filter: "brightness(0.45)" }}
+      <PageHero
+        bannerUrl={content["ideas.bannerUrl"]}
+        eyebrow={
+          <EditableText id="ideas.eyebrow" defaultValue={content["ideas.eyebrow"] ?? "Open questions"} className="inline" />
+        }
+        title={
+          <EditableText
+            id="ideas.pageTitle"
+            defaultValue={content["ideas.pageTitle"] ?? "Research Ideas"}
+            className="inline"
           />
-        )}
-
-        <div className="relative z-10">
-          <h1
-            className="font-black text-white mb-4"
-            style={{
-              fontSize: "clamp(2rem,4vw,3rem)",
-              fontFamily: "var(--font-heading)",
-            }}
-          >
-            <EditableText
-              id="ideas.pageTitle"
-              defaultValue={content["ideas.pageTitle"] ?? "Research Ideas"}
-              className="text-white font-black"
-              block
-            />
-          </h1>
-          <p
-            className="text-base max-w-xl mx-auto"
-            style={{ color: "rgba(255,255,255,0.75)" }}
-          >
-            <EditableText
-              id="ideas.pageSubtitle"
-              defaultValue={
-                content["ideas.pageSubtitle"] ??
-                "Explore and discuss cutting-edge research ideas from our collaborators."
-              }
-              className="text-white"
-              block
-            />
-          </p>
-        </div>
-      </section>
-
-      <div className="max-w-6xl mx-auto px-4 py-12">
-        {/* Toolbar */}
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-8">
-          <input
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search ideas, tags..."
-            className="text-sm px-4 py-2.5 rounded-xl border outline-none w-full sm:w-72"
-            style={{ borderColor: "#d1d5db" }}
+        }
+        subtitle={
+          <EditableText
+            id="ideas.pageSubtitle"
+            defaultValue={
+              content["ideas.pageSubtitle"] ??
+              "Explore and discuss cutting-edge research ideas from our collaborators."
+            }
+            className="inline"
           />
-          {canPost && (
+        }
+      />
+
+      <PageSearchBar
+        value={search}
+        onChange={setSearch}
+        placeholder="Search research ideas by title, description or tag"
+        status={
+          search
+            ? `${filtered.length} of ${ideas.length}`
+            : `${ideas.length} ${ideas.length === 1 ? "idea" : "ideas"}`
+        }
+        action={
+          canPost ? (
             <button
+              type="button"
               onClick={() => setShowModal(true)}
-              className="font-bold text-sm px-6 py-2.5 rounded-xl text-white whitespace-nowrap"
-              style={{
-                background: "var(--color-primary)",
-                border: "none",
-                cursor: "pointer",
-              }}
+              className="h-10 whitespace-nowrap rounded-lg px-4 text-[13px] font-bold text-[color:var(--hero-text)] transition hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-secondary)] focus-visible:ring-offset-2"
+              style={{ background: "var(--color-primary)" }}
             >
               <EditableText
                 id="ideas.postButton"
                 defaultValue={content["ideas.postButton"] ?? "+ Post Idea"}
-                className="text-white font-bold"
-                block
+                className="inline"
               />
             </button>
-          )}
-          {!role && (
-            <p className="text-xs text-gray-400 italic">
+          ) : !role ? (
+            <p className="whitespace-nowrap text-[12px] italic text-slate-400">
               <EditableText
                 id="ideas.guestMsg"
                 defaultValue="Only collaborators can post ideas."
                 className="inline"
               />
             </p>
-          )}
-        </div>
+          ) : null
+        }
+      />
 
+      <div className="max-w-6xl mx-auto px-4 pb-16 pt-8">
         {/* Grid */}
         {filtered.length === 0 ? (
           <div className="text-center py-20">
@@ -131,13 +108,17 @@ const ResearchIdeas: React.FC = () => {
               <AppIcon name="ideas" size={42} />
             </div>
             <p className="text-gray-400 text-base">
-              <EditableText
-                id="ideas.emptyText"
-                defaultValue={
-                  content["ideas.emptyText"] ?? "No research ideas posted yet."
-                }
-                className="inline"
-              />
+              {ideas.length > 0 ? (
+                <>No ideas match “{search}”.</>
+              ) : (
+                <EditableText
+                  id="ideas.emptyText"
+                  defaultValue={
+                    content["ideas.emptyText"] ?? "No research ideas posted yet."
+                  }
+                  className="inline"
+                />
+              )}
             </p>
           </div>
         ) : (
@@ -213,7 +194,7 @@ const PostIdeaModal: React.FC<PostIdeaModalProps> = ({
   };
 
   const inp = "w-full px-3 py-2.5 text-sm rounded-lg border outline-none";
-  const inpStyle = { borderColor: "#d1d5db", fontFamily: "var(--font-body)" };
+  const inpStyle = { borderColor: "var(--site-border)", fontFamily: "var(--font-body)" };
 
   return (
     <div
@@ -229,7 +210,7 @@ const PostIdeaModal: React.FC<PostIdeaModalProps> = ({
           className="flex items-center justify-between px-6 py-4"
           style={{ background: "var(--color-primary)" }}
         >
-          <h2 className="text-white font-black text-lg">
+          <h2 className="text-[color:var(--hero-text)] font-black text-lg">
             <EditableText
               id="ideas.modalTitle"
               defaultValue="Post a Research Idea"
@@ -339,9 +320,9 @@ const PostIdeaModal: React.FC<PostIdeaModalProps> = ({
               onClick={onClose}
               className="text-sm font-semibold px-5 py-2 rounded-lg border cursor-pointer"
               style={{
-                borderColor: "#d1d5db",
+                borderColor: "var(--site-border)",
                 background: "white",
-                color: "#374151",
+                color: "var(--site-text)",
               }}
             >
               <EditableText
@@ -353,7 +334,7 @@ const PostIdeaModal: React.FC<PostIdeaModalProps> = ({
             <button
               type="submit"
               disabled={submitting}
-              className="text-sm font-bold px-6 py-2 rounded-lg text-white disabled:opacity-60"
+              className="text-sm font-bold px-6 py-2 rounded-lg text-[color:var(--hero-text)] disabled:opacity-60"
               style={{
                 background: "var(--color-primary)",
                 border: "none",

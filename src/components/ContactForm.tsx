@@ -123,7 +123,7 @@ const ContactForm: React.FC = () => {
         >
           Message Sent!
         </h3>
-        <p style={{ color: withAlpha(theme.primaryColor!, 0.7, "#6b7280") }}>
+        <p style={{ color: "var(--site-muted)" }}>
           {content["contact.successMessage"] ??
             "Thank you for reaching out. We'll get back to you soon."}
         </p>
@@ -143,26 +143,12 @@ const ContactForm: React.FC = () => {
     );
   }
 
-  const labelText = withAlpha(theme.primaryColor!, 0.65, "#5f6986");
-  const inputBgLight = withAlpha(theme.primaryColor!, 0.08, "#e7edf6");
-  const inputBgDark = withAlpha(
-    theme.backgroundColor!,
-    0.6,
-    "rgba(20,30,50,0.6)",
-  );
-  const inputBg = isDarkTheme ? inputBgDark : inputBgLight;
+  // Theme Control tokens: labels and fields stay readable in light and dark themes.
+  const labelText = "var(--site-muted)";
+  const inputBg = "var(--site-surface-alt)";
+  const inputBorder = "var(--site-border)";
 
-  const inputBorderLight = withAlpha(theme.primaryColor!, 0.1, "#d4dceb");
-  const inputBorderDark = withAlpha(
-    theme.primaryColor!,
-    0.2,
-    "rgba(100,120,160,0.2)",
-  );
-  const inputBorder = isDarkTheme ? inputBorderDark : inputBorderLight;
-
-  const inputTextLight = withAlpha(theme.primaryColor!, 0.8, "#2f3a5b");
-  const inputTextDark = withAlpha(theme.backgroundColor!, 0.9, "#e5e7eb");
-  const inputText = isDarkTheme ? inputTextDark : inputTextLight;
+  const inputText = "var(--site-heading)";
 
   const shadowLightInset = `inset 6px 6px 10px ${withAlpha(theme.primaryColor!, 0.12, "#c9d1dc")}, inset -6px -6px 10px ${withAlpha(theme.backgroundColor!, 0.95, "#f8feff")}`;
   const shadowDarkInset = `inset 6px 6px 10px ${withAlpha(theme.backgroundColor!, 0.3, "rgba(10,15,30,0.3)")}, inset -6px -6px 10px ${withAlpha(theme.primaryColor!, 0.1, "rgba(80,120,180,0.1)")}`;
@@ -287,9 +273,9 @@ const ContactForm: React.FC = () => {
         disabled={submitting}
         className="font-black py-3 px-8 rounded-2xl text-sm disabled:opacity-60 transition-opacity"
         style={{
-          color: inputText,
-          background: inputBg,
-          border: `1px solid ${inputBorder}`,
+          color: "var(--hero-text)",
+          background: "var(--color-primary)",
+          border: "1px solid transparent",
           boxShadow: buttonShadow,
           cursor: "pointer",
         }}

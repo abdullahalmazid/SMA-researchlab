@@ -1,12 +1,19 @@
+import { MessageCircle } from "lucide-react";
 import React, { useMemo, useState } from "react";
 import type { CollaboratorProfile, CollaboratorPublication, GalleryItem } from "../types";
 import AppIcon, { type AppIconName } from "./AppIcon";
+import PublicationDrawer, { type PublicationDrawerTarget } from "./PublicationDrawer";
 
 interface Props {
   c: CollaboratorProfile;
   linkedPublications: CollaboratorPublication[];
   galleryItems?: GalleryItem[];
   onBack: () => void;
+  /** Id of the shared publication record behind an entry, when there is one —
+   *  that record has a detail page at /publications/:id. */
+  getDetailId?: (publication: CollaboratorPublication) => string | undefined;
+  /** Opens a chat with this person. Passed only for signed-in chat members. */
+  onMessage?: () => void;
 }
 
 /* ------------------------------------------------------------------ *
@@ -104,7 +111,11 @@ const CollaboratorPublicProfile: React.FC<Props> = ({
   linkedPublications,
   galleryItems = [],
   onBack,
+  getDetailId,
+  onMessage,
 }) => {
+  const [openPublication, setOpenPublication] = useState<PublicationDrawerTarget | null>(null);
+
   const mergedPublications = useMemo(() => {
     const all = [...(c.publications ?? []), ...(linkedPublications ?? [])];
     const seen = new Set<string>();
@@ -193,15 +204,28 @@ const CollaboratorPublicProfile: React.FC<Props> = ({
               <p className="mt-1.5 text-[14px] leading-6 text-white/75">{c.affiliation}</p>
             )}
 
-            {c.email && (
-              <div className="mt-6 flex justify-center sm:justify-start">
-                <a
-                  href={`mailto:${c.email}`}
-                  className={`inline-flex min-h-[42px] items-center rounded-xl bg-white px-5 text-sm font-semibold no-underline shadow-lg transition hover:opacity-90 ${FOCUS_ON_HERO}`}
-                  style={{ color: "var(--color-primary)" }}
-                >
-                  Contact {c.name.split(" ")[0]}
-                </a>
+            {(c.email || onMessage) && (
+              <div className="mt-6 flex flex-wrap justify-center gap-2.5 sm:justify-start">
+                {onMessage && (
+                  <button
+                    type="button"
+                    onClick={onMessage}
+                    className={`inline-flex min-h-[42px] items-center gap-2 rounded-xl border-0 px-5 text-sm font-semibold text-[color:var(--on-accent)] shadow-lg transition hover:opacity-90 ${FOCUS_ON_HERO}`}
+                    style={{ background: "var(--color-accent)" }}
+                  >
+                    <MessageCircle size={17} aria-hidden="true" />
+                    Message {c.name.split(" ")[0]}
+                  </button>
+                )}
+                {c.email && (
+                  <a
+                    href={`mailto:${c.email}`}
+                    className={`inline-flex min-h-[42px] items-center rounded-xl bg-white px-5 text-sm font-semibold no-underline shadow-lg transition hover:opacity-90 ${FOCUS_ON_HERO}`}
+                    style={{ color: "var(--color-primary)" }}
+                  >
+                    Contact {c.name.split(" ")[0]}
+                  </a>
+                )}
               </div>
             )}
           </div>
@@ -279,24 +303,19 @@ const CollaboratorPublicProfile: React.FC<Props> = ({
 
                     return (
                       <li key={key}>
-                        {publication.url ? (
-                          <a
-                            href={publication.url}
-                            target="_blank"
-                            rel="noreferrer"
-                            className={`group flex items-start gap-4 rounded-[14px] border border-slate-200 p-4 no-underline transition hover:border-slate-300 hover:shadow-[0_6px_16px_rgba(15,23,42,0.06)] ${FOCUS}`}
-                          >
-                            {body}
-                            <span aria-hidden="true" className="self-center text-sm text-slate-400">
-                              ↗
-                            </span>
-                            <span className="sr-only">(opens in a new tab)</span>
-                          </a>
-                        ) : (
-                          <div className="flex items-start gap-4 rounded-[14px] border border-slate-200 p-4">
-                            {body}
-                          </div>
-                        )}
+                        <button
+                          type="button"
+                          aria-haspopup="dialog"
+                          onClick={() =>
+                            setOpenPublication({ entry: publication, detailId: getDetailId?.(publication) })
+                          }
+                          className={`group flex w-full items-start gap-4 rounded-[14px] border border-slate-200 bg-transparent p-4 text-left transition hover:border-slate-300 hover:shadow-[0_6px_16px_rgba(15,23,42,0.06)] ${FOCUS}`}
+                        >
+                          {body}
+                          <span aria-hidden="true" className="self-center text-sm text-slate-400">
+                            →
+                          </span>
+                        </button>
                       </li>
                     );
                   })}
@@ -406,7 +425,7 @@ const CollaboratorPublicProfile: React.FC<Props> = ({
 
                 <a
                   href={`mailto:${c.email}`}
-                  className={`mt-5 flex min-h-[44px] items-center justify-center rounded-xl px-4 text-sm font-semibold text-white no-underline transition hover:opacity-90 ${FOCUS}`}
+                  className={`mt-5 flex min-h-[44px] items-center justify-center rounded-xl px-4 text-sm font-semibold text-[color:var(--hero-text)] no-underline transition hover:opacity-90 ${FOCUS}`}
                   style={{ background: "var(--color-primary)" }}
                 >
                   Contact researcher
@@ -416,6 +435,8 @@ const CollaboratorPublicProfile: React.FC<Props> = ({
           </aside>
         </div>
       </div>
+
+      <PublicationDrawer target={openPublication} onClose={() => setOpenPublication(null)} />
     </main>
   );
 };

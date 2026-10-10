@@ -1,3 +1,4 @@
+import { MessageCircle } from "lucide-react";
 import React, { memo, useId, useMemo, useState } from "react";
 import type { CollaboratorProfile } from "../types";
 import AppIcon, { type AppIconName } from "./AppIcon";
@@ -19,6 +20,8 @@ export interface CollaboratorCardProps {
    * hiding it until they hover over their own card would be absurd.
    */
   previewMode?: boolean;
+  /** Shown only to signed-in chat members, and never on their own card. */
+  onMessage?: () => void;
 }
 
 /** Empty env var must never match an empty uid, or everyone becomes the PI. */
@@ -49,9 +52,6 @@ const FOCUS =
  */
 const REVEAL =
   "hidden grid-rows-[0fr] transition-[grid-template-rows] duration-300 ease-[cubic-bezier(.32,.72,0,1)] group-hover:grid-rows-[1fr] group-focus-within:grid-rows-[1fr] motion-reduce:transition-none [@media(hover:hover)_and_(pointer:fine)]:grid";
-
-/** Shown only where there's a real pointer. */
-const HOVER_ONLY = "hidden [@media(hover:hover)_and_(pointer:fine)]:block";
 
 /** The default. Hidden once we know the device can hover. */
 const TOUCH_ONLY = "[@media(hover:hover)_and_(pointer:fine)]:hidden";
@@ -89,6 +89,7 @@ const CollaboratorCard: React.FC<CollaboratorCardProps> = ({
   isLabHead,
   priority = false,
   previewMode = false,
+  onMessage,
 }) => {
   /**
    * Tracks *which* photo failed rather than a bare boolean. A plain flag stays
@@ -122,17 +123,29 @@ const CollaboratorCard: React.FC<CollaboratorCardProps> = ({
         onClick ? "cursor-pointer" : ""
       }`}
     >
-      <div className="relative aspect-[4/3] overflow-hidden bg-slate-100">
+      <div className="relative aspect-[4/5] overflow-hidden bg-slate-100">
         {showPhoto ? (
-          <img
-            src={c.photo}
-            alt=""
-            loading={priority ? "eager" : "lazy"}
-            fetchPriority={priority ? "high" : "auto"}
-            decoding="async"
-            onError={() => setFailedPhoto(c.photo ?? null)}
-            className="h-full w-full object-cover transition-transform duration-500 ease-out motion-safe:group-hover:scale-[1.04]"
-          />
+          <>
+            {/* object-contain so the whole photo shows — object-cover cropped
+                heads off portrait shots. A blurred copy fills the spare space. */}
+            <img
+              src={c.photo}
+              alt=""
+              aria-hidden="true"
+              loading={priority ? "eager" : "lazy"}
+              decoding="async"
+              className="absolute inset-0 h-full w-full scale-110 object-cover opacity-60 blur-xl"
+            />
+            <img
+              src={c.photo}
+              alt=""
+              loading={priority ? "eager" : "lazy"}
+              fetchPriority={priority ? "high" : "auto"}
+              decoding="async"
+              onError={() => setFailedPhoto(c.photo ?? null)}
+              className="relative h-full w-full object-contain transition-transform duration-500 ease-out motion-safe:group-hover:scale-[1.03]"
+            />
+          </>
         ) : (
           <div
             aria-hidden="true"
@@ -213,10 +226,19 @@ const CollaboratorCard: React.FC<CollaboratorCardProps> = ({
       </div>
 
       <div className="flex flex-1 flex-col p-4">
-        {c.affiliation && (
+        {/* Affiliation and the open-profile cue share a line, so the cue adds no height. */}
+        {(c.affiliation || (onClick && !onMessage)) && (
           <p className="flex items-center gap-1.5 text-[12px] leading-5 text-slate-500">
-            <AppIcon name="building" size={12} />
-            <span className="line-clamp-1">{c.affiliation}</span>
+            {c.affiliation && <AppIcon name="building" size={12} />}
+            <span className="line-clamp-1 flex-1">{c.affiliation}</span>
+            {onClick && !onMessage && (
+              <span
+                aria-hidden="true"
+                className="shrink-0 text-[12px] font-semibold text-slate-500 transition group-hover:text-slate-900 motion-safe:group-hover:translate-x-0.5"
+              >
+                Profile →
+              </span>
+            )}
           </p>
         )}
 
@@ -254,7 +276,8 @@ const CollaboratorCard: React.FC<CollaboratorCardProps> = ({
 
         {/* mt-auto keeps footers aligned across a grid of uneven cards.
             z-40 puts these above the click overlay so they stay clickable. */}
-        <div className="mt-auto flex items-center gap-1 pt-4">
+        {(socialLinks.length > 0 || onMessage) && (
+        <div className="mt-auto flex items-center gap-1 pt-3">
           {socialLinks.map((link) => (
             <a
               key={link.key}
@@ -269,28 +292,26 @@ const CollaboratorCard: React.FC<CollaboratorCardProps> = ({
             </a>
           ))}
 
-          {onClick && (
-            <span
-              aria-hidden="true"
-              className={`ml-auto text-sm text-slate-400 transition group-hover:text-slate-900 motion-safe:group-hover:translate-x-0.5 ${HOVER_ONLY}`}
+          {onMessage && (
+            <button
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation();
+                onMessage();
+              }}
+              aria-label={`Message ${c.name}`}
+              title={`Message ${c.name}`}
+              className={`relative z-40 ml-auto flex h-9 items-center gap-1.5 rounded-lg px-3 text-[12.5px] font-semibold text-[color:var(--hero-text)] transition hover:opacity-90 ${FOCUS}`}
+              style={{ background: "var(--color-primary)" }}
             >
-              →
-            </span>
+              <MessageCircle size={15} aria-hidden="true" />
+              Message
+            </button>
           )}
-        </div>
 
-        {/* Touch gets a target it can see. Deliberately not a <button>: the
-            overlay below already covers the whole card, and it sits above this
-            in the stack, so a tap here still lands on it. A second real button
-            would just mean the same action announced twice. */}
-        {onClick && (
-          <span
-            aria-hidden="true"
-            className={`mt-3 flex items-center justify-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2.5 text-[11.5px] font-semibold uppercase tracking-[0.1em] text-slate-600 ${TOUCH_ONLY}`}
-          >
-            View profile →
-          </span>
+        </div>
         )}
+
       </div>
 
       {/* The click target. A direct child of <article> at z-30, so it covers the

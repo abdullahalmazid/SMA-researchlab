@@ -25,6 +25,9 @@ const DEFAULT_THEME: ThemeSettings = {
   primaryColor: "#1e3a5f", secondaryColor: "#2563eb", accentColor: "#f59e0b",
   backgroundColor: "#f8fafc", navbarColor: "#1e3a5f", footerColor: "#111827",
   fontFamily: "'Inter', sans-serif", headingFont: "'Inter', sans-serif",
+  // Detail colours: empty means "derive automatically" (src/theme/tokens.ts).
+  surfaceColor: "", surfaceAltColor: "", headingColor: "", textColor: "", mutedColor: "",
+  borderColor: "", navbarTextColor: "", footerTextColor: "", heroTextColor: "", onAccentColor: "", onSecondaryColor: "",
 };
 
 const text = (value: unknown) => typeof value === "string" ? value : "";
@@ -61,8 +64,10 @@ const iso = (value: unknown) => text(value) || new Date(0).toISOString();
 export const normalizePublication = (id: string, raw: Record<string, unknown>): Publication => ({
   id,
   title: text(raw.title) || "Untitled publication",
-  authors: text(raw.authors) || "Author information unavailable",
-  journal: text(raw.journal) || "Publication venue unavailable",
+  // Empty rather than placeholder text: every view already hides an empty
+  // field, while "Publication venue unavailable" rendered as if it were a venue.
+  authors: text(raw.authors),
+  journal: text(raw.journal),
   year: Number(raw.year) || new Date().getFullYear(),
   abstract: text(raw.abstract),
   url: text(raw.url),

@@ -38,27 +38,17 @@ type AnnouncementPost = Announcement & {
   category?: string;
 };
 
-const HOME_ANNOUNCEMENT_LIMIT = 4;
-const ANNOUNCEMENT_NEW_DAYS = 21;
+const HOME_ANNOUNCEMENT_LIMIT = 3;
 
 /** Slowed from 3.5s and 5s. Nobody reads a name, role and affiliation in
  *  three and a half seconds, and the old pace made the card unreadable. */
 const COLLAB_INTERVAL = 7000;
-const GALLERY_INTERVAL = 8000;
 
 function announcementTitle(post: AnnouncementPost): string {
   if (post.title?.trim()) return post.title.trim();
   const first = (post.content || "").split(/(?<=[.!?])\s/)[0]?.trim() ?? "";
   return first.length > 72 ? `${first.slice(0, 70).trimEnd()}…` : first || "Untitled";
 }
-
-const announcementIsNew = (iso: string) => {
-  const date = new Date(iso);
-  return (
-    !Number.isNaN(date.getTime()) &&
-    (Date.now() - date.getTime()) / 86_400_000 < ANNOUNCEMENT_NEW_DAYS
-  );
-};
 
 const prefersReducedMotion = () =>
   typeof window !== "undefined" &&
@@ -149,13 +139,14 @@ const Home: React.FC = () => {
     return 0.2126 * channel(0) + 0.7152 * channel(2) + 0.0722 * channel(4) < 0.22;
   }, [theme.backgroundColor]);
 
-  const sectionTextPrimary = isDarkTheme ? "#e5e7eb" : "#1f2937";
-  const sectionTextSecondary = isDarkTheme ? "#cbd5e1" : "#374151";
-  const sectionTextMuted = isDarkTheme ? "#94a3b8" : "#6b7280";
-  const sectionCardBg = isDarkTheme ? "rgba(15,23,42,0.7)" : "#ffffff";
-  const sectionCardBorder = isDarkTheme ? "rgba(148,163,184,0.22)" : "#e5e7eb";
-  const stripBg = isDarkTheme ? "#0b1220" : "#ffffff";
-  const stripBorder = isDarkTheme ? "rgba(148,163,184,0.2)" : "#e5e7eb";
+  // Theme Control tokens (src/theme/tokens.ts) — already light/dark aware.
+  const sectionTextPrimary = "var(--site-heading)";
+  const sectionTextSecondary = "var(--site-text)";
+  const sectionTextMuted = "var(--site-muted)";
+  const sectionCardBg = "var(--site-surface)";
+  const sectionCardBorder = "var(--site-border)";
+  const stripBg = "var(--site-surface)";
+  const stripBorder = "var(--site-border)";
 
   // The old timeout was never cleared, so unmounting mid-delay left a pending
   // setState on a dead component.
@@ -247,7 +238,7 @@ const Home: React.FC = () => {
           aria-hidden="true"
           className="absolute top-0 right-0 w-96 h-96 opacity-10"
           style={{
-            backgroundImage: "radial-gradient(circle, rgba(255,255,255,0.6) 1px, transparent 1px)",
+            backgroundImage: "radial-gradient(circle, color-mix(in srgb, var(--hero-text) 60%, transparent) 1px, transparent 1px)",
             backgroundSize: "24px 24px",
           }}
         />
@@ -270,14 +261,14 @@ const Home: React.FC = () => {
           >
             <div
               className="inline-flex items-center gap-2 mb-6 px-4 py-1.5 rounded-full border"
-              style={{ borderColor: "rgba(255,255,255,0.2)", background: "rgba(255,255,255,0.06)" }}
+              style={{ borderColor: "color-mix(in srgb, var(--hero-text) 20%, transparent)", background: "color-mix(in srgb, var(--hero-text) 6%, transparent)" }}
             >
               <span
                 aria-hidden="true"
                 className="w-1.5 h-1.5 rounded-full motion-safe:animate-pulse"
                 style={{ background: "var(--color-accent)" }}
               />
-              <span className="text-xs font-bold tracking-widest uppercase" style={{ color: "rgba(255,255,255,0.75)" }}>
+              <span className="text-xs font-bold tracking-widest uppercase" style={{ color: "color-mix(in srgb, var(--hero-text) 75%, transparent)" }}>
                 <EditableText
                   id="home.buetBadge"
                   tag="span"
@@ -300,7 +291,7 @@ const Home: React.FC = () => {
               <EditableText
                 id="home.heroTitle"
                 tag="h1"
-                className="font-black text-white leading-none mb-5"
+                className="font-black text-[color:var(--hero-text)] leading-none mb-5"
                 defaultValue={content["home.heroTitle"] ?? "DASS Research Lounge"}
               />
             </div>
@@ -309,11 +300,16 @@ const Home: React.FC = () => {
               <div className="h-1 w-20 rounded-full" style={{ background: "var(--color-accent)" }} />
             </div>
 
-            <div style={{ color: "rgba(255,255,255,0.8)", maxWidth: 500, margin: "0 auto 2.5rem auto" }}>
+            {/* Centred on mobile, left-aligned with the title on desktop — the old
+                `margin: 0 auto` centred this block even when everything else was left. */}
+            <div
+              className="mx-auto mb-8 max-w-[500px] lg:mx-0"
+              style={{ color: "color-mix(in srgb, var(--hero-text) 80%, transparent)" }}
+            >
               <EditableText
                 id="home.heroSubtitle"
                 tag="p"
-                className="text-base lg:text-lg leading-relaxed mb-10"
+                className="text-base lg:text-lg leading-relaxed"
                 defaultValue={
                   content["home.heroSubtitle"] ?? "Advancing the frontiers of science and technology."
                 }
@@ -326,7 +322,7 @@ const Home: React.FC = () => {
                 className="hm-cta no-underline font-black px-7 py-3.5 rounded-xl text-sm"
                 style={{
                   background: "var(--color-accent)",
-                  color: "#1f2937",
+                  color: "var(--on-accent)",
                   boxShadow: "0 4px 20px rgba(245,158,11,0.35)",
                   letterSpacing: "-0.3px",
                 }}
@@ -341,10 +337,10 @@ const Home: React.FC = () => {
               </Link>
               <Link
                 to="/about"
-                className="hm-cta no-underline font-bold px-7 py-3.5 rounded-xl text-sm text-white"
+                className="hm-cta no-underline font-bold px-7 py-3.5 rounded-xl text-sm text-[color:var(--hero-text)]"
                 style={{
-                  border: "1.5px solid rgba(255,255,255,0.35)",
-                  background: "rgba(255,255,255,0.08)",
+                  border: "1.5px solid color-mix(in srgb, var(--hero-text) 35%, transparent)",
+                  background: "color-mix(in srgb, var(--hero-text) 8%, transparent)",
                   backdropFilter: "blur(4px)",
                 }}
               >
@@ -366,11 +362,11 @@ const Home: React.FC = () => {
               <div
                 className="rounded-2xl overflow-hidden"
                 style={{
-                  background: "rgba(255,255,255,0.07)",
+                  background: "color-mix(in srgb, var(--hero-text) 7%, transparent)",
                   backdropFilter: "blur(20px)",
                   WebkitBackdropFilter: "blur(20px)",
-                  border: "1px solid rgba(255,255,255,0.14)",
-                  boxShadow: "0 20px 60px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.1)",
+                  border: "1px solid color-mix(in srgb, var(--hero-text) 14%, transparent)",
+                  boxShadow: "0 20px 60px rgba(0,0,0,0.4), inset 0 1px 0 color-mix(in srgb, var(--hero-text) 10%, transparent)",
                 }}
               >
                 <div
@@ -385,33 +381,33 @@ const Home: React.FC = () => {
                 <div className="px-6 pb-6 text-center">
                   <div
                     className="inline-block px-3 py-0.5 rounded-full text-xs font-bold mb-2"
-                    style={{ background: "rgba(245,158,11,0.15)", color: "var(--color-accent)" }}
+                    style={{ background: "rgba(245,158,11,0.15)", color: "var(--hero-accent)" }}
                   >
                     <EditableText id="home.labDirectorBadge" tag="span" defaultValue="Lab Director" className="inline" />
                   </div>
 
-                  <h2 className="text-white font-black text-xl leading-tight" style={{ fontFamily: "var(--font-heading)" }}>
+                  <h2 className="text-[color:var(--hero-text)] font-black text-xl leading-tight" style={{ fontFamily: "var(--font-heading)" }}>
                     <EditableText id="labhead.name" tag="span" defaultValue={labHead.name} className="inline" />
                   </h2>
 
                   {labHead.title && (
-                    <p className="text-xs mt-1.5 font-semibold" style={{ color: "rgba(255,255,255,0.7)" }}>
+                    <p className="text-xs mt-1.5 font-semibold" style={{ color: "color-mix(in srgb, var(--hero-text) 70%, transparent)" }}>
                       <EditableText id="labhead.title" tag="span" defaultValue={labHead.title} className="inline" />
                     </p>
                   )}
                   {labHead.department && (
-                    <p className="text-xs mt-0.5" style={{ color: "rgba(255,255,255,0.55)" }}>
+                    <p className="text-xs mt-0.5" style={{ color: "color-mix(in srgb, var(--hero-text) 55%, transparent)" }}>
                       <EditableText id="labhead.department" tag="span" defaultValue={labHead.department} className="inline" />
                     </p>
                   )}
 
-                  <div className="my-4 h-px w-full" style={{ background: "rgba(255,255,255,0.1)" }} />
+                  <div className="my-4 h-px w-full" style={{ background: "color-mix(in srgb, var(--hero-text) 10%, transparent)" }} />
 
                   {labHead.shortBio && (
                     <p
                       className="text-xs leading-relaxed mb-5"
                       style={{
-                        color: "rgba(255,255,255,0.7)",
+                        color: "color-mix(in srgb, var(--hero-text) 70%, transparent)",
                         display: "-webkit-box",
                         WebkitLineClamp: 4,
                         WebkitBoxOrient: "vertical",
@@ -428,7 +424,7 @@ const Home: React.FC = () => {
                     </p>
                   )}
 
-                  {/* These were background:#ffffff with text-white — white icons
+                  {/* These were background:#ffffff with text-[color:var(--hero-text)] — white icons
                       on a white chip, invisible against the glass card. */}
                   {heroLinks.length > 0 && (
                     <div className="flex items-center justify-center gap-2 mb-4">
@@ -452,7 +448,7 @@ const Home: React.FC = () => {
                     className="hm-cta w-full inline-flex items-center justify-center no-underline text-sm font-black py-2.5 rounded-xl"
                     style={{
                       background: "linear-gradient(135deg, var(--color-accent), var(--color-secondary))",
-                      color: "#1f2937",
+                      color: "var(--on-accent)",
                       boxShadow: "0 4px 12px rgba(245,158,11,0.3)",
                     }}
                   >
@@ -472,18 +468,18 @@ const Home: React.FC = () => {
             <div
               key={s.label}
               className="text-center py-6 px-4"
-              style={{ borderRight: i < stats.length - 1 ? "1px solid rgba(255,255,255,0.1)" : "none" }}
+              style={{ borderRight: i < stats.length - 1 ? "1px solid color-mix(in srgb, var(--hero-text) 10%, transparent)" : "none" }}
             >
-              <div className="mb-1 inline-flex text-white/80" aria-hidden="true">
+              <div className="mb-1 inline-flex text-[color:color-mix(in_srgb,var(--hero-text)_80%,transparent)]" aria-hidden="true">
                 <AppIcon name={s.icon} size={20} />
               </div>
               <div
                 className="text-3xl font-black leading-none"
-                style={{ color: "var(--color-accent)", fontFamily: "var(--font-heading)" }}
+                style={{ color: "var(--hero-accent)", fontFamily: "var(--font-heading)" }}
               >
                 {s.value}
               </div>
-              <div className="text-xs mt-1.5 font-medium" style={{ color: "rgba(255,255,255,0.65)", letterSpacing: "0.5px" }}>
+              <div className="text-xs mt-1.5 font-medium" style={{ color: "color-mix(in srgb, var(--hero-text) 65%, transparent)", letterSpacing: "0.5px" }}>
                 {s.label}
               </div>
             </div>
@@ -493,10 +489,10 @@ const Home: React.FC = () => {
 
       {/* ══════════════ ABOUT + ANNOUNCEMENTS ══════════════ */}
       <div
-        className="max-w-7xl mx-auto px-6 lg:px-8 py-20 grid grid-cols-1 lg:grid-cols-3 gap-14"
+        className="max-w-7xl mx-auto px-6 lg:px-8 py-20 grid grid-cols-1 lg:grid-cols-[minmax(0,55fr)_minmax(0,45fr)] gap-14"
         style={{ background: "var(--color-bg)" }}
       >
-        <div className="lg:col-span-2">
+        <div>
           <div className="flex items-center gap-3 mb-2">
             <div className="w-1 h-8 rounded-full" style={{ background: "var(--color-accent)" }} />
             <div style={{ color: sectionTextPrimary, fontFamily: "var(--font-heading)" }}>
@@ -519,33 +515,13 @@ const Home: React.FC = () => {
             />
           </div>
 
-          <div className="flex gap-3 flex-wrap">
-            <Link
-              to="/about"
-              className="hm-cta no-underline font-bold text-sm px-6 py-2.5 rounded-xl text-white"
-              style={{ background: "var(--color-primary)", boxShadow: "0 2px 12px rgba(30,58,95,0.25)" }}
-            >
-              <EditableText id="home.readMore" defaultValue="Read More" className="font-bold text-sm" />
-            </Link>
-            <Link
-              to="/collaborators"
-              className="hm-cta no-underline font-bold text-sm px-6 py-2.5 rounded-xl border-2"
-              style={{
-                color: isDarkTheme ? sectionTextPrimary : "var(--color-primary)",
-                borderColor: isDarkTheme ? "rgba(148,163,184,0.45)" : "var(--color-primary)",
-                background: isDarkTheme ? "rgba(15,23,42,0.4)" : "transparent",
-              }}
-            >
-              <EditableText id="home.meetTheTeam" defaultValue="Meet the Team" className="font-bold text-sm" />
-            </Link>
-            <Link
-              to="/publications"
-              className="hm-cta no-underline font-bold text-sm px-6 py-2.5 rounded-xl"
-              style={{ color: "#1f2937", background: "var(--color-accent)" }}
-            >
-              <EditableText id="home.publicationsCta" defaultValue="Publications →" className="font-bold text-sm" />
-            </Link>
-          </div>
+          <Link
+            to="/about"
+            className="hm-cta inline-block no-underline font-bold text-sm px-6 py-2.5 rounded-xl text-[color:var(--hero-text)]"
+            style={{ background: "var(--color-primary)", boxShadow: "0 2px 12px rgba(30,58,95,0.25)" }}
+          >
+            <EditableText id="home.readMore" defaultValue="Read More" className="font-bold text-sm" />
+          </Link>
         </div>
 
         <div>
@@ -571,10 +547,9 @@ const Home: React.FC = () => {
               </div>
             ) : (
               latestAnnouncements.map((a, idx) => (
-                <Link
+                <article
                   key={a.id}
-                  to={`/announcements?a=${encodeURIComponent(a.id)}`}
-                  className="hm-note no-underline block rounded-xl p-4"
+                  className="hm-note rounded-xl p-4"
                   style={{
                     background: sectionCardBg,
                     border: `1px solid ${sectionCardBorder}`,
@@ -585,31 +560,22 @@ const Home: React.FC = () => {
                     transition: `opacity 0.5s ease ${0.1 + idx * 0.08}s, transform 0.5s ease ${0.1 + idx * 0.08}s`,
                   }}
                 >
-                  <div className="flex items-center gap-2 mb-1.5">
-                    {a.isPinned && (
-                      <span
-                        className="text-[9.5px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded"
-                        style={{ background: "rgba(245,158,11,0.15)", color: "var(--color-accent)" }}
-                      >
-                        Pinned
-                      </span>
-                    )}
-                    {announcementIsNew(a.createdAt) && (
-                      <span
-                        className="text-[9.5px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded"
-                        style={{
-                          background: "color-mix(in srgb, var(--color-secondary) 15%, transparent)",
-                          color: "var(--color-secondary)",
-                        }}
-                      >
-                        New
-                      </span>
-                    )}
-                    <span className="text-xs font-medium ml-auto" style={{ color: sectionTextMuted }}>
+                  {/* Date and the Read button share one line, so the button adds no height.
+                      Pinned shows as the accent edge; the date already says how new it is. */}
+                  <div className="mb-1 flex items-center gap-2">
+                    <span className="text-xs font-medium" style={{ color: sectionTextMuted }}>
+                      {a.isPinned && <span className="sr-only">Pinned. </span>}
                       {new Date(a.createdAt).toLocaleDateString("en-US", {
                         year: "numeric", month: "short", day: "numeric",
                       })}
                     </span>
+                    <Link
+                      to={`/announcements?a=${encodeURIComponent(a.id)}`}
+                      className="hm-read ml-auto no-underline text-[11px] font-bold px-2.5 py-0.5 rounded-lg"
+                      aria-label={`Read: ${announcementTitle(a)}`}
+                    >
+                      Read <span aria-hidden="true">→</span>
+                    </Link>
                   </div>
 
                   <p className="font-bold text-sm leading-snug" style={{ color: sectionTextPrimary, fontFamily: "var(--font-heading)" }}>
@@ -617,7 +583,7 @@ const Home: React.FC = () => {
                   </p>
 
                   <p
-                    className="text-xs mt-1.5 leading-relaxed"
+                    className="text-xs mt-1 leading-relaxed"
                     style={{
                       color: sectionTextSecondary,
                       display: "-webkit-box",
@@ -628,7 +594,7 @@ const Home: React.FC = () => {
                   >
                     {a.content}
                   </p>
-                </Link>
+                </article>
               ))
             )}
 
@@ -649,9 +615,9 @@ const Home: React.FC = () => {
       <div className="border-t border-b" style={{ borderColor: stripBorder, background: stripBg }}>
         <div className="max-w-6xl mx-auto px-6 py-10 grid grid-cols-1 sm:grid-cols-3 gap-6">
           {[
-            { to: "/collaborators", icon: "handshake" as AppIconName, title: "Collaborators", desc: "Meet the researchers behind our work.", color: "var(--color-primary)" },
-            { to: "/publications", icon: "publications" as AppIconName, title: "Publications", desc: "Explore our published and ongoing research.", color: "var(--color-secondary)" },
-            { to: "/research-ideas", icon: "ideas" as AppIconName, title: "Research Ideas", desc: "Discover open research questions and collaborate.", color: "var(--color-accent)" },
+            { to: "/collaborators", icon: "handshake" as AppIconName, title: "Collaborators", desc: "Meet the researchers behind our work.", color: "var(--color-primary)", ink: "var(--primary-ink)" },
+            { to: "/publications", icon: "publications" as AppIconName, title: "Publications", desc: "Explore our published and ongoing research.", color: "var(--color-secondary)", ink: "var(--secondary-ink)" },
+            { to: "/research-ideas", icon: "ideas" as AppIconName, title: "Research Ideas", desc: "Discover open research questions and collaborate.", color: "var(--color-accent)", ink: "var(--accent-ink)" },
           ].map((item) => (
             /* Hover is CSS now, not onMouseEnter style mutation — so it also
                responds to keyboard focus and respects reduced motion. */
@@ -663,12 +629,12 @@ const Home: React.FC = () => {
             >
               <span
                 className="w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0"
-                style={{ background: `color-mix(in srgb, ${item.color} 12%, transparent)`, color: item.color }}
+                style={{ background: `color-mix(in srgb, ${item.color} 12%, transparent)`, color: item.ink }}
               >
                 <AppIcon name={item.icon} size={20} />
               </span>
               <span>
-                <span className="block font-black text-sm" style={{ color: item.color }}>{item.title}</span>
+                <span className="block font-black text-sm" style={{ color: item.ink }}>{item.title}</span>
                 <span className="block text-xs mt-0.5 leading-relaxed" style={{ color: sectionTextMuted }}>{item.desc}</span>
               </span>
             </Link>
@@ -676,305 +642,224 @@ const Home: React.FC = () => {
         </div>
       </div>
 
-      {(collaborators.length > 0 || gallery.length > 0) && (
-        <TeamAndGallery collaborators={collaborators} gallery={gallery} isDarkTheme={isDarkTheme} />
-      )}
+      {collaborators.length > 0 && <TeamSection collaborators={collaborators} isDarkTheme={isDarkTheme} />}
+      {gallery.length > 0 && <GallerySection gallery={gallery} isDarkTheme={isDarkTheme} />}
     </div>
   );
 };
 
 // ══════════════════════════════════════════════════════════════
-// TEAM + GALLERY
+// TEAM + GALLERY — two separate sections
 // ══════════════════════════════════════════════════════════════
-const TeamAndGallery: React.FC<{
-  collaborators: CollaboratorProfile[];
-  gallery: GalleryItem[];
-  isDarkTheme: boolean;
-}> = ({ collaborators, gallery, isDarkTheme }) => {
-  const collabs = useCarousel(collaborators.length, COLLAB_INTERVAL);
-  const shots = useCarousel(gallery.length, GALLERY_INTERVAL);
-  const [imgErr, setImgErr] = useState<Record<number, boolean>>({});
+const TEAM_PER_PAGE = 3;
+const MOSAIC_LIMIT = 7;
 
-  // Clamped by useCarousel, so these can't be undefined while the array is
-  // non-empty — which is what used to crash when an admin deleted a record.
-  const collab = collaborators[collabs.index];
-  const shot = gallery[shots.index];
+const sectionTokens = (isDarkTheme: boolean) => ({
+  // Section titles use the brand primary on light pages; on dark pages the
+  // primary is usually too dark to read, so they fall back to the heading token.
+  headingText: isDarkTheme ? "var(--site-heading)" : "var(--color-primary)",
+  softText: "var(--site-text)",
+  mutedText: "var(--site-muted)",
+  sectionBorder: "var(--site-border)",
+  cardBg: "var(--site-surface)",
+  cardBorder: "var(--site-border)",
+});
 
-  const headingText = isDarkTheme ? "#e5e7eb" : "var(--color-primary)";
-  const softText = isDarkTheme ? "#cbd5e1" : "#4b5563";
-  const mutedText = isDarkTheme ? "#94a3b8" : "#6b7280";
-  const sectionBorder = isDarkTheme ? "rgba(148,163,184,0.2)" : "#f0f0f0";
-  const cardBg = isDarkTheme
-    ? "linear-gradient(160deg, rgba(15,23,42,0.95) 60%, rgba(17,24,39,0.95) 100%)"
-    : "linear-gradient(160deg, rgba(255,255,255,0.97) 60%, rgba(235,240,255,0.95) 100%)";
+const SectionHeader: React.FC<{
+  id: string;
+  defaultValue: string;
+  color: string;
+  children?: React.ReactNode;
+}> = ({ id, defaultValue, color, children }) => (
+  <div className="flex items-center justify-between gap-4 mb-8">
+    <div className="flex items-center gap-3">
+      <div
+        className="w-1 h-8 rounded-full"
+        style={{ background: "linear-gradient(180deg, var(--color-accent), var(--color-secondary))" }}
+      />
+      <h2 className="font-black text-2xl" style={{ color, fontFamily: "var(--font-heading)" }}>
+        <EditableText id={id} tag="span" defaultValue={defaultValue} className="inline" />
+      </h2>
+    </div>
+    {children && <div className="flex items-center gap-2">{children}</div>}
+  </div>
+);
 
-  const CARD_HEIGHT = 420;
+// ── Team: three members in a row, paged ──────────────────────
+const TeamSection: React.FC<{ collaborators: CollaboratorProfile[]; isDarkTheme: boolean }> = ({
+  collaborators,
+  isDarkTheme,
+}) => {
+  const t = sectionTokens(isDarkTheme);
+  const pageCount = Math.ceil(collaborators.length / TEAM_PER_PAGE);
+  const pages = useCarousel(pageCount, COLLAB_INTERVAL);
+  const visibleMembers = collaborators.slice(
+    pages.index * TEAM_PER_PAGE,
+    pages.index * TEAM_PER_PAGE + TEAM_PER_PAGE,
+  );
 
   return (
     <section
-      style={{ background: "var(--color-bg)", borderTop: `1px solid ${sectionBorder}` }}
       className="py-16 px-6"
+      style={{ background: "var(--color-bg)", borderTop: `1px solid ${t.sectionBorder}` }}
+      onMouseEnter={() => pages.setPaused(true)}
+      onMouseLeave={() => pages.setPaused(prefersReducedMotion())}
+      onFocusCapture={() => pages.setPaused(true)}
     >
       <div className="max-w-6xl mx-auto">
-        <div className="flex items-center gap-3 mb-10">
-          <div
-            className="w-1 h-8 rounded-full"
-            style={{ background: "linear-gradient(180deg, var(--color-accent), var(--color-secondary))" }}
-          />
-          <div>
-            <h2 className="font-black text-2xl" style={{ color: headingText, fontFamily: "var(--font-heading)" }}>
-              <EditableText id="home.teamGalleryHeader" tag="span" defaultValue="Our Team & Gallery" className="inline" />
-            </h2>
-            <div
-              className="h-0.5 mt-1 rounded-full"
-              style={{
-                width: "60%",
-                background: "linear-gradient(90deg, var(--color-accent), var(--color-navbar), transparent)",
-              }}
-            />
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* ── LEFT: Collaborator ── */}
-          {collaborators.length > 0 && collab && (
-            <div
-              className="flex flex-col"
-              onMouseEnter={() => collabs.setPaused(true)}
-              onMouseLeave={() => collabs.setPaused(prefersReducedMotion())}
-              onFocusCapture={() => collabs.setPaused(true)}
-            >
-              <div className="flex items-center justify-between mb-4">
-                <p className="text-sm font-bold" style={{ color: headingText }}>
-                  <EditableText id="home.ourCollaboratorsHeader" defaultValue="✦ Our Collaborators" className="text-sm font-bold" />
-                </p>
-                <div className="flex gap-2">
-                  {collaborators.length > 1 && (
-                    <PauseButton
-                      paused={collabs.paused}
-                      onToggle={() => collabs.setPaused((p) => !p)}
-                      label="collaborator slideshow"
-                    />
-                  )}
-                  <button type="button" onClick={collabs.prev} disabled={collaborators.length < 2} className="hm-ctrl" aria-label="Previous collaborator">‹</button>
-                  <button type="button" onClick={collabs.next} disabled={collaborators.length < 2} className="hm-ctrl" aria-label="Next collaborator">›</button>
-                </div>
-              </div>
-
-              <div className="rotating-border" style={{ borderRadius: "1.25rem", padding: 3, height: CARD_HEIGHT }}>
-                <Link
-                  to="/collaborators"
-                  className="hm-slide no-underline flex flex-col items-center justify-center text-center"
-                  style={{
-                    borderRadius: "calc(1.25rem - 3px)",
-                    height: "100%",
-                    overflow: "hidden",
-                    background: cardBg,
-                    boxShadow: "0 4px 24px rgba(0,0,0,0.07)",
-                    backdropFilter: "blur(8px)",
-                  }}
-                >
-                  <div
-                    className="w-full h-1.5 flex-shrink-0"
-                    style={{ background: "linear-gradient(90deg, var(--color-accent), var(--color-primary))" }}
-                  />
-
-                  <div className="flex flex-col items-center justify-center flex-1 px-8 py-8">
-                    <div
-                      style={{
-                        borderRadius: "8%",
-                        padding: 3,
-                        display: "inline-block",
-                        background: "linear-gradient(135deg, var(--color-accent), var(--color-navbar))",
-                        boxShadow: "0 0 24px rgba(99,102,241,0.25), 0 0 48px rgba(99,102,241,0.1)",
-                      }}
-                    >
-                      <div style={{ borderRadius: "8%", overflow: "hidden", lineHeight: 0 }}>
-                        <CollabAvatar photo={collab.photo ?? ""} name={collab.name} size={180} />
-                      </div>
-                    </div>
-
-                    <h3 className="font-black text-xl mt-5 leading-tight" style={{ color: headingText }}>
-                      {collab.name}
-                    </h3>
-
-                    {collab.designation && (
-                      <p
-                        className="text-sm font-semibold mt-2 px-4 py-1 rounded-full"
-                        style={{
-                          color: "white",
-                          background: "linear-gradient(90deg, var(--color-accent), var(--color-navbar))",
-                          boxShadow: "0 2px 10px rgba(99,102,241,0.3)",
-                        }}
-                      >
-                        {collab.designation}
-                      </p>
-                    )}
-
-                    {collab.affiliation && (
-                      <p className="text-sm mt-2 font-medium inline-flex items-center gap-1.5" style={{ color: mutedText }}>
-                        <AppIcon name="building" size={14} /> {collab.affiliation}
-                      </p>
-                    )}
-
-                    {/* Was collab.shortBio — a field CollaboratorProfile does not
-                        have, so the bio never rendered. It is `bio`. */}
-                    {collab.bio && (
-                      <p
-                        className="text-xs mt-4 leading-relaxed"
-                        style={{
-                          color: softText,
-                          display: "-webkit-box",
-                          WebkitLineClamp: 3,
-                          WebkitBoxOrient: "vertical",
-                          overflow: "hidden",
-                          maxWidth: 280,
-                        }}
-                      >
-                        {collab.bio}
-                      </p>
-                    )}
-
-                    <div
-                      className="mt-5 px-4 py-1 rounded-full text-xs font-bold"
-                      style={{
-                        background: "rgba(99,102,241,0.08)",
-                        color: "var(--color-accent)",
-                        border: "1px solid rgba(99,102,241,0.2)",
-                      }}
-                    >
-                      {collabs.index + 1} / {collaborators.length}
-                    </div>
-                  </div>
-                </Link>
-              </div>
-
-              <div className="text-center mt-3">
-                <Link
-                  to="/collaborators"
-                  className="hm-pill no-underline text-xs font-bold px-4 py-1.5 rounded-full"
-                >
-                  <EditableText
-                    id="home.viewAllCollaborators"
-                    defaultValue={`View all ${collaborators.length} collaborators →`}
-                    className="font-bold text-xs"
-                  />
-                </Link>
-              </div>
-            </div>
+        <SectionHeader id="home.teamHeader" defaultValue="Our Team" color={t.headingText}>
+          {pageCount > 1 && (
+            <>
+              <PauseButton paused={pages.paused} onToggle={() => pages.setPaused((p) => !p)} label="team slideshow" />
+              <button type="button" onClick={pages.prev} className="hm-ctrl" aria-label="Previous team members">‹</button>
+              <button type="button" onClick={pages.next} className="hm-ctrl" aria-label="Next team members">›</button>
+            </>
           )}
+        </SectionHeader>
 
-          {/* ── RIGHT: Gallery ── */}
-          {gallery.length > 0 && shot && (
-            <div
-              className="flex flex-col"
-              onMouseEnter={() => shots.setPaused(true)}
-              onMouseLeave={() => shots.setPaused(prefersReducedMotion())}
-              onFocusCapture={() => shots.setPaused(true)}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+          {visibleMembers.map((member) => (
+            <Link
+              key={member.uid ?? member.name}
+              to={member.uid ? `/collaborators/${member.uid}` : "/collaborators"}
+              className="hm-slide no-underline flex flex-col items-center text-center rounded-2xl overflow-hidden"
+              style={{
+                background: t.cardBg,
+                border: `1px solid ${t.cardBorder}`,
+                boxShadow: "0 4px 24px rgba(0,0,0,0.06)",
+              }}
             >
-              <div className="flex items-center justify-between mb-4">
-                <p className="text-sm font-bold" style={{ color: headingText }}>
-                  <EditableText id="home.galleryHeader" defaultValue="✦ Gallery" className="text-sm font-bold" />
-                </p>
-                <div className="flex items-center gap-2">
-                  {gallery.length > 1 && (
-                    <PauseButton paused={shots.paused} onToggle={() => shots.setPaused((p) => !p)} label="gallery slideshow" />
-                  )}
-                  <button type="button" onClick={shots.prev} disabled={gallery.length < 2} className="hm-ctrl" aria-label="Previous image">‹</button>
-                  <button type="button" onClick={shots.next} disabled={gallery.length < 2} className="hm-ctrl" aria-label="Next image">›</button>
-                  <Link to="/gallery" className="hm-ctrl hm-ctrl-wide no-underline">
-                    <EditableText id="home.galleryAllCta" defaultValue="All →" className="text-xs font-bold" />
-                  </Link>
-                </div>
-              </div>
+              <div
+                className="w-full h-1.5 flex-shrink-0"
+                style={{ background: "linear-gradient(90deg, var(--color-accent), var(--color-primary))" }}
+              />
+              <div className="flex flex-col items-center flex-1 px-6 py-7">
+                <CollabAvatar photo={member.photo ?? ""} name={member.name} size={132} />
 
-              <div className="rotating-border" style={{ borderRadius: "1.25rem", padding: 3, height: CARD_HEIGHT }}>
-                <div className="relative w-full h-full overflow-hidden" style={{ borderRadius: "calc(1.25rem - 3px)" }}>
-                  {shot.imageUrl && !imgErr[shots.index] ? (
-                    <img
-                      key={shots.index}
-                      src={shot.imageUrl}
-                      alt={shot.title}
-                      loading="lazy"
-                      onError={() => setImgErr((e) => ({ ...e, [shots.index]: true }))}
-                      className="ken-burns w-full h-full object-cover"
-                    />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center" style={{ background: "#f3f4f6" }}>
-                      <AppIcon name="gallery" size={42} />
-                    </div>
-                  )}
+                <h3 className="font-black text-lg mt-4 leading-tight" style={{ color: t.headingText }}>
+                  {member.name}
+                </h3>
 
-                  <div
-                    aria-hidden="true"
-                    className="absolute inset-0"
+                {member.designation && (
+                  <p
+                    className="text-xs font-semibold mt-2 px-3 py-1 rounded-full"
                     style={{
-                      background: "linear-gradient(to top, rgba(0,0,0,0.80) 0%, rgba(0,0,0,0.2) 50%, transparent 100%)",
-                      zIndex: 1,
-                    }}
-                  />
-                  <div
-                    aria-hidden="true"
-                    className="absolute inset-x-0 top-0"
-                    style={{ height: 80, background: "linear-gradient(to bottom, rgba(0,0,0,0.35), transparent)", zIndex: 1 }}
-                  />
-
-                  <div className="absolute bottom-0 left-0 right-0 px-6 pb-5 pt-8" style={{ zIndex: 2 }}>
-                    <h3 className="text-white font-black text-lg leading-tight mb-1 drop-shadow">{shot.title}</h3>
-                    {shot.description && (
-                      <p
-                        className="text-xs mt-1"
-                        style={{
-                          color: "rgba(255,255,255,0.8)",
-                          display: "-webkit-box",
-                          WebkitLineClamp: 2,
-                          WebkitBoxOrient: "vertical",
-                          overflow: "hidden",
-                        }}
-                      >
-                        {shot.description}
-                      </p>
-                    )}
-                  </div>
-
-                  <div
-                    className="absolute top-4 right-4 text-xs font-bold px-3 py-1 rounded-full"
-                    style={{
-                      background: "linear-gradient(135deg, var(--color-accent), var(--color-secondary))",
-                      color: "white",
-                      boxShadow: "0 2px 10px rgba(0,0,0,0.3)",
-                      zIndex: 2,
+                      color: "var(--on-accent)",
+                      background: "var(--color-accent)",
                     }}
                   >
-                    {shots.index + 1} / {gallery.length}
-                  </div>
-                </div>
-              </div>
+                    {member.designation}
+                  </p>
+                )}
 
-              {gallery.length > 1 && gallery.length <= 20 && (
-                <div className="flex justify-center gap-1.5 mt-3">
-                  {gallery.map((item, i) => (
-                    <button
-                      key={item.id ?? i}
-                      type="button"
-                      onClick={() => shots.setIndex(i)}
-                      className="hm-dot"
-                      aria-label={`Go to image ${i + 1}`}
-                      aria-current={i === shots.index}
-                      style={{
-                        width: i === shots.index ? 24 : 8,
-                        background:
-                          i === shots.index
-                            ? "linear-gradient(90deg, var(--color-accent), var(--color-secondary))"
-                            : "#cbd5e1",
-                        boxShadow: i === shots.index ? "0 0 8px rgba(99,102,241,0.5)" : "none",
-                      }}
-                    />
-                  ))}
-                </div>
-              )}
+                {member.affiliation && (
+                  <p className="text-xs mt-2 font-medium inline-flex items-center gap-1.5" style={{ color: t.mutedText }}>
+                    <AppIcon name="building" size={13} /> {member.affiliation}
+                  </p>
+                )}
+
+                {member.bio && (
+                  <p
+                    className="text-xs mt-3 leading-relaxed"
+                    style={{
+                      color: t.softText,
+                      display: "-webkit-box",
+                      WebkitLineClamp: 3,
+                      WebkitBoxOrient: "vertical",
+                      overflow: "hidden",
+                    }}
+                  >
+                    {member.bio}
+                  </p>
+                )}
+              </div>
+            </Link>
+          ))}
+        </div>
+
+        <div className="flex flex-col items-center gap-3 mt-6">
+          {pageCount > 1 && pageCount <= 20 && (
+            <div className="flex justify-center gap-1.5">
+              {Array.from({ length: pageCount }, (_, i) => (
+                <button
+                  key={i}
+                  type="button"
+                  onClick={() => pages.setIndex(i)}
+                  className="hm-dot"
+                  aria-label={`Show team page ${i + 1}`}
+                  aria-current={i === pages.index}
+                  style={{
+                    width: i === pages.index ? 24 : 8,
+                    background:
+                      i === pages.index
+                        ? "linear-gradient(90deg, var(--color-accent), var(--color-secondary))"
+                        : "#cbd5e1",
+                  }}
+                />
+              ))}
             </div>
           )}
+          <Link to="/collaborators" className="hm-pill no-underline text-xs font-bold px-4 py-1.5 rounded-full">
+            <EditableText
+              id="home.viewAllCollaborators"
+              defaultValue={`View all ${collaborators.length} members →`}
+              className="font-bold text-xs"
+            />
+          </Link>
+        </div>
+      </div>
+    </section>
+  );
+};
+
+// ── Gallery: mosaic grid ──────────────────────────────────────
+const GallerySection: React.FC<{ gallery: GalleryItem[]; isDarkTheme: boolean }> = ({ gallery, isDarkTheme }) => {
+  const t = sectionTokens(isDarkTheme);
+  const [imgErr, setImgErr] = useState<Record<string, boolean>>({});
+  const tiles = gallery.slice(0, MOSAIC_LIMIT);
+
+  return (
+    <section
+      className="py-16 px-6"
+      style={{ background: "var(--color-bg)", borderTop: `1px solid ${t.sectionBorder}` }}
+    >
+      <div className="max-w-6xl mx-auto">
+        <SectionHeader id="home.galleryHeader" defaultValue="Gallery" color={t.headingText}>
+          <Link to="/gallery" className="hm-ctrl hm-ctrl-wide no-underline">
+            <EditableText id="home.galleryAllCta" defaultValue="View all →" className="text-xs font-bold" />
+          </Link>
+        </SectionHeader>
+
+        <div className="hm-mosaic">
+          {tiles.map((shot, i) => {
+            const key = shot.id ?? String(i);
+            return (
+              <Link
+                key={key}
+                to="/gallery"
+                className={`hm-tile hm-tile-${i} no-underline`}
+                aria-label={shot.title || "Open gallery"}
+              >
+                {shot.imageUrl && !imgErr[key] ? (
+                  <img
+                    src={shot.imageUrl}
+                    alt=""
+                    loading="lazy"
+                    onError={() => setImgErr((e) => ({ ...e, [key]: true }))}
+                  />
+                ) : (
+                  <span className="hm-tile-empty">
+                    <AppIcon name="gallery" size={32} />
+                  </span>
+                )}
+                {shot.title && (
+                  <span className="hm-tile-caption">
+                    <span className="block font-bold text-sm leading-tight">{shot.title}</span>
+                  </span>
+                )}
+              </Link>
+            );
+          })}
         </div>
       </div>
     </section>
@@ -1003,7 +888,7 @@ const CollabAvatar: React.FC<{ photo: string; name: string; size: number }> = ({
   return (
     <div
       aria-hidden="true"
-      className="flex items-center justify-center text-white font-black"
+      className="flex items-center justify-center text-[color:var(--on-secondary)] font-black"
       style={{
         width: size, height: size, borderRadius: "8%",
         background: "var(--color-secondary)", fontSize: size * 0.3,
@@ -1047,7 +932,7 @@ const LabHeadAvatar: React.FC<{
   return (
     <div
       aria-hidden="true"
-      className="flex items-center justify-center text-white font-black"
+      className="flex items-center justify-center text-[color:var(--on-secondary)] font-black"
       style={{
         width: size, height: size, borderRadius,
         background: "var(--color-secondary)",
@@ -1073,10 +958,10 @@ const CSS = `
 @media (prefers-reduced-motion:no-preference){.hm-cta:hover{transform:translateY(-2px)}}
 
 .hm-social{display:grid;place-items:center;width:34px;height:34px;border-radius:9px;
-  color:#fff;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.22);
+  color:var(--hero-text);background:color-mix(in srgb,var(--hero-text) 12%,transparent);border:1px solid color-mix(in srgb,var(--hero-text) 22%,transparent);
   transition:background .2s ease,transform .2s ease}
-.hm-social:hover{background:rgba(255,255,255,.24)}
-.hm-social:focus-visible{outline:2px solid #fff;outline-offset:2px}
+.hm-social:hover{background:color-mix(in srgb,var(--hero-text) 24%,transparent)}
+.hm-social:focus-visible{outline:2px solid var(--hero-text);outline-offset:2px}
 @media (prefers-reduced-motion:no-preference){.hm-social:hover{transform:translateY(-2px)}}
 
 .hm-note{transition:transform .2s ease,box-shadow .2s ease}
@@ -1089,8 +974,8 @@ const CSS = `
 @media (prefers-reduced-motion:no-preference){.hm-quick:hover{transform:translateY(-2px)}}
 
 .hm-ctrl{display:grid;place-items:center;width:34px;height:34px;border:0;border-radius:9px;
-  font-size:16px;font-weight:700;line-height:1;color:#fff;cursor:pointer;
-  background:linear-gradient(135deg,var(--color-accent),var(--color-navbar));
+  font-size:16px;font-weight:700;line-height:1;color:var(--on-accent);cursor:pointer;
+  background:var(--color-accent);
   box-shadow:0 2px 8px rgba(0,0,0,.15);transition:filter .2s ease}
 .hm-ctrl:hover{filter:brightness(1.1)}
 .hm-ctrl:disabled{opacity:.4;cursor:not-allowed}
@@ -1105,12 +990,36 @@ const CSS = `
 
 .hm-pill{color:var(--color-secondary);border:1px solid var(--color-secondary);
   transition:background .2s ease,color .2s ease}
-.hm-pill:hover{background:var(--color-secondary);color:#fff}
+.hm-pill:hover{background:var(--color-secondary);color:var(--on-secondary)}
 .hm-pill:focus-visible{outline:2px solid var(--color-secondary);outline-offset:2px}
 
 .hm-dot{height:8px;padding:0;border:0;border-radius:99px;cursor:pointer;
   transition:width .25s ease,background .25s ease}
 .hm-dot:focus-visible{outline:2px solid var(--color-secondary);outline-offset:3px}
+
+.hm-read{color:var(--color-secondary);border:1px solid var(--color-secondary);
+  transition:background .2s ease,color .2s ease}
+.hm-read:hover{background:var(--color-secondary);color:var(--on-secondary)}
+.hm-read:focus-visible{outline:2px solid var(--color-secondary);outline-offset:2px}
+
+.hm-mosaic{display:grid;grid-template-columns:repeat(2,1fr);grid-auto-rows:150px;
+  grid-auto-flow:dense;gap:10px}
+@media (min-width:768px){
+  .hm-mosaic{grid-template-columns:repeat(4,1fr);grid-auto-rows:170px;gap:12px}
+  .hm-tile-0{grid-column:span 2;grid-row:span 2}
+  .hm-tile-3{grid-row:span 2}
+  .hm-tile-5{grid-column:span 2}
+}
+.hm-tile{position:relative;display:block;overflow:hidden;border-radius:14px;
+  background:#e5e7eb;box-shadow:0 2px 12px rgba(0,0,0,.08)}
+.hm-tile img{width:100%;height:100%;object-fit:cover;display:block;transition:transform .5s ease}
+.hm-tile-empty{display:grid;place-items:center;width:100%;height:100%;color:var(--site-muted)}
+.hm-tile-caption{position:absolute;inset:auto 0 0 0;padding:28px 12px 10px;color:#fff;
+  background:linear-gradient(to top,rgba(0,0,0,.75),transparent);opacity:0;transition:opacity .3s ease}
+.hm-tile:hover .hm-tile-caption,.hm-tile:focus-visible .hm-tile-caption{opacity:1}
+.hm-tile:focus-visible{outline:2px solid var(--color-secondary);outline-offset:3px}
+@media (hover:none){.hm-tile-caption{opacity:1}}
+@media (prefers-reduced-motion:no-preference){.hm-tile:hover img{transform:scale(1.05)}}
 `;
 
 export default Home;

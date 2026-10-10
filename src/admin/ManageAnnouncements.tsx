@@ -7,7 +7,7 @@ import {
   orderBy,
   query,
   updateDoc,
-} from "firebase/firestore";
+} from "./core/auditedFirestore";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import AppIcon from "../components/AppIcon";
 import { db } from "../firebase/config";
@@ -647,7 +647,7 @@ const ManageAnnouncements: React.FC = () => {
             {/* The form can't otherwise tell you which field lands where: the
                 summary is the list, the full text is the panel behind it. */}
             <div>
-              <div className="sticky top-6">
+              <div className="admin-preview sticky top-6">
                 <div className="mb-3 flex items-center gap-2">
                   <h4 className="text-[13px] font-bold text-slate-700">Preview</h4>
                   <div className="ml-auto flex gap-1 rounded-lg bg-slate-100 p-0.5">

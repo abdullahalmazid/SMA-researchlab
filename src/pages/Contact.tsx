@@ -2,6 +2,7 @@ import React from "react";
 import AppIcon, { type AppIconName } from "../components/AppIcon";
 import ContactForm from "../components/ContactForm";
 import EditableText from "../components/EditableText";
+import PageHero from "../components/PageHero";
 import { useThemeContext } from "../context/ThemeContext";
 import { useSiteContent } from "../firebase/hooks";
 
@@ -36,21 +37,13 @@ const Contact: React.FC = () => {
     return luminance < 140;
   }, [theme.backgroundColor]);
 
-  const headingText = isDarkTheme
-    ? withAlpha(theme.backgroundColor!, 1, "var(--color-primary)")
-    : "var(--color-primary)";
-  const bodyText = isDarkTheme
-    ? withAlpha(theme.primaryColor!, 0.8, "#cbd5e1")
-    : withAlpha(theme.primaryColor!, 0.7, "#374151");
-  const mutedText = isDarkTheme
-    ? withAlpha(theme.primaryColor!, 0.6, "#94a3b8")
-    : withAlpha(theme.primaryColor!, 0.6, "#9ca3af");
-  const cardBg = isDarkTheme
-    ? withAlpha(theme.backgroundColor!, 0.7, "rgba(15,23,42,0.7)")
-    : "var(--color-bg)";
-  const cardBorder = isDarkTheme
-    ? withAlpha(theme.primaryColor!, 0.22, "rgba(148,163,184,0.22)")
-    : withAlpha(theme.primaryColor!, 0.1, "#e5e7eb");
+  // Theme Control tokens. (The dark heading used to be the page background
+  // colour itself, which made it invisible.)
+  const headingText = isDarkTheme ? "var(--site-heading)" : "var(--color-primary)";
+  const bodyText = "var(--site-text)";
+  const mutedText = "var(--site-muted)";
+  const cardBg = "var(--site-surface)";
+  const cardBorder = "var(--site-border)";
 
   const neuroBgLight = withAlpha(theme.primaryColor!, 0.08, "#e7edf6");
   const neuroBgDark = withAlpha(theme.backgroundColor!, 1, "#182438");
@@ -64,6 +57,22 @@ const Contact: React.FC = () => {
   const mapSearchUrl = addressValue
     ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(addressValue)}`
     : "";
+
+  const contactItems = [
+    { icon: "location" as AppIconName, label: "Address", value: addressValue, href: undefined as string | undefined },
+    {
+      icon: "contact" as AppIconName,
+      label: "Email",
+      value: content["contact.email"],
+      href: content["contact.email"] ? `mailto:${content["contact.email"]}` : undefined,
+    },
+    {
+      icon: "phone" as AppIconName,
+      label: "Phone",
+      value: content["contact.phone"],
+      href: content["contact.phone"] ? `tel:${content["contact.phone"]}` : undefined,
+    },
+  ].filter((item) => item.value);
 
   if (loading)
     return (
@@ -81,46 +90,29 @@ const Contact: React.FC = () => {
   return (
     <div style={{ background: "var(--color-bg)" }}>
       {/* Hero */}
-      <section
-        className="relative min-h-[320px] overflow-hidden py-20 text-center px-4 flex items-center justify-center"
-        style={{ background: "var(--color-primary)" }}
-      >
-        {content["contact.bannerUrl"] && (
-          <img
-            src={content["contact.bannerUrl"]}
-            alt=""
-            className="absolute inset-0 w-full h-full object-cover"
-            style={{ filter: "brightness(0.45)" }}
+      <PageHero
+        bannerUrl={content["contact.bannerUrl"]}
+        eyebrow={<EditableText id="contact.form.directContact" defaultValue="Direct Contact" className="inline" />}
+        title={
+          <EditableText
+            id="contact.pageTitle"
+            defaultValue={content["contact.pageTitle"] ?? "Contact Us"}
+            className="inline"
           />
-        )}
-        <div className="relative z-10">
-          <h1
-            className="font-black text-white mb-4"
-            style={{
-              fontSize: "clamp(2rem,4vw,3rem)",
-              fontFamily: "var(--font-heading)",
-            }}
-          >
-            <EditableText id="contact.pageTitle" defaultValue={content["contact.pageTitle"] ?? "Contact Us"} />
-          </h1>
-          <span
-            className="text-xs font-black uppercase tracking-[0.15em]"
-            style={{ color: mutedText }}
-          >
-            <EditableText id="contact.form.directContact" defaultValue="Direct Contact" />
-          </span>
-          <p className="text-sm mt-2" style={{ color: bodyText }}>
-            <EditableText id="contact.form.sendQuery" defaultValue="Send your query and we will respond soon." />
-          </p>
-          <p className="text-xs mt-4" style={{ color: mutedText }}>
-            <EditableText id="contact.map.findus" defaultValue="Find us on the map" />
-          </p>
-        </div>
-      </section>
+        }
+        subtitle={
+          <EditableText
+            id="contact.form.sendQuery"
+            defaultValue="Send your query and we will respond soon."
+            className="inline"
+          />
+        }
+      />
 
       <div className="max-w-6xl mx-auto px-4 py-16 grid grid-cols-1 lg:grid-cols-5 gap-12">
-        {/* Contact Info */}
-        <div className="lg:col-span-2 flex flex-col gap-6">
+        {/* Contact Info — one card: icon, label and value per row. Icons sit on a
+            light tint of the primary colour so they're always visible. */}
+        <div className="lg:col-span-2 flex flex-col gap-4">
           <h2
             className="font-black text-xl"
             style={{
@@ -131,129 +123,92 @@ const Contact: React.FC = () => {
             <EditableText id="contact.getInTouch" defaultValue="Get In Touch" />
           </h2>
 
-          {[
-            {
-              icon: "location" as AppIconName,
-              label: "Address",
-              value: addressValue,
-            },
-            {
-              icon: "contact" as AppIconName,
-              label: "Email",
-              value: content["contact.email"],
-              href: content["contact.email"]
-                ? `mailto:${content["contact.email"]}`
-                : undefined,
-            },
-            {
-              icon: "phone" as AppIconName,
-              label: "Phone",
-              value: content["contact.phone"],
-              href: content["contact.phone"]
-                ? `tel:${content["contact.phone"]}`
-                : undefined,
-            },
-          ]
-            .filter((item) => item.value)
-            .map((item) => (
-              <div key={item.label} className="flex items-start gap-4">
-                <div
-                  className="w-10 h-10 rounded-xl flex items-center justify-center text-lg flex-shrink-0"
-                  style={{ background: "var(--color-primary)", fontSize: 18 }}
-                >
-                  <AppIcon name={item.icon} size={18} />
-                </div>
-                <div>
-                  <p
-                    className="text-xs font-bold uppercase tracking-wider mb-0.5"
-                    style={{ color: mutedText }}
-                  >
-                    <EditableText id={`contact.info.label.${item.label.toLowerCase().replace(/\s+/g, "")}`} defaultValue={item.label} />
-                  </p>
-                  {item.href ? (
-                    <a
-                      href={item.href}
-                      className="text-sm font-medium no-underline hover:underline"
-                      style={{ color: "var(--color-secondary)" }}
+          <div className="overflow-hidden rounded-2xl border" style={{ background: cardBg, borderColor: cardBorder }}>
+            <ul className="m-0 list-none divide-y p-0">
+              {contactItems.map((item) => {
+                const key = item.label.toLowerCase().replace(/s+/g, "");
+                return (
+                  <li key={item.label} className="flex items-start gap-3 px-4 py-3.5" style={{ borderColor: cardBorder }}>
+                    <span
+                      aria-hidden="true"
+                      className="grid h-9 w-9 shrink-0 place-items-center rounded-lg"
+                      style={{ background: "color-mix(in srgb, var(--color-primary) 12%, transparent)", color: "var(--primary-ink)" }}
                     >
-                      <EditableText id={`contact.info.value.${item.label.toLowerCase().replace(/\s+/g, "")}`} defaultValue={item.value ?? ""} />
-                    </a>
-                  ) : (
-                    <p className="text-sm" style={{ color: bodyText }}>
-                      <EditableText id={`contact.info.value.${item.label.toLowerCase().replace(/\s+/g, "")}`} defaultValue={item.value ?? ""} />
-                    </p>
-                  )}
-                </div>
-              </div>
-            ))}
+                      <AppIcon name={item.icon} size={17} />
+                    </span>
+                    <div className="min-w-0">
+                      <p className="text-[11px] font-bold uppercase tracking-wider" style={{ color: mutedText }}>
+                        <EditableText id={`contact.info.label.${key}`} defaultValue={item.label} />
+                      </p>
+                      {item.href ? (
+                        <a
+                          href={item.href}
+                          className="break-words text-sm font-semibold no-underline hover:underline"
+                          style={{ color: "var(--secondary-ink)" }}
+                        >
+                          <EditableText id={`contact.info.value.${key}`} defaultValue={item.value ?? ""} />
+                        </a>
+                      ) : (
+                        <p className="whitespace-pre-line text-sm leading-relaxed" style={{ color: bodyText }}>
+                          <EditableText id={`contact.info.value.${key}`} defaultValue={item.value ?? ""} />
+                        </p>
+                      )}
+                    </div>
+                  </li>
+                );
+              })}
+              {contactItems.length === 0 && (
+                <li className="px-4 py-4 text-sm" style={{ color: mutedText }}>
+                  Use the form to reach us — we reply by email.
+                </li>
+              )}
+            </ul>
 
-          {/* Note Section */}
-          <div className="flex items-center gap-2 mt-6 mb-2">
-            <span
-              className="inline-flex items-center justify-center w-8 h-8 rounded-lg"
-              style={{
-                background: "var(--color-primary)",
-                color: "white",
-              }}
-            >
-              <AppIcon name="about" size={18} />
-            </span>
-            <span className="font-bold text-sm" style={{ color: headingText }}>
-              <EditableText id="contact.note.label" defaultValue="Note" />
-            </span>
-          </div>
-          <p className="text-xs mt-1" style={{ color: mutedText }}>
-            <EditableText id="contact.note.text" defaultValue="For urgent matters, please use the phone number above." />
-          </p>
-
-          {/* Map Section */}
-          <div
-            className="rounded-2xl p-4 border mt-4"
-            style={{ background: cardBg, borderColor: cardBorder }}
-          >
-            <div className="flex items-center gap-2 mb-3">
-              <span
-                className="inline-flex items-center justify-center w-8 h-8 rounded-lg"
-                style={{
-                  background: "var(--color-primary)",
-                  color: "white",
-                }}
-              >
-                <AppIcon name="location" size={15} />
-              </span>
-              <span className="font-black text-xs uppercase tracking-[0.15em]" style={{ color: mutedText }}>
-                <EditableText id="contact.map.label" defaultValue="Location" />
-              </span>
-            </div>
             {mapEmbedUrl ? (
-              <iframe
-                src={mapEmbedUrl}
-                width="100%"
-                height="220"
-                style={{ border: 0, borderRadius: 12, width: "100%" }}
-                allowFullScreen
-                loading="lazy"
-                title="Lab location map"
-              />
-            ) : (
-              <div className="space-y-2">
-                <p className="text-sm" style={{ color: mutedText }}>
-                  <EditableText id="contact.map.notavailable" defaultValue="Map link is not available yet. Please use the address above." />
-                </p>
-                {mapSearchUrl && (
-                  <a
-                    href={mapSearchUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="inline-flex items-center gap-2 text-sm font-semibold no-underline hover:underline"
-                    style={{ color: "var(--color-secondary)" }}
-                  >
-                    <AppIcon name="location" size={14} />
-                    <EditableText id="contact.map.openInGoogle" defaultValue="Open in Google Maps" />
-                  </a>
-                )}
+              <div className="border-t p-3" style={{ borderColor: cardBorder }}>
+                <iframe
+                  src={mapEmbedUrl}
+                  width="100%"
+                  height="220"
+                  style={{ border: 0, borderRadius: 12, width: "100%" }}
+                  allowFullScreen
+                  loading="lazy"
+                  title="Lab location map"
+                />
               </div>
-            )}
+            ) : mapSearchUrl ? (
+              <a
+                href={mapSearchUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="flex items-center gap-2 border-t px-4 py-3 text-sm font-semibold no-underline hover:underline"
+                style={{ borderColor: cardBorder, color: "var(--secondary-ink)" }}
+              >
+                <AppIcon name="location" size={14} />
+                <EditableText id="contact.map.openInGoogle" defaultValue="Open in Google Maps" />
+                <span aria-hidden="true">↗</span>
+              </a>
+            ) : null}
+          </div>
+
+          {/* Note: a plain callout with a clear "i", not another icon tile. */}
+          <div
+            className="flex items-start gap-2.5 rounded-xl border px-4 py-3 text-[13px] leading-relaxed"
+            style={{ background: "var(--site-surface-alt)", borderColor: cardBorder, color: mutedText }}
+          >
+            <span
+              aria-hidden="true"
+              className="mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full text-[11px] font-black"
+              style={{ background: "var(--color-secondary)", color: "var(--on-secondary)", fontFamily: "Georgia, serif" }}
+            >
+              i
+            </span>
+            <p>
+              <strong style={{ color: headingText }}>
+                <EditableText id="contact.note.label" defaultValue="Note" />
+              </strong>{" "}
+              <EditableText id="contact.note.text" defaultValue="For urgent matters, please call or email us directly." />
+            </p>
           </div>
         </div>
 

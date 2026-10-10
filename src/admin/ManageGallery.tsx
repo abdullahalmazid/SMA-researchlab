@@ -4,8 +4,9 @@
   deleteDoc,
   doc,
   updateDoc,
-} from "firebase/firestore";
+} from "./core/auditedFirestore";
 import React, { useState } from "react";
+import { useConfirm } from "./components/useConfirm";
 import AppIcon from "../components/AppIcon";
 import CloudinaryUpload from "../components/CloudinaryUpload";
 import { useAuth } from "../context/AuthContext";
@@ -17,6 +18,7 @@ import type { CloudinaryUploadResult, GalleryItem } from "../types";
 const emptyForm = () => ({ title: "", description: "", imageUrl: "" });
 
 const ManageGallery: React.FC = () => {
+  const { confirm, inform, confirmElement } = useConfirm();
   const { appUser } = useAuth();
   const { gallery, loading } = useGallery();
   const [modal, setModal] = useState<{
@@ -31,11 +33,11 @@ const ManageGallery: React.FC = () => {
   const save = async () => {
     if (!modal) return;
     if (!modal.data.title?.trim()) {
-      alert("Please enter a title.");
+      await inform("Title required", "Please enter a title for this image.");
       return;
     }
     if (!modal.data.imageUrl?.trim()) {
-      alert("Please upload or paste an image URL.");
+      await inform("Image required", "Please upload an image or paste its URL.");
       return;
     }
     setSaving(true);
@@ -70,7 +72,7 @@ const ManageGallery: React.FC = () => {
 
   // ── Delete ───────────────────────────────────────────────────
   const remove = async (item: GalleryItem) => {
-    if (!window.confirm(`Delete "${item.title}"?`)) return;
+    if (!(await confirm({ title: `Delete "${item.title}"?`, message: "The image will be removed from the gallery.", confirmLabel: "Delete", danger: true }))) return;
     setDeletingId(item.id);
     await deleteDoc(doc(db, "gallery", item.id));
     setDeletingId(null);
@@ -94,6 +96,7 @@ const ManageGallery: React.FC = () => {
 
   return (
     <div>
+      {confirmElement}
       {/* ── Header ── */}
       <div className="flex items-center justify-between mb-6">
         <div>

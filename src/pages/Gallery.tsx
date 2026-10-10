@@ -9,6 +9,8 @@ import React, {
 import { createPortal } from "react-dom";
 import AppIcon from "../components/AppIcon";
 import EditableText from "../components/EditableText";
+import PageHero from "../components/PageHero";
+import PageSearchBar, { SearchBarTabs } from "../components/PageSearchBar";
 import { useAuth } from "../context/AuthContext";
 import { db } from "../firebase/config";
 import { useGallery, useSiteContent } from "../firebase/hooks";
@@ -307,8 +309,22 @@ const Gallery: React.FC = () => {
   const [viewMode, setViewMode] = useState<"gallery" | "album">("gallery");
   const [albumPage, setAlbumPage] = useState(0);
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
+  const [search, setSearch] = useState("");
 
-  const totalPages = Math.max(1, Math.ceil(gallery.length / 2));
+  /* Lightbox and album both index into this list, so they page through what
+     the search left visible rather than the whole archive. */
+  const visibleGallery = useMemo(() => {
+    const term = search.trim().toLowerCase();
+    if (!term) return gallery;
+    return gallery.filter(
+      (item) =>
+        item.title?.toLowerCase().includes(term) ||
+        item.description?.toLowerCase().includes(term) ||
+        String(getGalleryYear(item)).includes(term),
+    );
+  }, [gallery, search]);
+
+  const totalPages = Math.max(1, Math.ceil(visibleGallery.length / 2));
   const albumIndex = clamp(albumPage, 0, totalPages - 1);
 
   useEffect(() => {
@@ -338,229 +354,83 @@ const Gallery: React.FC = () => {
       {/* Lightbox */}
       {lightboxIndex !== null && (
         <LightboxModal
-          gallery={gallery}
+          gallery={visibleGallery}
           initialIndex={lightboxIndex}
           onClose={() => setLightboxIndex(null)}
         />
       )}
 
       {/* ── Hero ── */}
-      <section
-        className="relative min-h-[320px] overflow-hidden py-20 text-center px-4 flex items-center justify-center"
-        style={{ background: "var(--color-primary)" }}
-      >
-        {content["gallery.bannerUrl"] && (
-          <img
-            src={content["gallery.bannerUrl"]}
-            alt=""
-            className="absolute inset-0 w-full h-full object-cover"
-            style={{ filter: "brightness(0.45)" }}
-          />
-        )}
-        <div className="relative z-10">
-          <div
-            className="font-black text-white mb-4"
-            style={{
-              fontSize: "clamp(2rem,4vw,3rem)",
-              fontFamily: "var(--font-heading)",
-            }}
-          >
-            <EditableText
-              id="gallery.pageTitle"
-              defaultValue={content["gallery.pageTitle"] ?? "Gallery"}
-              className="font-black text-white"
-              aria-label="Edit gallery page title"
-            />
-          </div>
-          <div
-            className="text-base max-w-xl mx-auto"
-            style={{ color: "rgba(255,255,255,0.7)" }}
-          >
-            <EditableText
-              id="gallery.pageSubtitle"
-              defaultValue={
-                content["gallery.pageSubtitle"] ??
-                "Moments, milestones, and memories from the lab."
-              }
-              className="text-base"
-              aria-label="Edit gallery page subtitle"
-            />
-          </div>
-        </div>
-      </section>
-
-      {/* ── Gallery / Album Toggle ── */}
-      <div className="mb-8 grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <div
-          className="rounded-2xl border bg-white px-4 py-4 flex items-center gap-3"
-          style={{
-            borderColor: "#e5e7eb",
-            boxShadow: "0 1px 3px rgba(15,23,42,0.04)",
-          }}
-        >
-          <div
-            className="w-11 h-11 rounded-xl flex items-center justify-center shrink-0"
-            style={{
-              background: "#f8fafc",
-              color: "var(--color-primary)",
-            }}
-          >
-            <AppIcon name="gallery" size={18} />
-          </div>
-          <div className="min-w-0">
-            <EditableText
-              id="gallery.stats.moments"
-              defaultValue={content["gallery.stats.moments"] ?? "Moments"}
-              className="text-[11px] font-semibold uppercase tracking-[0.18em] text-gray-400"
-              aria-label="Edit gallery moments label"
-            />
-            <p className="text-base font-black text-gray-900 truncate">
-              {galleryStats.total}
-            </p>
-            <EditableText
-              id="gallery.stats.momentsHint"
-              defaultValue={
-                content["gallery.stats.momentsHint"] ??
-                "Published gallery items"
-              }
-              className="text-xs text-gray-500 truncate"
-              aria-label="Edit gallery moments hint"
-            />
-          </div>
-        </div>
-        <div
-          className="rounded-2xl border bg-white px-4 py-4 flex items-center gap-3"
-          style={{
-            borderColor: "#e5e7eb",
-            boxShadow: "0 1px 3px rgba(15,23,42,0.04)",
-          }}
-        >
-          <div
-            className="w-11 h-11 rounded-xl flex items-center justify-center shrink-0"
-            style={{
-              background: "#f8fafc",
-              color: "var(--color-primary)",
-            }}
-          >
-            <AppIcon name="publications" size={18} />
-          </div>
-          <div className="min-w-0">
-            <EditableText
-              id="gallery.stats.archive"
-              defaultValue={content["gallery.stats.archive"] ?? "Archive"}
-              className="text-[11px] font-semibold uppercase tracking-[0.18em] text-gray-400"
-              aria-label="Edit gallery archive label"
-            />
-            <p className="text-base font-black text-gray-900 truncate">
-              {galleryStats.years}
-            </p>
-            <EditableText
-              id="gallery.stats.archiveHint"
-              defaultValue={
-                content["gallery.stats.archiveHint"] ??
-                `Latest year ${galleryStats.latestYear}`
-              }
-              className="text-xs text-gray-500 truncate"
-              aria-label="Edit gallery archive hint"
-            />
-          </div>
-        </div>
-        <div
-          className="rounded-2xl border bg-white px-4 py-4 flex items-center gap-3"
-          style={{
-            borderColor: "#e5e7eb",
-            boxShadow: "0 1px 3px rgba(15,23,42,0.04)",
-          }}
-        >
-          <div
-            className="w-11 h-11 rounded-xl flex items-center justify-center shrink-0"
-            style={{
-              background: "#f8fafc",
-              color: "var(--color-primary)",
-            }}
-          >
-            <AppIcon name="message" size={18} />
-          </div>
-          <div className="min-w-0">
-            <EditableText
-              id="gallery.stats.view"
-              defaultValue={content["gallery.stats.view"] ?? "View"}
-              className="text-[11px] font-semibold uppercase tracking-[0.18em] text-gray-400"
-              aria-label="Edit gallery view label"
-            />
-            <p className="text-base font-black text-gray-900 truncate">
-              {viewMode === "album"
-                ? (content["gallery.stats.albumBook"] ?? "Album Book")
-                : (content["gallery.stats.galleryGrid"] ?? "Gallery Grid")}
-            </p>
-            <EditableText
-              id="gallery.stats.viewHint"
-              defaultValue={
-                content["gallery.stats.viewHint"] ??
-                (viewMode === "album"
-                  ? "Swipe pages like a book"
-                  : "Click images to open")
-              }
-              className="text-xs text-gray-500 truncate"
-              aria-label="Edit gallery view hint"
-            />
-          </div>
-        </div>
-      </div>
-
-      <div className="mb-8 flex flex-wrap items-center gap-3">
-        <button
-          type="button"
-          onClick={() => setViewMode("gallery")}
-          className="rounded-full px-4 py-2 text-sm font-semibold transition-all"
-          style={{
-            background:
-              viewMode === "gallery" ? "var(--color-primary)" : "white",
-            color: viewMode === "gallery" ? "white" : "#334155",
-            border: "1px solid #e5e7eb",
-            boxShadow: "0 1px 3px rgba(15,23,42,0.06)",
-          }}
-        >
+      <PageHero
+        bannerUrl={content["gallery.bannerUrl"]}
+        eyebrow={
+          <EditableText id="gallery.eyebrow" defaultValue={content["gallery.eyebrow"] ?? "Life at the lab"} className="inline" />
+        }
+        title={
           <EditableText
-            id="gallery.toggle.galleryGrid"
+            id="gallery.pageTitle"
+            defaultValue={content["gallery.pageTitle"] ?? "Gallery"}
+            className="inline"
+          />
+        }
+        subtitle={
+          <EditableText
+            id="gallery.pageSubtitle"
             defaultValue={
-              content["gallery.toggle.galleryGrid"] ?? "Gallery Grid"
+              content["gallery.pageSubtitle"] ??
+              "Moments, milestones, and memories from the lab."
             }
-            className="text-sm font-semibold"
-            aria-label="Edit gallery grid toggle label"
+            className="inline"
           />
-        </button>
-        <button
-          type="button"
-          onClick={() => setViewMode("album")}
-          className="rounded-full px-4 py-2 text-sm font-semibold transition-all"
-          style={{
-            background: viewMode === "album" ? "var(--color-primary)" : "white",
-            color: viewMode === "album" ? "white" : "#334155",
-            border: "1px solid #e5e7eb",
-            boxShadow: "0 1px 3px rgba(15,23,42,0.06)",
-          }}
-        >
-          <EditableText
-            id="gallery.toggle.albumBook"
-            defaultValue={content["gallery.toggle.albumBook"] ?? "Album Book"}
-            className="text-sm font-semibold"
-            aria-label="Edit album book toggle label"
-          />
-        </button>
-        <EditableText
-          id="gallery.toggle.hint"
-          defaultValue={
-            content["gallery.toggle.hint"] ??
-            (viewMode === "album"
-              ? "Drag the page or swipe to flip through the album."
-              : "Click any image to open it in full detail.")
-          }
-          className="text-sm text-gray-500"
-          aria-label="Edit gallery toggle hint"
-        />
-      </div>
+        }
+      >
+        <div className="flex flex-wrap justify-center gap-x-9 gap-y-3">
+          {[
+            { key: "moments", value: galleryStats.total, label: content["gallery.stats.moments"] ?? "Moments" },
+            { key: "years", value: galleryStats.years, label: content["gallery.stats.archive"] ?? "Years" },
+          ].map((stat) => (
+            <div key={stat.key} className="flex items-baseline gap-2.5">
+              <b
+                className="text-2xl font-black leading-none tabular-nums"
+                style={{ color: "var(--color-accent)", fontFamily: "var(--font-heading)" }}
+              >
+                {stat.value}
+              </b>
+              <span className="text-[12.5px] text-white/60">{stat.label}</span>
+            </div>
+          ))}
+        </div>
+      </PageHero>
 
+      {/* ── Search + view switch ── */}
+      {!loading && gallery.length > 0 && (
+        <PageSearchBar
+          value={search}
+          onChange={(value) => {
+            setSearch(value);
+            setAlbumPage(0);
+          }}
+          placeholder="Search the gallery by title, description or year"
+          filters={
+            <SearchBarTabs
+              ariaLabel="Gallery view"
+              value={viewMode}
+              onChange={setViewMode}
+              tabs={[
+                { id: "gallery", label: content["gallery.toggle.galleryGrid"] ?? "Grid" },
+                { id: "album", label: content["gallery.toggle.albumBook"] ?? "Album" },
+              ]}
+            />
+          }
+          status={
+            search
+              ? `${visibleGallery.length} of ${gallery.length}`
+              : `${gallery.length} ${gallery.length === 1 ? "photo" : "photos"}`
+          }
+        />
+      )}
+
+      <div className="mx-auto max-w-6xl px-4 pb-16 pt-8">
       {loading ? (
         <div className="py-24">
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -568,7 +438,7 @@ const Gallery: React.FC = () => {
               <div
                 key={idx}
                 className="rounded-2xl overflow-hidden border animate-pulse"
-                style={{ borderColor: "#e5e7eb", background: "#fafafa" }}
+                style={{ borderColor: "var(--site-border)", background: "var(--site-surface-alt)" }}
               >
                 <div className="h-56 bg-gradient-to-br from-gray-200 to-gray-100" />
                 <div className="p-4 space-y-3">
@@ -584,7 +454,7 @@ const Gallery: React.FC = () => {
         <div
           className="text-center py-24 rounded-3xl border"
           style={{
-            borderColor: "#e5e7eb",
+            borderColor: "var(--site-border)",
             background: "linear-gradient(180deg, #ffffff 0%, #f8fafc 100%)",
           }}
         >
@@ -599,9 +469,13 @@ const Gallery: React.FC = () => {
             as soon as images are added.
           </p>
         </div>
+      ) : visibleGallery.length === 0 ? (
+        <div className="rounded-2xl border border-dashed border-slate-300 px-6 py-16 text-center">
+          <p className="text-base text-slate-500">Nothing in the gallery matches “{search}”.</p>
+        </div>
       ) : viewMode === "gallery" ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-6 items-stretch transition-all duration-300 ease-out">
-          {gallery.map((item, idx) => (
+          {visibleGallery.map((item, idx) => (
             <GalleryCard
               key={item.id}
               item={item}
@@ -612,12 +486,13 @@ const Gallery: React.FC = () => {
         </div>
       ) : (
         <AlbumBookView
-          gallery={gallery}
+          gallery={visibleGallery}
           pageIndex={albumIndex}
           onPrev={() => setAlbumPage((v) => Math.max(v - 1, 0))}
           onNext={() => setAlbumPage((v) => Math.min(v + 1, totalPages - 1))}
         />
       )}
+      </div>
     </div>
   );
 };
@@ -639,7 +514,7 @@ const GalleryCard: React.FC<{
       onMouseLeave={() => setHovered(false)}
       className="group relative h-full overflow-hidden rounded-2xl border bg-white cursor-pointer"
       style={{
-        borderColor: "#e5e7eb",
+        borderColor: "var(--site-border)",
         boxShadow: hovered
           ? "0 8px 32px rgba(15,23,42,0.13)"
           : "0 1px 8px rgba(15,23,42,0.05)",
@@ -652,7 +527,7 @@ const GalleryCard: React.FC<{
         {imgErr ? (
           <div
             className="flex h-full flex-col items-center justify-center text-gray-400 text-sm font-medium"
-            style={{ background: "#fafafa" }}
+            style={{ background: "var(--site-surface-alt)" }}
           >
             <AppIcon name="gallery" size={22} />
             <span className="mt-2">Image unavailable</span>
@@ -701,7 +576,7 @@ const GalleryCard: React.FC<{
       </div>
 
       {/* Caption below image — always visible */}
-      <div className="p-4 border-t" style={{ borderColor: "#f1f5f9" }}>
+      <div className="p-4 border-t" style={{ borderColor: "var(--site-border)" }}>
         <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-gray-400 mb-1">
           {itemYear}
         </p>
@@ -854,7 +729,7 @@ const MobileAlbumView: React.FC<{
         className="relative rounded-2xl overflow-hidden bg-white shadow-xl"
         style={{
           minHeight: 440,
-          border: "1px solid #e5e7eb",
+          border: "1px solid var(--site-border)",
           transform: `translateX(${swipeOffset}px)`,
           transition: swiping ? "none" : "transform 0.22s ease",
         }}
@@ -881,7 +756,7 @@ const MobileAlbumView: React.FC<{
               {imgErr ? (
                 <div
                   className="flex flex-col items-center justify-center text-gray-300 h-full"
-                  style={{ background: "#f3f4f6" }}
+                  style={{ background: "var(--site-surface-alt)" }}
                 >
                   <AppIcon name="gallery" size={32} />
                   <span className="mt-2 text-sm font-medium">
@@ -898,7 +773,7 @@ const MobileAlbumView: React.FC<{
                 />
               )}
             </div>
-            <div className="p-5 border-t" style={{ borderColor: "#e5e7eb" }}>
+            <div className="p-5 border-t" style={{ borderColor: "var(--site-border)" }}>
               <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-gray-400">
                 {getYear(item)}
               </p>
@@ -935,7 +810,7 @@ const MobileAlbumView: React.FC<{
         ) : (
           <div
             className="flex items-center justify-center text-gray-300"
-            style={{ height: 440, background: "#f8fafc" }}
+            style={{ height: 440, background: "var(--site-surface-alt)" }}
           >
             <AppIcon name="gallery" size={48} />
           </div>
@@ -972,9 +847,9 @@ const MobileAlbumView: React.FC<{
           disabled={!canGoBack}
           className="inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-semibold transition-opacity disabled:opacity-30 shadow-sm"
           style={{
-            borderColor: "#e5e7eb",
+            borderColor: "var(--site-border)",
             background: "white",
-            color: "#334155",
+            color: "var(--site-text)",
           }}
         >
           <AppIcon name="back" size={16} />
@@ -986,9 +861,9 @@ const MobileAlbumView: React.FC<{
           disabled={!canGoForward}
           className="inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-semibold transition-opacity disabled:opacity-30 shadow-sm"
           style={{
-            borderColor: "#e5e7eb",
+            borderColor: "var(--site-border)",
             background: "white",
-            color: "#334155",
+            color: "var(--site-text)",
           }}
         >
           Next
@@ -1401,9 +1276,9 @@ const DesktopAlbumView: React.FC<{
           disabled={isFirst}
           className="inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-semibold transition-opacity disabled:opacity-30 shadow-sm"
           style={{
-            borderColor: "#e5e7eb",
+            borderColor: "var(--site-border)",
             background: "white",
-            color: "#334155",
+            color: "var(--site-text)",
           }}
         >
           <AppIcon name="back" size={16} />
@@ -1415,9 +1290,9 @@ const DesktopAlbumView: React.FC<{
           disabled={isLast}
           className="inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-semibold transition-opacity disabled:opacity-30 shadow-sm"
           style={{
-            borderColor: "#e5e7eb",
+            borderColor: "var(--site-border)",
             background: "white",
-            color: "#334155",
+            color: "var(--site-text)",
           }}
         >
           Next page
@@ -1457,7 +1332,7 @@ const BookPage: React.FC<{
             {imgErr ? (
               <div
                 className="flex flex-col items-center justify-center text-gray-300 h-full"
-                style={{ background: "#f3f4f6" }}
+                style={{ background: "var(--site-surface-alt)" }}
               >
                 <AppIcon name="gallery" size={32} />
                 <span className="mt-2 text-sm font-medium">
@@ -1476,7 +1351,7 @@ const BookPage: React.FC<{
           </div>
           <div
             className="p-5 border-t"
-            style={{ borderColor: "#e5e7eb", background: "white" }}
+            style={{ borderColor: "var(--site-border)", background: "white" }}
           >
             <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-gray-400">
               {getYear(item)}
@@ -1492,7 +1367,7 @@ const BookPage: React.FC<{
       ) : (
         <div
           className="flex items-center justify-center h-full text-gray-300"
-          style={{ background: "#f8fafc" }}
+          style={{ background: "var(--site-surface-alt)" }}
         >
           <AppIcon name="gallery" size={48} />
         </div>

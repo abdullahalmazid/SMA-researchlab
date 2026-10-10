@@ -19,7 +19,7 @@ import type { Publication, PublicationAuthorEntry } from "../types";
 
 const SITE_NAME = "Your Research Group";
 /** Route pattern for an internal author's profile page. */
-const profilePath = (profileId: string) => `/team/${profileId}`;
+const profilePath = (profileId: string) => `/collaborators/${encodeURIComponent(profileId)}`;
 
 /* ------------------------------------------------------------------ *
  * Author helpers
@@ -38,11 +38,11 @@ const resolveAuthors = (publication: Publication): PublicationAuthorEntry[] =>
         (name): PublicationAuthorEntry => ({ type: "external", name }),
       );
 
-/** Returns an internal author's profile id. Adjust the probed keys to your schema. */
+/** Returns a linked author's collaborator uid — profiles are routed by uid. */
 const authorProfileId = (author: PublicationAuthorEntry): string | null => {
   if (author.type === "external") return null;
   const record = author as unknown as Record<string, unknown>;
-  const id = record.memberId ?? record.profileId ?? record.id ?? record.slug;
+  const id = author.uid ?? record.memberId ?? record.profileId ?? record.id;
   return typeof id === "string" && id.length > 0 ? id : null;
 };
 
@@ -196,7 +196,7 @@ type PublicationState =
   | { status: "error" }
   | { status: "ready"; publication: Publication };
 
-const usePublication = (id: string | undefined): PublicationState => {
+export const usePublication = (id: string | undefined): PublicationState => {
   const [state, setState] = useState<PublicationState>({ status: "loading" });
 
   useEffect(() => {
@@ -390,7 +390,7 @@ const PublicationSkeleton: React.FC = () => (
     <span className="sr-only">Loading publication</span>
 
     <header
-      className="border-b border-white/10 px-4 py-16 text-white"
+      className="border-b border-white/10 px-4 py-16 text-[color:var(--hero-text)]"
       style={{ background: "var(--color-primary)" }}
     >
       <div className="mx-auto max-w-5xl">
@@ -581,7 +581,7 @@ const CitationExport: React.FC<{ publication: Publication }> = ({ publication })
         <button
           type="button"
           onClick={handleCopy}
-          className={`rounded-xl px-4 py-2.5 text-sm font-semibold text-white transition hover:opacity-90 ${FOCUS}`}
+          className={`rounded-xl px-4 py-2.5 text-sm font-semibold text-[color:var(--on-secondary)] transition hover:opacity-90 ${FOCUS}`}
           style={{ background: "var(--color-secondary)" }}
         >
           Copy citation
@@ -639,35 +639,22 @@ const Field: React.FC<{ label: string; children: React.ReactNode }> = ({ label, 
   </div>
 );
 
-/* ------------------------------------------------------------------ *
- * Page
- * ------------------------------------------------------------------ */
-
-const PublicationDetail: React.FC = () => {
-  const { id } = useParams<{ id: string }>();
-  const state = usePublication(id);
-  const publication = state.status === "ready" ? state.publication : null;
-  const related = useRelatedPublications(publication);
-
-  if (state.status === "loading") return <PublicationSkeleton />;
-
-  if (state.status === "error") {
-    return (
-      <Notice
-        title="This publication didn't load"
-        body="The connection to our records failed. Reload the page, or head back to the full list."
-      />
-    );
-  }
-
-  if (!publication) {
-    return (
-      <Notice
-        title="Publication not found"
-        body="This record may have been moved or removed. The full list is the best place to pick up the trail."
-      />
-    );
-  }
+/**
+ * The publication itself, shared by the /publications/:id page and the drawer
+ * on collaborator profiles. The drawer variant drops what only makes sense as a
+ * standalone page — SEO tags, the back link, sticky sidebar — and drops
+ * "Related work" too, because those links lead into the Publications section,
+ * which a contributor's paper without the lab head on it is deliberately kept
+ * out of.
+ */
+export const PublicationView: React.FC<{
+  publication: Publication;
+  variant?: "page" | "drawer";
+  related?: Publication[];
+}> = ({ publication, variant = "page", related = [] }) => {
+  const inDrawer = variant === "drawer";
+  const Root = inDrawer ? "div" : "main";
+  const Title = inDrawer ? "h3" : "h1";
 
   const authors = resolveAuthors(publication);
   const doiUrl = publication.doi ? `https://doi.org/${publication.doi}` : "";
@@ -677,32 +664,42 @@ const PublicationDetail: React.FC = () => {
   const statusColor = isOngoing ? "#fbbf24" : "#6ee7b7";
 
   return (
-    <main className="min-h-screen" style={{ background: "var(--color-bg)" }}>
-      <PublicationSeo publication={publication} />
+    <Root className={inDrawer ? "" : "min-h-screen"} style={{ background: "var(--color-bg)" }}>
+      {!inDrawer && <PublicationSeo publication={publication} />}
 
       {/* Hero: status → title → authors → venue, the order a reader expects. */}
       <header
-        className="border-b border-white/10 px-4 py-16 text-white print:border-slate-200 print:bg-white print:py-6 print:text-slate-900"
+        className={`border-b border-white/10 px-4 text-[color:var(--hero-text)] print:border-slate-200 print:bg-white print:py-6 print:text-slate-900 ${
+          inDrawer ? "py-10 md:px-8" : "py-16"
+        }`}
         style={{ background: "var(--color-primary)" }}
       >
-        <div className="mx-auto max-w-5xl">
+        <div className={inDrawer ? "max-w-5xl" : "mx-auto max-w-5xl"}>
           <p
             className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[11px] font-semibold uppercase tracking-[.16em]"
             style={{ color: statusColor }}
           >
             <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-current" />
             {isOngoing ? "Ongoing research" : "Published"}
-            <span aria-hidden="true" className="text-white/40">
-              /
-            </span>
-            <span className="text-white/70 [font-variant-numeric:tabular-nums]">
-              {publication.year}
-            </span>
+            {publication.year ? (
+              <>
+                <span aria-hidden="true" className="text-white/40">
+                  /
+                </span>
+                <span className="text-white/70 [font-variant-numeric:tabular-nums]">
+                  {publication.year}
+                </span>
+              </>
+            ) : null}
           </p>
 
-          <h1 className="mt-5 max-w-4xl text-[28px] font-bold leading-[1.2] tracking-[-0.02em] md:text-[42px] print:text-2xl">
+          <Title
+            className={`mt-5 max-w-4xl font-bold leading-[1.2] tracking-[-0.02em] print:text-2xl ${
+              inDrawer ? "text-[24px] md:text-[32px]" : "text-[28px] md:text-[42px]"
+            }`}
+          >
             {publication.title}
-          </h1>
+          </Title>
 
           {authors.length > 0 && (
             <div className="mt-6 max-w-3xl">
@@ -720,11 +717,17 @@ const PublicationDetail: React.FC = () => {
       </header>
 
       {/* Back control lives here, on the page surface, where it reads clearly. */}
-      <nav aria-label="Breadcrumb" className="mx-auto max-w-5xl px-4 pt-8">
-        <BackToPublications />
-      </nav>
+      {!inDrawer && (
+        <nav aria-label="Breadcrumb" className="mx-auto max-w-5xl px-4 pt-8">
+          <BackToPublications />
+        </nav>
+      )}
 
-      <div className="mx-auto grid max-w-5xl gap-6 px-4 py-8 lg:grid-cols-[minmax(0,1fr)_300px] print:block">
+      <div
+        className={`grid max-w-5xl gap-6 py-8 lg:grid-cols-[minmax(0,1fr)_300px] print:block ${
+          inDrawer ? "px-4 md:px-8" : "mx-auto px-4"
+        }`}
+      >
         <div className="min-w-0">
           <article
             aria-labelledby="abstract-heading"
@@ -756,12 +759,14 @@ const PublicationDetail: React.FC = () => {
           </article>
 
           <CitationExport publication={publication} />
-          <RelatedPublications publications={related} />
+          {!inDrawer && <RelatedPublications publications={related} />}
         </div>
 
         <aside
           aria-labelledby="record-heading"
-          className={`${PANEL} h-fit p-6 lg:sticky lg:top-24 lg:max-h-[calc(100vh-7rem)] lg:overflow-y-auto print:hidden`}
+          className={`${PANEL} h-fit p-6 print:hidden ${
+            inDrawer ? "" : "lg:sticky lg:top-24 lg:max-h-[calc(100vh-7rem)] lg:overflow-y-auto"
+          }`}
         >
           <h2 id="record-heading" className={EYEBROW}>
             Publication record
@@ -776,11 +781,13 @@ const PublicationDetail: React.FC = () => {
               </Field>
             )}
 
-            <Field label="Year">
-              <dd className="mt-1.5 text-sm font-medium text-slate-700 [font-variant-numeric:tabular-nums]">
-                {publication.year}
-              </dd>
-            </Field>
+            {publication.year ? (
+              <Field label="Year">
+                <dd className="mt-1.5 text-sm font-medium text-slate-700 [font-variant-numeric:tabular-nums]">
+                  {publication.year}
+                </dd>
+              </Field>
+            ) : null}
 
             <Field label="Status">
               <dd className="mt-1.5 text-sm font-medium text-slate-700">
@@ -811,7 +818,7 @@ const PublicationDetail: React.FC = () => {
               href={paperUrl}
               target="_blank"
               rel="noreferrer"
-              className={`mt-6 block rounded-xl px-4 py-3 text-center text-sm font-semibold text-white transition hover:opacity-90 ${FOCUS}`}
+              className={`mt-6 block rounded-xl px-4 py-3 text-center text-sm font-semibold text-[color:var(--on-secondary)] transition hover:opacity-90 ${FOCUS}`}
               style={{ background: "var(--color-secondary)" }}
             >
               Read the full paper <span aria-hidden="true">↗</span>
@@ -820,8 +827,41 @@ const PublicationDetail: React.FC = () => {
           )}
         </aside>
       </div>
-    </main>
+    </Root>
   );
+};
+
+/* ------------------------------------------------------------------ *
+ * Page
+ * ------------------------------------------------------------------ */
+
+const PublicationDetail: React.FC = () => {
+  const { id } = useParams<{ id: string }>();
+  const state = usePublication(id);
+  const publication = state.status === "ready" ? state.publication : null;
+  const related = useRelatedPublications(publication);
+
+  if (state.status === "loading") return <PublicationSkeleton />;
+
+  if (state.status === "error") {
+    return (
+      <Notice
+        title="This publication didn't load"
+        body="The connection to our records failed. Reload the page, or head back to the full list."
+      />
+    );
+  }
+
+  if (!publication) {
+    return (
+      <Notice
+        title="Publication not found"
+        body="This record may have been moved or removed. The full list is the best place to pick up the trail."
+      />
+    );
+  }
+
+  return <PublicationView publication={publication} related={related} />;
 };
 
 export default PublicationDetail;

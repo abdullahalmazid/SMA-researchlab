@@ -143,7 +143,7 @@ const CloudinaryUpload: React.FC<Props> = ({
       {/* type="button" on every one of these. Without it they default to
           submit, and this widget renders inside the collaborator request
           <form> — so clicking a tab submitted the whole form. */}
-      <div className="flex mb-3 border-b" style={{ borderColor: "#e5e7eb" }}>
+      <div className="flex mb-3 border-b" style={{ borderColor: "var(--site-border)" }}>
         <button type="button" style={tabStyle(tab === "upload")} onClick={() => setTab("upload")}>
           Upload File
         </button>
@@ -219,12 +219,12 @@ const CloudinaryUpload: React.FC<Props> = ({
             placeholder="https://example.com/image.jpg"
             aria-label="Image URL"
             className="flex-1 text-sm px-3 py-2 rounded-lg border outline-none"
-            style={{ borderColor: "#d1d5db", fontFamily: "var(--font-body)" }}
+            style={{ borderColor: "var(--site-border)", fontFamily: "var(--font-body)" }}
           />
           <button
             type="button"
             onClick={applyUrl}
-            className="text-sm font-bold px-4 py-2 rounded-lg text-white"
+            className="text-sm font-bold px-4 py-2 rounded-lg text-[color:var(--hero-text)]"
             style={{ background: "var(--color-primary)", border: "none", cursor: "pointer" }}
           >
             Apply
@@ -250,7 +250,7 @@ const CloudinaryUpload: React.FC<Props> = ({
             loading="lazy"
             onError={() => setPreview("")}
             className="rounded-lg object-cover border"
-            style={{ maxHeight: 160, maxWidth: "100%", borderColor: "#e5e7eb" }}
+            style={{ maxHeight: 160, maxWidth: "100%", borderColor: "var(--site-border)" }}
           />
         </div>
       )}

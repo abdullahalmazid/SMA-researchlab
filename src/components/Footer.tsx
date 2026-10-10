@@ -79,9 +79,9 @@ interface LabHeadDoc {
 
 /* Text levels, named once. The old file used 0.3 / 0.35 / 0.4 for headings and
    legal text, which sits near 2:1 against the footer — well under 4.5:1. */
-const FG_STRONG = "text-white";
-const FG_MUTED = "text-white/[.62]";
-const FG_FAINT = "text-white/[.48]";
+const FG_STRONG = "text-[color:var(--footer-text)]";
+const FG_MUTED = "text-[color:color-mix(in_srgb,var(--footer-text)_62%,transparent)]";
+const FG_FAINT = "text-[color:color-mix(in_srgb,var(--footer-text)_48%,transparent)]";
 
 /* Hover and focus as CSS, not eight onMouseEnter handlers mutating style.
    Mouse events never fire for keyboard users, so the old footer had no visible
@@ -89,15 +89,15 @@ const FG_FAINT = "text-white/[.48]";
 const FOCUS =
   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--color-footer)]";
 
-const ROW = `group/row flex items-center gap-2.5 rounded-[10px] px-2.5 py-2 text-[13.5px] no-underline transition ${FG_MUTED} hover:bg-white/[.08] hover:text-white ${FOCUS}`;
+const ROW = `group/row flex items-center gap-2.5 rounded-[10px] px-2.5 py-2 text-[13.5px] no-underline transition ${FG_MUTED} hover:bg-[color:color-mix(in_srgb,var(--footer-text)_8%,transparent)] hover:text-[color:var(--footer-text)] ${FOCUS}`;
 
 const ROW_ICON =
-  "grid h-7 w-7 flex-none place-items-center rounded-lg bg-white/[.07] text-white/[.62] transition group-hover/row:bg-white/[.14] group-hover/row:text-[color:var(--color-accent)]";
+  "grid h-7 w-7 flex-none place-items-center rounded-lg bg-[color:color-mix(in_srgb,var(--footer-text)_7%,transparent)] text-[color:color-mix(in_srgb,var(--footer-text)_62%,transparent)] transition group-hover/row:bg-[color:color-mix(in_srgb,var(--footer-text)_14%,transparent)] group-hover/row:text-[color:var(--footer-accent)]";
 
 const ColumnHeading: React.FC<{ id?: string; children: React.ReactNode }> = ({ id, children }) => (
   <h2
     id={id}
-    className={`mb-4 flex items-center gap-2.5 text-[11px] font-extrabold uppercase tracking-[0.16em] ${FG_MUTED} after:h-px after:flex-1 after:bg-white/10 after:content-['']`}
+    className={`mb-4 flex items-center gap-2.5 text-[11px] font-extrabold uppercase tracking-[0.16em] ${FG_MUTED} after:h-px after:flex-1 after:bg-[color:color-mix(in_srgb,var(--footer-text)_10%,transparent)] after:content-['']`}
   >
     {children}
   </h2>
@@ -249,7 +249,7 @@ const Footer: React.FC = () => {
                   className="grid h-11 w-11 flex-none place-items-center rounded-[13px] text-[19px] font-black"
                   style={{
                     background: "linear-gradient(135deg, var(--color-accent), #f97316)",
-                    color: "#1f2937",
+                    color: "var(--on-accent)",
                     boxShadow: "0 4px 12px rgba(240,180,41,0.25)",
                   }}
                 >
@@ -261,7 +261,7 @@ const Footer: React.FC = () => {
               <div className="min-w-0">
                 <div
                   className="text-[19px] font-black leading-tight"
-                  style={{ color: "var(--color-accent)", fontFamily: "var(--font-heading)" }}
+                  style={{ color: "var(--footer-accent)", fontFamily: "var(--font-heading)" }}
                 >
                   {/* Shared id with the navbar wordmark: rename once, changes both. */}
                   <EditableText id="branding.labName" defaultValue={labName} className="inline" />
@@ -293,10 +293,10 @@ const Footer: React.FC = () => {
               <Link
                 to={labHeadHref}
                 aria-label={`View ${labHeadName}'s profile`}
-                className={`group flex items-center gap-[13px] rounded-2xl border border-white/10 px-3.5 py-3 no-underline transition hover:border-[color:var(--color-accent)]/40 hover:bg-white/10 motion-safe:hover:-translate-y-px ${FOCUS}`}
+                className={`group flex items-center gap-[13px] rounded-2xl border border-[color:color-mix(in_srgb,var(--footer-text)_10%,transparent)] px-3.5 py-3 no-underline transition hover:border-[color:var(--color-accent)]/40 hover:bg-[color:color-mix(in_srgb,var(--footer-text)_10%,transparent)] motion-safe:hover:-translate-y-px ${FOCUS}`}
                 style={{
                   background:
-                    "linear-gradient(180deg, rgba(255,255,255,0.075), rgba(255,255,255,0.035))",
+                    "linear-gradient(180deg, color-mix(in srgb, var(--footer-text) 7.5%, transparent), color-mix(in srgb, var(--footer-text) 3.5%, transparent))",
                 }}
               >
                 <span
@@ -340,7 +340,7 @@ const Footer: React.FC = () => {
                   )}
                   <span
                     className="mt-[7px] inline-flex items-center gap-1.5 rounded-full py-[3px] pl-[7px] pr-[9px] text-[10px] font-extrabold uppercase tracking-[0.09em]"
-                    style={{ background: "rgba(240,180,41,0.15)", color: "var(--color-accent)" }}
+                    style={{ background: "rgba(240,180,41,0.15)", color: "var(--footer-accent)" }}
                   >
                     <span aria-hidden="true" className="h-1 w-1 rounded-full bg-current" />
                     <EditableText
@@ -353,7 +353,7 @@ const Footer: React.FC = () => {
 
                 <span
                   aria-hidden="true"
-                  className={`flex-none transition group-hover:text-[color:var(--color-accent)] motion-safe:group-hover:translate-x-0.5 ${FG_FAINT}`}
+                  className={`flex-none transition group-hover:text-[color:var(--footer-accent)] motion-safe:group-hover:translate-x-0.5 ${FG_FAINT}`}
                 >
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
                     <path d="M9 5l7 7-7 7" strokeLinecap="round" />
@@ -373,7 +373,7 @@ const Footer: React.FC = () => {
                       target="_blank"
                       rel="noreferrer"
                       aria-label={`${labHeadName ?? labName} on ${social.label}`}
-                      className={`grid h-[38px] w-[38px] place-items-center rounded-[11px] border border-white/10 bg-white/[.07] text-white/[.78] no-underline transition hover:border-[color:var(--color-accent)] hover:bg-[color:var(--color-accent)] hover:text-[#1f2937] motion-safe:hover:-translate-y-0.5 ${FOCUS}`}
+                      className={`grid h-[38px] w-[38px] place-items-center rounded-[11px] border border-[color:color-mix(in_srgb,var(--footer-text)_10%,transparent)] bg-[color:color-mix(in_srgb,var(--footer-text)_7%,transparent)] text-[color:color-mix(in_srgb,var(--footer-text)_78%,transparent)] no-underline transition hover:border-[color:var(--color-accent)] hover:bg-[color:var(--color-accent)] hover:text-[#1f2937] motion-safe:hover:-translate-y-0.5 ${FOCUS}`}
                     >
                       <AppIcon name={social.icon} size={16} />
                     </a>
@@ -413,7 +413,7 @@ const Footer: React.FC = () => {
               className={`mt-4 inline-flex items-center gap-2 rounded-[10px] px-[18px] py-2.5 text-[12.5px] font-bold no-underline transition motion-safe:hover:-translate-y-px ${FOCUS}`}
               style={{
                 background: "var(--color-accent)",
-                color: "#1f2937",
+                color: "var(--on-accent)",
                 boxShadow: "0 2px 10px rgba(240,180,41,0.28)",
               }}
             >
@@ -470,7 +470,7 @@ const Footer: React.FC = () => {
 
             <Link
               to="/contact"
-              className={`mt-4 inline-flex w-fit items-center gap-2 rounded-[10px] border border-white/10 bg-white/[.07] px-[18px] py-2.5 text-[12.5px] font-bold text-white/[.78] no-underline transition hover:bg-white/[.14] hover:text-white ${FOCUS}`}
+              className={`mt-4 inline-flex w-fit items-center gap-2 rounded-[10px] border border-[color:color-mix(in_srgb,var(--footer-text)_10%,transparent)] bg-[color:color-mix(in_srgb,var(--footer-text)_7%,transparent)] px-[18px] py-2.5 text-[12.5px] font-bold text-[color:color-mix(in_srgb,var(--footer-text)_78%,transparent)] no-underline transition hover:bg-[color:color-mix(in_srgb,var(--footer-text)_14%,transparent)] hover:text-[color:var(--footer-text)] ${FOCUS}`}
             >
               <EditableText
                 id="footer.sendMessageBtn"
@@ -484,7 +484,7 @@ const Footer: React.FC = () => {
       </div>
 
       {/* ------------------------------------------------------ bottom bar */}
-      <div className="border-t border-white/10">
+      <div className="border-t border-[color:color-mix(in_srgb,var(--footer-text)_10%,transparent)]">
         <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3 px-6 py-4">
           {/* The year sits outside the editable string. Baked into defaultValue,
               it froze at whatever year an admin last saved the line. */}
@@ -500,7 +500,7 @@ const Footer: React.FC = () => {
           <button
             type="button"
             onClick={backToTop}
-            className={`inline-flex items-center gap-[7px] rounded-[10px] border border-white/10 bg-white/[.07] px-3.5 py-[7px] text-[11.5px] font-bold transition hover:border-[color:var(--color-accent)] hover:bg-[color:var(--color-accent)] hover:text-[#1f2937] ${FG_MUTED} ${FOCUS}`}
+            className={`inline-flex items-center gap-[7px] rounded-[10px] border border-[color:color-mix(in_srgb,var(--footer-text)_10%,transparent)] bg-[color:color-mix(in_srgb,var(--footer-text)_7%,transparent)] px-3.5 py-[7px] text-[11.5px] font-bold transition hover:border-[color:var(--color-accent)] hover:bg-[color:var(--color-accent)] hover:text-[#1f2937] ${FG_MUTED} ${FOCUS}`}
           >
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" aria-hidden="true">
               <path d="M12 19V5M6 11l6-6 6 6" strokeLinecap="round" />

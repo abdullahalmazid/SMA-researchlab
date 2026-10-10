@@ -1,10 +1,12 @@
-import React, { useCallback, useDeferredValue, useEffect, useMemo, useRef } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import React, { useCallback, useDeferredValue, useEffect, useMemo, useState } from "react";
+import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import CollaboratorCard from "../components/CollaboratorCard";
 import CollaboratorRequestForm from "../components/CollaboratorRequestForm";
 import EditableText from "../components/EditableText";
-import FilterSelect from "../components/FilterSelect";
-import SearchField from "../components/SearchField";
+import PageHero from "../components/PageHero";
+import PageSearchBar, { SearchBarSelect } from "../components/PageSearchBar";
+import SideDrawer from "../components/SideDrawer";
+import { useAuth } from "../context/AuthContext";
 import { useCollaborators, useSiteContent } from "../firebase/hooks";
 
 /**
@@ -18,6 +20,9 @@ const LAB_HEAD_UID = String(import.meta.env?.VITE_LAB_HEAD_UID ?? "").trim();
 const PARAM = { search: "q", designation: "role", affiliation: "org" } as const;
 
 const SKELETON_COUNT = 8;
+
+/** Deep-link fragment that opens the request form drawer. */
+const REQUEST_HASH = "collaborator-request";
 
 const norm = (value?: string | null) => (value ?? "").trim().toLowerCase();
 
@@ -91,6 +96,9 @@ const Collaborators: React.FC = () => {
   const { collaborators, loading } = useCollaborators();
   const { content } = useSiteContent();
   const navigate = useNavigate();
+  /* Chat is for collaborators and the lab head; everyone else sees no button. */
+  const { appUser } = useAuth();
+  const canMessage = appUser?.role === "collaborator" || appUser?.role === "lab_head";
 
   /**
    * Filters live in the URL, not in useState. Three things that were broken
@@ -122,35 +130,22 @@ const Collaborators: React.FC = () => {
     setParams(next, { replace: true });
   }, [params, setParams]);
 
-  const toolbarRef = useRef<HTMLDivElement>(null);
-  const requestRef = useRef<HTMLElement>(null);
+  const location = useLocation();
+  // Other pages link to /collaborators#collaborator-request; that still opens the form.
+  const [requestOpen, setRequestOpen] = useState(location.hash === `#${REQUEST_HASH}`);
 
-  /** "/" jumps to search, the convention on every directory people already use. */
   useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "/" || event.metaKey || event.ctrlKey || event.altKey) return;
-      const target = event.target as HTMLElement | null;
-      if (target?.closest("input, textarea, select, [contenteditable='true']")) return;
-      event.preventDefault();
-      toolbarRef.current?.querySelector("input")?.focus();
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, []);
+    if (location.hash === `#${REQUEST_HASH}`) setRequestOpen(true);
+  }, [location.hash]);
 
-  /**
-   * Scrolling without moving focus strands keyboard users: the page travels,
-   * their next Tab doesn't. tabIndex={-1} on the target plus .focus() takes
-   * them along. Honour reduced motion while we're here — a long smooth scroll
-   * is exactly the pattern that triggers vestibular symptoms.
-   */
-  const goToRequestForm = useCallback(() => {
-    const node = requestRef.current;
-    if (!node) return;
-    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    node.scrollIntoView({ behavior: reduced ? "auto" : "smooth", block: "start" });
-    node.focus({ preventScroll: true });
-  }, []);
+  const closeRequestForm = useCallback(() => {
+    setRequestOpen(false);
+    if (window.location.hash === `#${REQUEST_HASH}`) {
+      navigate({ pathname: location.pathname, search: location.search }, { replace: true });
+    }
+  }, [navigate, location.pathname, location.search]);
+
+  const goToRequestForm = useCallback(() => setRequestOpen(true), []);
 
   /** Lab head first, then alphabetical. Firestore order is arbitrary otherwise. */
   const ordered = useMemo(() => {
@@ -205,153 +200,93 @@ const Collaborators: React.FC = () => {
   return (
     <div>
       {/* ---------------------------------------------------------------- Hero */}
-      <section
-        className="relative flex min-h-[340px] items-center justify-center overflow-hidden px-4 py-20 text-center"
-        style={{ background: "var(--color-primary)" }}
+      <PageHero
+        bannerUrl={bannerUrl}
+        eyebrow={
+          <EditableText
+            id="collaborators.eyebrow"
+            defaultValue={content["collaborators.eyebrow"] ?? "The network"}
+            className="inline"
+          />
+        }
+        title={
+          <EditableText
+            id="collaborators.pageTitle"
+            defaultValue={content["collaborators.pageTitle"] ?? "Our Collaborators"}
+            className="inline"
+          />
+        }
+        subtitle={
+          <EditableText
+            id="collaborators.pageSubtitle"
+            defaultValue={content["collaborators.pageSubtitle"] ?? ""}
+            className="inline"
+          />
+        }
       >
-        {bannerUrl && (
-          <>
-            <img
-              src={bannerUrl}
-              alt=""
-              /* The LCP element on this page: never lazy, always early. */
-              fetchPriority="high"
-              decoding="async"
-              className="absolute inset-0 h-full w-full object-cover"
-            />
-            {/* A gradient scrim rather than brightness(0.45) on the image. The
-                filter dims the whole photo evenly, which is both flatter and
-                weakest exactly where the text sits. */}
-            <div
-              aria-hidden="true"
-              className="absolute inset-0"
-              style={{
-                background:
-                  "linear-gradient(180deg, color-mix(in srgb, var(--color-primary) 55%, transparent) 0%, color-mix(in srgb, var(--color-primary) 88%, black) 100%)",
-              }}
-            />
-          </>
-        )}
-
-        <div className="relative z-10 max-w-2xl">
-          <p
-            className="text-[11px] font-bold uppercase tracking-[0.2em]"
-            style={{ color: "var(--color-accent)" }}
-          >
-            <EditableText
-              id="collaborators.eyebrow"
-              defaultValue={content["collaborators.eyebrow"] ?? "The network"}
-              className="text-[11px] font-bold uppercase tracking-[0.2em]"
-            />
-          </p>
-
-          <h1
-            className="mt-3 font-black text-white"
-            style={{ fontSize: "clamp(2rem,4vw,3rem)", fontFamily: "var(--font-heading)" }}
-          >
-            <EditableText
-              id="collaborators.pageTitle"
-              defaultValue={content["collaborators.pageTitle"] ?? "Our Collaborators"}
-              className="font-black text-white"
-            />
-          </h1>
-
-          <p className="mx-auto mt-4 max-w-xl text-base leading-relaxed text-white/75">
-            <EditableText
-              id="collaborators.pageSubtitle"
-              defaultValue={content["collaborators.pageSubtitle"] ?? ""}
-              className="text-base leading-relaxed"
-            />
-          </p>
-
-          <button
-            type="button"
-            onClick={goToRequestForm}
-            className="mt-7 rounded-xl px-8 py-3 text-sm font-bold shadow-[0_8px_20px_rgba(0,0,0,0.2)] transition hover:brightness-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-transparent motion-safe:hover:-translate-y-0.5"
-            style={{ background: "var(--color-accent)", color: "#1f2937" }}
-          >
-            <EditableText
-              id="collaborators.requestCta"
-              defaultValue={content["collaborators.requestCta"] ?? "Become a Collaborator"}
-              className="text-sm font-bold"
-            />
-          </button>
-        </div>
-      </section>
+            <button
+              type="button"
+              onClick={goToRequestForm}
+              className="rounded-xl px-8 py-3 text-sm font-bold shadow-[0_8px_20px_rgba(0,0,0,0.2)] transition hover:brightness-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-transparent motion-safe:hover:-translate-y-0.5"
+              style={{ background: "var(--color-accent)", color: "var(--site-heading)" }}
+            >
+              <EditableText
+                id="collaborators.requestCta"
+                defaultValue={content["collaborators.requestCta"] ?? "Become a Collaborator"}
+                className="text-sm font-bold"
+              />
+            </button>
+      </PageHero>
 
       {/* ------------------------------------------------------------ Toolbar */}
-      {/* Sticky: on a four-column grid you are several screens from the filters
-          by the time you decide to change them. */}
       {!loading && collaborators.length > 0 && (
-        <div className="sticky top-0 z-30 border-b border-slate-200 bg-white/85 backdrop-blur-md">
-          <div className="mx-auto max-w-7xl px-4 py-3" ref={toolbarRef}>
-            <div className="flex flex-wrap items-center gap-3">
-              <SearchField
-                className="min-w-[240px] flex-1"
-                value={search}
-                onChange={(value: string) => setParam(PARAM.search, value)}
-                placeholder="Search by name, university, or interest…"
-                ariaLabel="Search collaborators"
-              />
-              <FilterSelect
+        <PageSearchBar
+          maxWidth="max-w-7xl"
+          value={search}
+          onChange={(value) => setParam(PARAM.search, value)}
+          placeholder="Search collaborators by name, university or research interest"
+          filters={
+            <>
+              <SearchBarSelect
                 value={designationFilter}
-                onChange={(value: string) => setParam(PARAM.designation, value)}
+                onChange={(value) => setParam(PARAM.designation, value)}
                 ariaLabel="Filter by designation"
-                className="min-w-[190px]"
                 options={[
-                  { value: "", label: "All Designations" },
+                  { value: "", label: "All designations" },
                   ...designationOptions.map((value) => ({ value, label: value })),
                 ]}
               />
-              <FilterSelect
+              <SearchBarSelect
                 value={affiliationFilter}
-                onChange={(value: string) => setParam(PARAM.affiliation, value)}
+                onChange={(value) => setParam(PARAM.affiliation, value)}
                 ariaLabel="Filter by university"
-                className="min-w-[210px]"
                 options={[
-                  { value: "", label: "All Universities" },
+                  { value: "", label: "All universities" },
                   ...affiliationOptions.map((value) => ({ value, label: value })),
                 ]}
               />
-
-              {/* Not red. Clearing a filter isn't destructive, and spending the
-                  danger colour here leaves nothing to say it with later. */}
+              {/* Not red. Clearing a filter isn't destructive. */}
               {hasActiveFilter && (
                 <button
                   type="button"
                   onClick={clearFilters}
-                  className="rounded-xl border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-600 transition hover:bg-slate-50 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-secondary)] focus-visible:ring-offset-2"
+                  className="h-10 rounded-lg px-3 text-[13px] font-semibold text-slate-500 transition hover:bg-slate-100 hover:text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-secondary)]"
                 >
                   Clear all
                 </button>
               )}
-
-              {/* role=status: the count changes as you type, and someone who
-                  can't see the grid shrink needs to be told that it did. */}
-              <p
-                role="status"
-                aria-live="polite"
-                className={`ml-auto text-xs font-semibold tabular-nums transition-opacity ${
-                  isStale ? "opacity-50" : "opacity-100"
-                } text-slate-400`}
-              >
-                {filtered.length === collaborators.length
-                  ? `${collaborators.length} collaborators`
-                  : `${filtered.length} of ${collaborators.length} shown`}
-              </p>
-            </div>
-
-            {/* Chips make it obvious *what* is filtered, and let you drop one
-                without losing the rest — the old bar only offered all-or-nothing. */}
-            {hasActiveFilter && (
+            </>
+          }
+          status={
+            <span className={isStale ? "opacity-50" : undefined}>
+              {filtered.length === collaborators.length
+                ? `${collaborators.length} collaborators`
+                : `${filtered.length} of ${collaborators.length}`}
+            </span>
+          }
+          below={
+            (designationFilter || affiliationFilter) && (
               <div className="mt-2.5 flex flex-wrap items-center gap-2">
-                {search && (
-                  <FilterChip
-                    label="Search"
-                    value={search}
-                    onRemove={() => setParam(PARAM.search, "")}
-                  />
-                )}
                 {designationFilter && (
                   <FilterChip
                     label="Role"
@@ -367,13 +302,13 @@ const Collaborators: React.FC = () => {
                   />
                 )}
               </div>
-            )}
-          </div>
-        </div>
+            )
+          }
+        />
       )}
 
       {/* ------------------------------------------------------------- Results */}
-      <div className="mx-auto max-w-7xl px-4 py-12">
+      <div className="mx-auto max-w-7xl px-4 pb-12 pt-8">
         <h2 className="sr-only">Collaborators</h2>
 
         {loading ? (
@@ -411,7 +346,7 @@ const Collaborators: React.FC = () => {
             <button
               type="button"
               onClick={goToRequestForm}
-              className="mt-6 rounded-xl px-5 py-2.5 text-sm font-bold text-white transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-secondary)] focus-visible:ring-offset-2 motion-safe:hover:-translate-y-0.5"
+              className="mt-6 rounded-xl px-5 py-2.5 text-sm font-bold text-[color:var(--hero-text)] transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-secondary)] focus-visible:ring-offset-2 motion-safe:hover:-translate-y-0.5"
               style={{ background: "var(--color-primary)" }}
             >
               Become a collaborator
@@ -438,7 +373,7 @@ const Collaborators: React.FC = () => {
             <button
               type="button"
               onClick={clearFilters}
-              className="mt-6 rounded-xl px-5 py-2.5 text-sm font-bold text-white transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-secondary)] focus-visible:ring-offset-2 motion-safe:hover:-translate-y-0.5"
+              className="mt-6 rounded-xl px-5 py-2.5 text-sm font-bold text-[color:var(--hero-text)] transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-secondary)] focus-visible:ring-offset-2 motion-safe:hover:-translate-y-0.5"
               style={{ background: "var(--color-primary)" }}
             >
               Clear filters
@@ -466,6 +401,11 @@ const Collaborators: React.FC = () => {
                       ? () => navigate(`/collaborators/${encodeURIComponent(c.uid)}`)
                       : undefined
                   }
+                  onMessage={
+                    canMessage && c.uid && c.uid !== appUser?.uid
+                      ? () => navigate(`/chat?to=${encodeURIComponent(c.uid)}`)
+                      : undefined
+                  }
                 />
               </li>
             ))}
@@ -474,56 +414,40 @@ const Collaborators: React.FC = () => {
       </div>
 
       {/* ------------------------------------------------------------- Request */}
-      <section
-        id="collaborator-request"
-        ref={requestRef}
-        tabIndex={-1}
-        aria-labelledby="collaborator-request-title"
-        className="scroll-mt-20 border-t border-slate-200 bg-slate-50 px-4 py-14 focus:outline-none"
+      <SideDrawer
+        open={requestOpen}
+        onClose={closeRequestForm}
+        eyebrow={
+          <EditableText
+            id="collaborators.joinNetwork"
+            defaultValue="Join the Network"
+            className="inline"
+          />
+        }
+        title={
+          <EditableText
+            id="collaborators.requestTitle"
+            defaultValue={content["collaborators.requestTitle"] ?? "Become a Collaborator"}
+            className="inline"
+          />
+        }
       >
-        <div className="mx-auto max-w-7xl">
-          <div className="mb-7 text-center">
-            <p className="text-xs font-black uppercase tracking-[0.18em] text-slate-500">
-              <EditableText
-                id="collaborators.joinNetwork"
-                defaultValue="Join the Network"
-                className="text-xs font-black uppercase tracking-[0.18em]"
-              />
-            </p>
-            <div
-              className="mx-auto mt-2 h-1 w-14 rounded-full"
-              style={{ background: "var(--color-accent)" }}
+        <div className="mx-auto max-w-4xl px-4 py-8 md:px-8">
+          <p className="mb-6 text-sm leading-relaxed text-slate-600">
+            <EditableText
+              id="collaborators.requestSubtitle"
+              defaultValue={
+                content["collaborators.requestSubtitle"] ??
+                "Interested in joining our research community? Submit your request below and our admin will review your profile."
+              }
+              className="text-sm leading-relaxed"
             />
-          </div>
-
-          <div className="mx-auto max-w-4xl rounded-2xl bg-white p-6 shadow-md md:p-10">
-            <div className="mb-6 text-center">
-              <h2
-                id="collaborator-request-title"
-                className="mb-3 text-2xl font-black"
-                style={{ color: "var(--color-primary)", fontFamily: "var(--font-heading)" }}
-              >
-                <EditableText
-                  id="collaborators.requestTitle"
-                  defaultValue={content["collaborators.requestTitle"] ?? "Become a Collaborator"}
-                  className="text-2xl font-black"
-                />
-              </h2>
-              <p className="text-sm leading-relaxed text-slate-600">
-                <EditableText
-                  id="collaborators.requestSubtitle"
-                  defaultValue={
-                    content["collaborators.requestSubtitle"] ??
-                    "Interested in joining our research community? Submit your request below and our admin will review your profile."
-                  }
-                  className="text-sm leading-relaxed"
-                />
-              </p>
-            </div>
+          </p>
+          <div className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200 md:p-8">
             <CollaboratorRequestForm />
           </div>
         </div>
-      </section>
+      </SideDrawer>
     </div>
   );
 };

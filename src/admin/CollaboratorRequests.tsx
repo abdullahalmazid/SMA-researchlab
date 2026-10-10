@@ -6,7 +6,8 @@ import {
   setDoc,
   writeBatch,
   updateDoc,
-} from "firebase/firestore";
+} from "./core/auditedFirestore";
+import { useConfirm } from "./components/useConfirm";
 import React, { useEffect, useState } from "react";
 import AppIcon from "../components/AppIcon";
 import { useAuth } from "../context/AuthContext";
@@ -34,6 +35,7 @@ function generatePassword(): string {
 
 // ══════════════════════════════════════════════════════════════
 const CollaboratorRequests: React.FC = () => {
+  const { confirm, confirmElement } = useConfirm();
   const { createCollaboratorAccount, sendPasswordSetupEmail } = useAuth();
   const [requests, setRequests] = useState<PendingRequest[]>([]);
   const [loading, setLoading] = useState(true);
@@ -137,7 +139,7 @@ const CollaboratorRequests: React.FC = () => {
   };
 
   const reject = async (req: PendingRequest) => {
-    if (!window.confirm(`Reject request from ${req.name}?`)) return;
+    if (!(await confirm({ title: `Reject ${req.name}'s request?`, message: "They won't be added as a collaborator. This can't be undone from here.", confirmLabel: "Reject", danger: true }))) return;
     setProcessing(req.id);
     await updateDoc(doc(db, "pendingRequests", req.id), { status: "rejected" });
     setRequests((p) => p.filter((r) => r.id !== req.id));
@@ -160,6 +162,7 @@ const CollaboratorRequests: React.FC = () => {
 
   return (
     <div>
+      {confirmElement}
       {/* Toast */}
       {toast && (
         <div

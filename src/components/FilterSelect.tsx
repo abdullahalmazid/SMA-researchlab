@@ -28,7 +28,7 @@ const FilterSelect: React.FC<FilterSelectProps> = ({
       aria-label={ariaLabel}
       className={`h-11 w-full appearance-none rounded-xl border bg-white pl-3.5 pr-10 text-sm font-semibold outline-none transition focus:ring-4 focus:ring-slate-200/60 ${
         value
-          ? "border-[var(--color-primary)] text-[var(--color-primary)]"
+          ? "border-[var(--color-primary)] text-[var(--primary-ink)]"
           : "border-slate-200 text-slate-700"
       }`}
     >

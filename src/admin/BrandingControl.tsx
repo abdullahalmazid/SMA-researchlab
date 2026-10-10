@@ -1,4 +1,4 @@
-import { doc, setDoc } from "firebase/firestore";
+import { doc, setDoc } from "./core/auditedFirestore";
 import React, { useEffect, useState } from "react";
 import CloudinaryUpload from "../components/CloudinaryUpload";
 import { db } from "../firebase/config";

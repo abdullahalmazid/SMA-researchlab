@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useEffect } from "react";
 import { useTheme as useThemeData } from "../firebase/hooks";
+import { themeVariables } from "../theme/tokens";
 import type { ThemeSettings } from "../types";
 
 const hexToRgb = (hex: string) => {
@@ -33,12 +34,8 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({
     const root = document.documentElement;
     const darkMode = isDarkColor(theme.backgroundColor);
 
-    root.style.setProperty("--color-primary", theme.primaryColor);
-    root.style.setProperty("--color-secondary", theme.secondaryColor);
-    root.style.setProperty("--color-accent", theme.accentColor);
-    root.style.setProperty("--color-bg", theme.backgroundColor);
-    root.style.setProperty("--color-navbar", theme.navbarColor);
-    root.style.setProperty("--color-footer", theme.footerColor);
+    // Brand colours plus the derived/explicit detail tokens (cards, text, borders…).
+    Object.entries(themeVariables(theme)).forEach(([name, value]) => root.style.setProperty(name, value));
     root.style.setProperty("--font-body", theme.fontFamily);
     root.style.setProperty("--font-heading", theme.headingFont);
     root.dataset.themeMode = darkMode ? "dark" : "light";

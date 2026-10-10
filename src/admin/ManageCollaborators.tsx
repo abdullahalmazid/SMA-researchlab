@@ -4,10 +4,9 @@ collection,
   deleteDoc,
 doc,
 getDocs,
-  orderBy,
-query,
   updateDoc,
-} from "firebase/firestore";
+} from "./core/auditedFirestore";
+import { useConfirm } from "./components/useConfirm";
 import React, { useEffect, useState } from "react";
 import AppIcon from "../components/AppIcon";
 import CloudinaryUpload from "../components/CloudinaryUpload";
@@ -40,6 +39,7 @@ const createEmptyCollaborator = (nextOrder: number): CollaboratorProfile => ({
 });
 
 const ManageCollaborators: React.FC = () => {
+  const { confirm, inform, confirmElement } = useConfirm();
 const [collaborators, setCollaborators] = useState<CollaboratorProfile[]>([]);
 const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<CollaboratorProfile | null>(null);
@@ -49,11 +49,16 @@ const [loading, setLoading] = useState(true);
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
 
   const load = async () => {
-    const snap = await getDocs(
-      query(collection(db, "collaborators"), orderBy("order", "asc")),
-    );
+    /* Sorted here, not with orderBy("order"): Firestore silently drops every
+       document that lacks the field, so collaborators created by imports or
+       migrations never appeared in this list at all. */
+    const snap = await getDocs(collection(db, "collaborators"));
+    const rank = (c: CollaboratorProfile) =>
+      typeof (c as { order?: unknown }).order === "number" ? (c as { order: number }).order : Number.MAX_SAFE_INTEGER;
     setCollaborators(
-      snap.docs.map((d) => ({ id: d.id, ...d.data() }) as CollaboratorProfile),
+      snap.docs
+        .map((d) => ({ id: d.id, ...d.data() }) as CollaboratorProfile)
+        .sort((a, b) => rank(a) - rank(b) || String(a.name).localeCompare(String(b.name))),
     );
     setLoading(false);
   };
@@ -68,12 +73,7 @@ useEffect(() => {
   };
 
   const remove = async (c: CollaboratorProfile) => {
-    if (
-      !window.confirm(
-        `Remove ${c.name} from collaborators? This cannot be undone.`,
-      )
-    )
-      return;
+    if (!(await confirm({ title: `Remove ${c.name}?`, message: "Their collaborator profile will be deleted. This cannot be undone.", confirmLabel: "Remove", danger: true }))) return;
     setDeletingId(c.id);
     await deleteDoc(doc(db, "collaborators", c.id));
     setDeletingId(null);
@@ -107,7 +107,7 @@ useEffect(() => {
   const saveEdit = async () => {
     if (!editing) return;
     if (!editing.name.trim()) {
-      alert("Please enter a collaborator name.");
+      await inform("Name required", "Please enter a collaborator name.");
       return;
     }
     setSaving(true);
@@ -156,6 +156,7 @@ useEffect(() => {
 
   return (
     <div>
+      {confirmElement}
       <div className="mb-6">
         <h2
           className="text-2xl font-black"

@@ -1,6 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import EditableText from "../components/EditableText";
+import PageHero from "../components/PageHero";
+import PageSearchBar from "../components/PageSearchBar";
 import { useThemeContext } from "../context/ThemeContext";
 import { useAnnouncements, useSiteContent } from "../firebase/hooks";
 import type { Announcement } from "../types";
@@ -80,14 +82,14 @@ function isDarkBackground(hex: string): boolean {
 }
 
 const buildTokens = (dark: boolean) => ({
-  surface: dark ? "#111827" : "#ffffff",
-  surfaceAlt: dark ? "rgba(148,163,184,0.10)" : "#f6f8fb",
-  border: dark ? "rgba(148,163,184,0.22)" : "#e6ecf3",
-  borderStrong: dark ? "rgba(148,163,184,0.42)" : "#cbd5e1",
-  title: dark ? "#f8fafc" : "#0f172a",
-  body: dark ? "#cbd5e1" : "#475569",
-  muted: dark ? "#94a3b8" : "#64748b",
-  faint: dark ? "#64748b" : "#94a3b8",
+  surface: "var(--site-surface)",
+  surfaceAlt: "var(--site-surface-alt)",
+  border: "var(--site-border)",
+  borderStrong: "color-mix(in srgb, var(--site-muted) 45%, var(--site-border))",
+  title: "var(--site-heading)",
+  body: "var(--site-text)",
+  muted: "var(--site-muted)",
+  faint: "color-mix(in srgb, var(--site-muted) 70%, var(--site-surface))",
   shadow: dark ? "0 1px 2px rgba(0,0,0,0.4)" : "0 1px 2px rgba(15,23,42,0.04)",
   shadowHi: dark ? "0 12px 28px rgba(0,0,0,0.45)" : "0 12px 28px rgba(15,23,42,0.09)",
   pin: dark ? "#fbbf24" : "#b45309",
@@ -346,10 +348,20 @@ const Announcements: React.FC = () => {
         boxShadow: t.shadow,
       }}
     >
-      <span className="mb-[7px] flex flex-wrap items-center gap-2">
-        <Badges post={post} t={t} />
-        <span className="text-[12px] tabular-nums" style={{ color: t.faint }}>
+      {/* One meta line: category · date on the left, the action on the right.
+          Pinned/New badges are gone — the Pinned group, accent border and date say it. */}
+      <span className="mb-1.5 flex items-center gap-2 text-[12px]">
+        <span className="min-w-0 flex-1 truncate tabular-nums" style={{ color: t.muted }}>
+          {post.category && (
+            <span className="font-bold uppercase tracking-[0.08em]" style={{ fontSize: 10.5 }}>
+              {post.category}
+              <span aria-hidden="true"> · </span>
+            </span>
+          )}
           {fmtDate(post.createdAt)}
+        </span>
+        <span className="inline-flex shrink-0 items-center gap-1 font-bold" style={{ color: "var(--secondary-ink)" }}>
+          Read <span aria-hidden="true">→</span>
         </span>
       </span>
       <span
@@ -358,14 +370,8 @@ const Announcements: React.FC = () => {
       >
         {titleOf(post)}
       </span>
-      <span className="mt-1.5 line-clamp-2 block text-[13.5px] leading-relaxed" style={{ color: t.body }}>
+      <span className="mt-1 line-clamp-2 block text-[13.5px] leading-relaxed" style={{ color: t.body }}>
         {post.content}
-      </span>
-      <span
-        className="mt-2.5 inline-flex items-center gap-1.5 text-[12px] font-bold"
-        style={{ color: "var(--color-secondary)" }}
-      >
-        Read more <span aria-hidden="true">→</span>
       </span>
     </button>
   );
@@ -373,129 +379,94 @@ const Announcements: React.FC = () => {
   return (
     <div>
       {/* ---------------------------------------------------------- hero */}
-      <section className="px-4 pt-14" style={{ background: "var(--color-primary)" }}>
-        <div className="mx-auto max-w-3xl">
-          <p
-            className="inline-flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.2em]"
-            style={{ color: "var(--color-accent)" }}
-          >
-            <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-current" />
-            <EditableText
-              id="announcements.eyebrow"
-              defaultValue={content["branding.labName"] ?? "DASS Research Lab"}
-              className="inline"
-            />
-          </p>
-
-          <h1
-            className="mt-3.5 font-black tracking-tight text-white"
-            style={{ fontSize: "clamp(2rem,4.5vw,2.8rem)", fontFamily: "var(--font-heading)" }}
-          >
-            <EditableText
-              id="announcements.pageTitle"
-              defaultValue={content["announcements.pageTitle"] ?? "Announcements"}
-              className="font-black text-white"
-            />
-          </h1>
-
-          <p className="mt-3 max-w-2xl text-[15px] leading-relaxed text-white/70">
-            <EditableText
-              id="announcements.pageSubtitle"
-              defaultValue={
-                content["announcements.pageSubtitle"] ??
-                "Papers, awards, openings and everything else worth telling people about — newest first."
-              }
-              className="text-[15px] leading-relaxed"
-            />
-          </p>
-
-          <div className="mt-7 flex flex-wrap gap-x-9 border-t border-white/15 py-5">
-            {[
-              { value: published.length, label: "announcements" },
-              { value: published.filter((p) => p.isPinned).length, label: "pinned" },
-              { value: categories.length, label: "categories" },
-            ].map((fact) => (
-              <div key={fact.label} className="flex items-baseline gap-2.5">
-                <b
-                  className="text-2xl font-black leading-none tabular-nums"
-                  style={{ color: "var(--color-accent)", fontFamily: "var(--font-heading)" }}
-                >
-                  {fact.value}
-                </b>
-                <span className="text-[12.5px] text-white/60">{fact.label}</span>
-              </div>
-            ))}
-          </div>
+      <PageHero
+        bannerUrl={content["announcements.bannerUrl"]}
+        eyebrow={
+          <EditableText
+            id="announcements.eyebrow"
+            defaultValue={content["branding.labName"] ?? "DASS Research Lab"}
+            className="inline"
+          />
+        }
+        title={
+          <EditableText
+            id="announcements.pageTitle"
+            defaultValue={content["announcements.pageTitle"] ?? "Announcements"}
+            className="inline"
+          />
+        }
+        subtitle={
+          <EditableText
+            id="announcements.pageSubtitle"
+            defaultValue={
+              content["announcements.pageSubtitle"] ??
+              "Papers, awards, openings and everything else worth telling people about — newest first."
+            }
+            className="inline"
+          />
+        }
+      >
+        <div className="flex flex-wrap justify-center gap-x-9 gap-y-3">
+          {[
+            { value: published.length, label: "announcements" },
+            { value: published.filter((p) => p.isPinned).length, label: "pinned" },
+            { value: categories.length, label: "categories" },
+          ].map((fact) => (
+            <div key={fact.label} className="flex items-baseline gap-2.5">
+              <b
+                className="text-2xl font-black leading-none tabular-nums"
+                style={{ color: "var(--color-accent)", fontFamily: "var(--font-heading)" }}
+              >
+                {fact.value}
+              </b>
+              <span className="text-[12.5px] text-white/60">{fact.label}</span>
+            </div>
+          ))}
         </div>
-      </section>
+      </PageHero>
 
       {/* ------------------------------------------------------- toolbar */}
       {!loading && published.length > 0 && (
-        <div
-          className="sticky top-0 z-30 border-b backdrop-blur-md"
-          style={{
-            borderColor: t.border,
-            background: `color-mix(in srgb, ${t.surface} 88%, transparent)`,
-          }}
-        >
-          <div className="mx-auto flex max-w-3xl flex-wrap items-center gap-2.5 px-4 py-2.5">
-            <div className="relative min-w-[190px] flex-1">
-              <svg
-                width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9"
-                aria-hidden="true"
-                className="absolute left-3 top-1/2 -translate-y-1/2"
-                style={{ color: t.faint }}
-              >
-                <circle cx="11" cy="11" r="7" />
-                <path d="M20 20l-3.5-3.5" strokeLinecap="round" />
-              </svg>
-              <input
-                type="search"
-                value={search}
-                aria-label="Search announcements"
-                placeholder="Search announcements…"
-                onChange={(e) => setParam(PARAM.search, e.target.value)}
-                className="w-full rounded-lg border py-2 pl-9 pr-3 text-[13px] outline-none"
-                style={{ background: t.surfaceAlt, borderColor: t.border, color: t.title }}
-              />
-            </div>
-
-            {categories.map((name) => {
-              const on = category === name;
-              return (
-                <button
-                  key={name}
-                  type="button"
-                  aria-pressed={on}
-                  onClick={() => setParam(PARAM.category, on ? "" : name)}
-                  className="rounded-full border px-2.5 py-1.5 text-[12px] font-semibold transition"
-                  style={{
-                    background: on ? "var(--color-primary)" : t.surface,
-                    borderColor: on ? "var(--color-primary)" : t.border,
-                    color: on ? "#fff" : t.muted,
-                  }}
-                >
-                  {name}
-                </button>
-              );
-            })}
-
-            <p
-              role="status"
-              aria-live="polite"
-              className="ml-auto text-[12px] font-semibold tabular-nums"
-              style={{ color: t.muted }}
-            >
-              {visible.length === published.length
-                ? `${published.length} total`
-                : `${visible.length} of ${published.length}`}
-            </p>
-          </div>
-        </div>
+        <PageSearchBar
+          maxWidth="max-w-3xl"
+          value={search}
+          onChange={(value) => setParam(PARAM.search, value)}
+          placeholder="Search announcements"
+          filters={
+            categories.length > 0 && (
+              <div className="flex flex-wrap gap-1.5">
+                {categories.map((name) => {
+                  const on = category === name;
+                  return (
+                    <button
+                      key={name}
+                      type="button"
+                      aria-pressed={on}
+                      onClick={() => setParam(PARAM.category, on ? "" : name)}
+                      className="h-10 rounded-lg border px-3 text-[13px] font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-secondary)]"
+                      style={{
+                        background: on ? "var(--color-primary)" : t.surface,
+                        borderColor: on ? "var(--color-primary)" : t.border,
+                        color: on ? "#fff" : t.muted,
+                      }}
+                    >
+                      {name}
+                    </button>
+                  );
+                })}
+              </div>
+            )
+          }
+          status={
+            visible.length === published.length
+              ? `${published.length} total`
+              : `${visible.length} of ${published.length}`
+          }
+        />
       )}
 
       {/* -------------------------------------------------------- listing */}
-      <div className="mx-auto max-w-3xl px-4 pb-24 pt-8">
+      <div className="mx-auto max-w-3xl px-4 pb-16 pt-6">
         {loading ? (
           <div aria-busy="true" aria-label="Loading announcements">
             {Array.from({ length: 4 }, (_, i) => (
@@ -543,7 +514,7 @@ const Announcements: React.FC = () => {
                 next.delete(PARAM.category);
                 setParams(next, { replace: true });
               }}
-              className="mt-5 rounded-xl px-5 py-2.5 text-[13.5px] font-bold text-white"
+              className="mt-5 rounded-xl px-5 py-2.5 text-[13.5px] font-bold text-[color:var(--hero-text)]"
               style={{ background: "var(--color-primary)" }}
             >
               Clear filters
@@ -642,7 +613,7 @@ const Announcements: React.FC = () => {
                   href={openPost.link}
                   target="_blank"
                   rel="noreferrer"
-                  className="mt-6 inline-flex items-center gap-2 rounded-[9px] px-4 py-2.5 text-[13px] font-bold text-white no-underline"
+                  className="mt-6 inline-flex items-center gap-2 rounded-[9px] px-4 py-2.5 text-[13px] font-bold text-[color:var(--hero-text)] no-underline"
                   style={{ background: "var(--color-primary)" }}
                 >
                   {/* The admin panel writes linkLabel precisely so this doesn't

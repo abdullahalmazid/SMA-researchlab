@@ -16,9 +16,14 @@ const ProtectedRoute: React.FC<Props> = ({
   redirectTo = '/login',
   requireAdminAccess = false,
 }) => {
-  const { role, loading, appUser } = useAuth();
+  const { role, loading, appUser, firebaseUser, authError } = useAuth();
 
-  if (loading) {
+  /* Signed in to Firebase but the profile isn't resolved yet (and hasn't
+     failed): keep waiting. Redirecting here bounced admins to the login page
+     when they opened a deep link like /admin/announcements on a slow load. */
+  const profilePending = Boolean(firebaseUser) && !appUser && !authError;
+
+  if (loading || profilePending) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div

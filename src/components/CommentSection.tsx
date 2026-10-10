@@ -153,7 +153,7 @@ const CommentSection: React.FC<Props> = ({ ideaId }) => {
         </h3>
         <div
           className="px-2.5 py-0.5 rounded-full text-xs font-black"
-          style={{ background: "var(--color-primary)", color: "white" }}
+          style={{ background: "var(--color-primary)", color: "var(--hero-text)" }}
         >
           {comments.length}
         </div>
@@ -177,7 +177,7 @@ const CommentSection: React.FC<Props> = ({ ideaId }) => {
       ) : (
         <div
           className="flex items-center gap-4 p-5 rounded-2xl mb-8"
-          style={{ background: "#f8fafc", border: "1px solid #e8eef4" }}
+          style={{ background: "var(--site-surface-alt)", border: "1px solid var(--site-border)" }}
         >
           <div
             className="w-10 h-10 rounded-xl flex items-center justify-center text-xl"
@@ -210,7 +210,7 @@ const CommentSection: React.FC<Props> = ({ ideaId }) => {
       ) : topLevel.length === 0 ? (
         <div
           className="text-center py-14 rounded-2xl"
-          style={{ background: "#f8fafc", border: "1px dashed #d1d5db" }}
+          style={{ background: "var(--site-surface-alt)", border: "1px dashed var(--site-border)" }}
         >
           <div className="mb-3 inline-flex items-center justify-center text-gray-400">
             <AppIcon name="message" size={36} />
@@ -326,7 +326,7 @@ const CommentInput: React.FC<{
           autoFocus={autoFocus}
           className="w-full text-sm resize-none outline-none text-gray-700 rounded-xl"
           style={{
-            border: "1px solid #e2e8f0",
+            border: "1px solid var(--site-border)",
             padding: "14px 14px",
             minHeight: isReply ? 88 : 124,
             fontFamily: "var(--font-body)",
@@ -341,7 +341,7 @@ const CommentInput: React.FC<{
               <button
                 onClick={onCancel}
                 className="text-xs font-bold px-4 py-1.5 rounded-lg border-none cursor-pointer"
-                style={{ background: "#f1f5f9", color: "#64748b" }}
+                style={{ background: "var(--site-surface-alt)", color: "var(--site-muted)" }}
               >
                 Cancel
               </button>
@@ -491,7 +491,7 @@ const CommentThreadNode: React.FC<{
               background: hovered ? "#eaf1fb" : "#f0f4f8",
               maxWidth: "100%",
               width: "100%",
-              border: "1px solid #e8eef4",
+              border: "1px solid var(--site-border)",
             }}
           >
             <div className="flex items-center gap-2 mb-1.5">
@@ -520,8 +520,8 @@ const CommentThreadNode: React.FC<{
                   rows={3}
                   className="w-full text-sm resize-y outline-none rounded-lg p-2"
                   style={{
-                    border: "1px solid #cbd5e1",
-                    color: "#374151",
+                    border: "1px solid var(--site-border)",
+                    color: "var(--site-text)",
                     background: "white",
                     fontFamily: "var(--font-body)",
                     lineHeight: 1.65,
@@ -534,14 +534,14 @@ const CommentThreadNode: React.FC<{
                       setEditText(comment.content);
                     }}
                     className="text-xs font-bold px-3 py-1.5 rounded-lg border-none cursor-pointer"
-                    style={{ background: "#e2e8f0", color: "#475569" }}
+                    style={{ background: "#e2e8f0", color: "var(--site-text)" }}
                   >
                     Cancel
                   </button>
                   <button
                     onClick={submitEdit}
                     disabled={savingEdit || !editText.trim()}
-                    className="text-xs font-bold px-3 py-1.5 rounded-lg border-none text-white disabled:opacity-60 cursor-pointer"
+                    className="text-xs font-bold px-3 py-1.5 rounded-lg border-none text-[color:var(--hero-text)] disabled:opacity-60 cursor-pointer"
                     style={{ background: "var(--color-primary)" }}
                   >
                     {savingEdit ? "Saving..." : "Save"}
@@ -626,7 +626,7 @@ const CommentThreadNode: React.FC<{
                   className="w-7 h-7 rounded-full border-none cursor-pointer flex items-center justify-center"
                   style={{
                     background: menuOpen ? "#e2e8f0" : "transparent",
-                    color: "#64748b",
+                    color: "var(--site-muted)",
                   }}
                 >
                   <AppIcon name="more" size={14} />
@@ -702,7 +702,7 @@ const CommentThreadNode: React.FC<{
                 left: `${menuPosition.left}px`,
                 minWidth: 140,
                 background: "white",
-                border: "1px solid #e2e8f0",
+                border: "1px solid var(--site-border)",
                 boxShadow: "0 10px 28px rgba(15,23,42,0.16)",
                 zIndex: 9999,
               }}
@@ -714,7 +714,7 @@ const CommentThreadNode: React.FC<{
                     setMenuOpen(false);
                   }}
                   className="w-full text-left px-3 py-2 text-xs font-semibold border-none cursor-pointer"
-                  style={{ background: "white", color: "#0f172a" }}
+                  style={{ background: "white", color: "var(--site-heading)" }}
                 >
                   Edit comment
                 </button>

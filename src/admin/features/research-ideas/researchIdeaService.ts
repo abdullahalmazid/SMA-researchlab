@@ -1,4 +1,4 @@
-import { collection, deleteDoc, doc, getDocs, query, updateDoc, where, writeBatch } from "firebase/firestore";
+import { collection, deleteDoc, doc, getDocs, query, updateDoc, where, writeBatch } from "../../core/auditedFirestore";
 import { db } from "../../../firebase/config";
 import type { ResearchIdea } from "../../../types";
 

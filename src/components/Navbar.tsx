@@ -251,8 +251,8 @@ const Navbar: React.FC = () => {
           <span
             className="nv-user-role"
             style={{
-              background: isAdmin ? "var(--color-accent)" : "rgba(255,255,255,.15)",
-              color: isAdmin ? "#1f2937" : "#fff",
+              background: isAdmin ? "var(--color-accent)" : "color-mix(in srgb, var(--hero-text) 15%, transparent)",
+              color: isAdmin ? "var(--on-accent)" : "var(--hero-text)",
             }}
           >
             {roleLabel}
@@ -544,7 +544,7 @@ const NV_DESKTOP = 1024;
 const CSS = `
 .nv-skip{position:absolute;left:-9999px}
 .nv-skip:focus{left:50%;top:8px;transform:translateX(-50%);z-index:200;
-  padding:10px 18px;border-radius:8px;background:var(--color-accent);color:#1f2937;
+  padding:10px 18px;border-radius:8px;background:var(--color-accent);color:var(--on-accent);
   font-size:13px;font-weight:700;text-decoration:none}
 
 @media (max-width:${NV_DESKTOP - 1}px){ .nv-desktop{display:none!important} }
@@ -553,18 +553,18 @@ const CSS = `
 /* ── brand ── */
 .nv-brand{display:flex;align-items:center;gap:10px;flex-shrink:0;text-decoration:none}
 .nv-mark{display:grid;place-items:center;width:32px;height:32px;flex-shrink:0;
-  border-radius:9px;font-size:14px;font-weight:700;color:#1f2937}
+  border-radius:9px;font-size:14px;font-weight:700;color:var(--on-accent)}
 .nv-mark-sm{width:28px;height:28px;font-size:12px;border-radius:8px}
 .nv-wordmark{font-size:17px;font-weight:700;letter-spacing:-.01em;
-  color:var(--color-accent);font-family:var(--font-heading)}
+  color:var(--nav-accent);font-family:var(--font-heading)}
 .nv-wordmark-sm{font-size:14px}
 
 .nv-rel{position:relative}
 .nv-avatar{display:grid;place-items:center;border-radius:50%;font-weight:700;color:#fff;flex-shrink:0}
 .nv-avatar-btn{display:grid;place-items:center;width:40px;height:40px;padding:0;
-  border-radius:50%;border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.05);
+  border-radius:50%;border:1px solid color-mix(in srgb, var(--nav-text) 20%, transparent);background:color-mix(in srgb, var(--nav-text) 5%, transparent);
   cursor:pointer;transition:background .2s}
-.nv-avatar-btn:hover{background:rgba(255,255,255,.15)}
+.nv-avatar-btn:hover{background:color-mix(in srgb, var(--nav-text) 15%, transparent)}
 .nv-avatar-btn:focus-visible{outline:2px solid var(--color-accent);outline-offset:2px}
 
 /* ── desktop top bar ── */
@@ -576,37 +576,37 @@ const CSS = `
 .nv-actions{display:flex;align-items:center;gap:8px;flex-shrink:0}
 
 .nv-link{display:inline-flex;align-items:center;gap:6px;padding:8px 12px;border-radius:8px;
-  font-size:13.5px;font-weight:500;color:rgba(255,255,255,.85);text-decoration:none;
+  font-size:13.5px;font-weight:500;color:color-mix(in srgb, var(--nav-text) 85%, transparent);text-decoration:none;
   background:transparent;border:0;cursor:pointer;transition:background .15s,color .15s}
-.nv-link:hover{background:rgba(255,255,255,.1);color:#fff}
+.nv-link:hover{background:color-mix(in srgb, var(--nav-text) 10%, transparent);color:var(--nav-text)}
 .nv-link:focus-visible{outline:2px solid var(--color-accent);outline-offset:2px}
-.nv-link[data-active]{color:var(--color-accent);background:rgba(255,255,255,.1);font-weight:600}
+.nv-link[data-active]{color:var(--nav-accent);background:color-mix(in srgb, var(--nav-text) 10%, transparent);font-weight:600}
 .nv-caret{transition:transform .2s ease}
 
 .nv-icon-btn{display:grid;place-items:center;width:38px;height:38px;border:0;border-radius:9px;
-  background:rgba(255,255,255,.08);color:rgba(255,255,255,.85);cursor:pointer;transition:background .2s}
-.nv-icon-btn:hover{background:rgba(255,255,255,.18);color:#fff}
+  background:color-mix(in srgb, var(--nav-text) 8%, transparent);color:color-mix(in srgb, var(--nav-text) 85%, transparent);cursor:pointer;transition:background .2s}
+.nv-icon-btn:hover{background:color-mix(in srgb, var(--nav-text) 18%, transparent);color:var(--nav-text)}
 .nv-icon-btn:focus-visible{outline:2px solid var(--color-accent);outline-offset:2px}
 
 .nv-panel{position:absolute;left:0;top:100%;margin-top:6px;z-index:120;width:300px;padding:8px;
-  border-radius:14px;border:1px solid #e5e7eb;background:#fff;
+  border-radius:14px;border:1px solid var(--site-border);background:var(--site-surface);
   box-shadow:0 20px 50px rgba(15,23,42,.18);animation:nvIn .16s ease}
 @keyframes nvIn{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:none}}
 .nv-panel-item{display:flex;gap:12px;padding:10px 12px;border-radius:10px;
   text-decoration:none;transition:background .15s}
-.nv-panel-item:hover{background:#f8fafc}
+.nv-panel-item:hover{background:var(--site-surface-alt)}
 .nv-panel-item:focus-visible{outline:2px solid var(--color-secondary);outline-offset:-2px}
 .nv-panel-icon{display:grid;place-items:center;width:32px;height:32px;flex-shrink:0;
-  border-radius:9px;background:#f1f5f9;color:#475569}
+  border-radius:9px;background:var(--site-surface-alt);color:var(--site-text)}
 .nv-panel-text{min-width:0}
-.nv-panel-title{display:block;font-size:13.5px;font-weight:600;color:#0f172a}
-.nv-panel-desc{display:block;margin-top:2px;font-size:12px;line-height:1.45;color:#64748b}
+.nv-panel-title{display:block;font-size:13.5px;font-weight:600;color:var(--site-heading)}
+.nv-panel-desc{display:block;margin-top:2px;font-size:12px;line-height:1.45;color:var(--site-muted)}
 
 .nv-cta{display:inline-flex;align-items:center;justify-content:center;gap:7px;
-  padding:9px 15px;border-radius:10px;font-size:13px;font-weight:600;color:#1f2937;
+  padding:9px 15px;border-radius:10px;font-size:13px;font-weight:600;color:var(--on-accent);
   text-decoration:none;background:var(--color-accent);transition:opacity .2s}
 .nv-cta:hover{opacity:.9}
-.nv-cta:focus-visible{outline:2px solid #fff;outline-offset:2px}
+.nv-cta:focus-visible{outline:2px solid var(--nav-text);outline-offset:2px}
 .nv-cta-block{width:100%;margin-top:8px;padding:11px}
 .nv-cta-sm{padding:7px 13px;font-size:12.5px}
 
@@ -615,33 +615,33 @@ const CSS = `
   display:flex;flex-direction:column;background:var(--color-navbar);
   box-shadow:2px 0 20px rgba(0,0,0,.16)}
 .nv-rail-head{display:flex;align-items:center;height:64px;padding:0 16px;
-  border-bottom:1px solid rgba(255,255,255,.1);flex-shrink:0}
+  border-bottom:1px solid color-mix(in srgb, var(--nav-text) 10%, transparent);flex-shrink:0}
 .nv-rail-nav{flex:1;overflow-y:auto;padding:12px 10px;scrollbar-width:thin}
 .nv-rail-section{margin-bottom:14px}
 .nv-rail-label{margin:0 0 6px 10px;font-size:10px;font-weight:600;letter-spacing:.16em;
-  text-transform:uppercase;color:rgba(255,255,255,.34)}
+  text-transform:uppercase;color:color-mix(in srgb, var(--nav-text) 34%, transparent)}
 .nv-rail-link{display:flex;align-items:center;gap:11px;padding:9px 10px;margin-bottom:2px;
   border-radius:9px;border-left:3px solid transparent;font-size:13.5px;font-weight:500;
-  color:rgba(255,255,255,.78);text-decoration:none;transition:background .15s,color .15s}
-.nv-rail-link:hover{background:rgba(255,255,255,.09);color:#fff}
+  color:color-mix(in srgb, var(--nav-text) 78%, transparent);text-decoration:none;transition:background .15s,color .15s}
+.nv-rail-link:hover{background:color-mix(in srgb, var(--nav-text) 9%, transparent);color:var(--nav-text)}
 .nv-rail-link:focus-visible{outline:2px solid var(--color-accent);outline-offset:-2px}
-.nv-rail-link[data-active]{background:rgba(255,255,255,.12);color:var(--color-accent);
-  font-weight:600;border-left-color:var(--color-accent);padding-left:7px}
+.nv-rail-link[data-active]{background:color-mix(in srgb, var(--nav-text) 12%, transparent);color:var(--nav-accent);
+  font-weight:600;border-left-color:var(--nav-accent);padding-left:7px}
 .nv-rail-solo{margin-bottom:14px}
-.nv-rail-foot{flex-shrink:0;padding:12px 10px;border-top:1px solid rgba(255,255,255,.1)}
+.nv-rail-foot{flex-shrink:0;padding:12px 10px;border-top:1px solid color-mix(in srgb, var(--nav-text) 10%, transparent)}
 .nv-rail-switch{display:flex;width:100%;align-items:center;gap:10px;padding:9px 10px;
-  border:0;border-radius:9px;background:rgba(255,255,255,.06);color:rgba(255,255,255,.8);
+  border:0;border-radius:9px;background:color-mix(in srgb, var(--nav-text) 6%, transparent);color:color-mix(in srgb, var(--nav-text) 80%, transparent);
   font-size:12.5px;font-weight:500;cursor:pointer;transition:background .2s}
-.nv-rail-switch:hover{background:rgba(255,255,255,.14);color:#fff}
+.nv-rail-switch:hover{background:color-mix(in srgb, var(--nav-text) 14%, transparent);color:var(--nav-text)}
 .nv-rail-switch:focus-visible{outline:2px solid var(--color-accent);outline-offset:2px}
 .nv-rail-user{display:flex;width:100%;align-items:center;gap:10px;margin-top:8px;padding:8px 10px;
   border:0;border-radius:10px;background:transparent;cursor:pointer;text-align:left;
   transition:background .2s}
-.nv-rail-user:hover{background:rgba(255,255,255,.1)}
+.nv-rail-user:hover{background:color-mix(in srgb, var(--nav-text) 10%, transparent)}
 .nv-rail-user-text{min-width:0;flex:1}
-.nv-rail-user-name{display:block;font-size:12.5px;font-weight:600;color:#fff;
+.nv-rail-user-name{display:block;font-size:12.5px;font-weight:600;color:var(--nav-text);
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.nv-rail-user-role{display:block;font-size:10.5px;color:rgba(255,255,255,.45)}
+.nv-rail-user-role{display:block;font-size:10.5px;color:color-mix(in srgb, var(--nav-text) 45%, transparent)}
 .nv-rail-user-panel{position:absolute;bottom:100%;left:0;margin-bottom:8px}
 .nv-rail-user-panel .nv-user-panel{position:static;margin:0}
 
@@ -650,23 +650,23 @@ const CSS = `
 
 /* ── account panel ── */
 .nv-user-panel{position:absolute;right:0;top:100%;margin-top:8px;z-index:120;width:284px;
-  border-radius:16px;overflow:hidden;border:1px solid #e5e7eb;background:#fff;
+  border-radius:16px;overflow:hidden;border:1px solid var(--site-border);background:var(--site-surface);
   box-shadow:0 20px 60px rgba(15,23,42,.2);animation:nvIn .16s ease}
 .nv-user-head{display:flex;align-items:center;gap:12px;padding:20px 20px 16px;
   background:var(--color-primary)}
 .nv-user-meta{min-width:0;flex:1}
-.nv-user-name{margin:0;font-size:14px;font-weight:700;color:#fff;
+.nv-user-name{margin:0;font-size:14px;font-weight:700;color:var(--hero-text);
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.nv-user-mail{margin:2px 0 0;font-size:12px;color:rgba(255,255,255,.6);
+.nv-user-mail{margin:2px 0 0;font-size:12px;color:color-mix(in srgb, var(--hero-text) 60%, transparent);
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .nv-user-role{display:inline-block;margin-top:6px;padding:2px 8px;border-radius:99px;
   font-size:11px;font-weight:600}
 .nv-user-links{padding:8px 0}
-.nv-user-foot{padding:8px 12px 12px;border-top:1px solid #f1f5f9}
+.nv-user-foot{padding:8px 12px 12px;border-top:1px solid var(--site-border)}
 .nv-menu-link{display:flex;align-items:center;gap:12px;margin:0 8px;padding:10px 12px;
-  border-radius:10px;font-size:13.5px;font-weight:500;color:#374151;
+  border-radius:10px;font-size:13.5px;font-weight:500;color:var(--site-text);
   text-decoration:none;transition:background .15s}
-.nv-menu-link:hover{background:#f3f4f6}
+.nv-menu-link:hover{background:var(--site-surface-alt)}
 .nv-signout{display:flex;width:100%;align-items:center;gap:10px;padding:10px 12px;
   border:0;border-radius:10px;background:#fee2e2;color:#991b1b;font-size:13.5px;
   font-weight:600;cursor:pointer;transition:background .15s}
@@ -677,11 +677,11 @@ const CSS = `
   justify-content:space-between;height:56px;padding:0 16px;background:var(--color-navbar)}
 
 .nv-tabs{position:fixed;left:0;right:0;bottom:0;z-index:100;display:grid;
-  grid-template-columns:repeat(5,1fr);background:#fff;border-top:1px solid #e5e7eb;
+  grid-template-columns:repeat(5,1fr);background:var(--site-surface);border-top:1px solid var(--site-border);
   padding-bottom:env(safe-area-inset-bottom,0px);box-shadow:0 -2px 16px rgba(15,23,42,.08)}
 .nv-tab{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;
   min-height:56px;padding:8px 4px;border:0;background:transparent;cursor:pointer;
-  color:#94a3b8;font-size:10.5px;font-weight:500;text-decoration:none}
+  color:var(--site-muted);font-size:10.5px;font-weight:500;text-decoration:none}
 .nv-tab[data-active]{color:var(--color-primary);font-weight:600}
 .nv-tab:focus-visible{outline:2px solid var(--color-secondary);outline-offset:-3px}
 
@@ -694,27 +694,27 @@ const CSS = `
 @keyframes nvFade{from{opacity:0}to{opacity:1}}
 .nv-sheet{position:fixed;left:0;right:0;bottom:0;z-index:111;max-height:82vh;overflow-y:auto;
   padding:12px 16px calc(20px + env(safe-area-inset-bottom,0px));
-  border-radius:22px 22px 0 0;background:#fff;box-shadow:0 -12px 40px rgba(15,23,42,.25);
+  border-radius:22px 22px 0 0;background:var(--site-surface);box-shadow:0 -12px 40px rgba(15,23,42,.25);
   animation:nvUp .28s cubic-bezier(.32,.72,0,1)}
 @keyframes nvUp{from{transform:translateY(100%)}to{transform:none}}
-.nv-grabber{width:40px;height:4px;margin:0 auto 16px;border-radius:99px;background:#cbd5e1}
+.nv-grabber{width:40px;height:4px;margin:0 auto 16px;border-radius:99px;background:var(--site-border)}
 .nv-sheet-user{display:flex;align-items:center;gap:12px;margin-bottom:16px;padding:14px;
-  border-radius:16px;background:#f8fafc}
+  border-radius:16px;background:var(--site-surface-alt)}
 .nv-sheet-user-text{min-width:0;flex:1}
-.nv-sheet-user-name{margin:0;font-size:14px;font-weight:700;color:#0f172a;
+.nv-sheet-user-name{margin:0;font-size:14px;font-weight:700;color:var(--site-heading);
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.nv-sheet-user-mail{margin:1px 0 0;font-size:12px;color:#64748b;
+.nv-sheet-user-mail{margin:1px 0 0;font-size:12px;color:var(--site-muted);
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .nv-sheet-label{margin:14px 4px 6px;font-size:10.5px;font-weight:600;letter-spacing:.14em;
-  text-transform:uppercase;color:#94a3b8}
+  text-transform:uppercase;color:var(--site-muted)}
 .nv-sheet-item{display:flex;align-items:center;gap:12px;min-height:48px;padding:0 12px;
-  border-radius:12px;font-size:14px;font-weight:500;color:#334155;text-decoration:none}
-.nv-sheet-item[data-active]{background:#f1f5f9;color:var(--color-primary);font-weight:600}
+  border-radius:12px;font-size:14px;font-weight:500;color:var(--site-text);text-decoration:none}
+.nv-sheet-item[data-active]{background:var(--site-surface-alt);color:var(--color-primary);font-weight:600}
 .nv-sheet-signout{display:flex;width:100%;align-items:center;gap:10px;min-height:48px;
   margin-top:10px;padding:0 12px;border:0;border-radius:12px;background:#fee2e2;
   color:#991b1b;font-size:14px;font-weight:600;cursor:pointer}
 .nv-sheet-cta{display:flex;align-items:center;justify-content:center;gap:10px;min-height:50px;
-  margin-top:14px;border-radius:12px;background:var(--color-accent);color:#1f2937;
+  margin-top:14px;border-radius:12px;background:var(--color-accent);color:var(--on-accent);
   font-size:14px;font-weight:600;text-decoration:none}
 
 @media (prefers-reduced-motion:reduce){

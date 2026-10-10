@@ -6,14 +6,16 @@ import {
   orderBy,
   query,
   updateDoc,
-} from "firebase/firestore";
+} from "./core/auditedFirestore";
 import React, { useEffect, useState } from "react";
 import AppIcon from "../components/AppIcon";
 import { db } from "../firebase/config";
+import { useConfirm } from "./components/useConfirm";
 import type { ContactMessage } from "../types";
 
 // ── Contact Messages ──────────────────────────────────────────
 export const ContactMessages: React.FC = () => {
+  const { confirm, confirmElement } = useConfirm();
   const [messages, setMessages] = useState<ContactMessage[]>([]);
   const [loading, setLoading] = useState(true);
   const [expanded, setExpanded] = useState<string | null>(null);
@@ -38,7 +40,7 @@ export const ContactMessages: React.FC = () => {
   };
 
   const remove = async (msg: ContactMessage) => {
-    if (!window.confirm("Delete this message?")) return;
+    if (!(await confirm({ title: "Delete this message?", message: `The message from ${msg.name || msg.email} will be permanently removed.`, confirmLabel: "Delete", danger: true }))) return;
     await deleteDoc(doc(db, "contactMessages", msg.id));
     load();
   };
@@ -47,6 +49,7 @@ export const ContactMessages: React.FC = () => {
 
   return (
     <div>
+      {confirmElement}
       <div className="mb-6">
         <h2
           className="text-2xl font-black"

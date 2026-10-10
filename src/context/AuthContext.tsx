@@ -12,6 +12,7 @@ import {
 } from "firebase/auth";
 import { collection, doc, getDoc, onSnapshot, query, setDoc, where } from "firebase/firestore";
 import React, { createContext, useContext, useEffect, useState } from "react";
+import { setAuditActor } from "../admin/core/audit";
 import { auth, db, isFirebaseConfigured } from "../firebase/config";
 import type { User, UserRole } from "../types";
 
@@ -41,17 +42,32 @@ const validRoles: UserRole[] = ["admin", "lab_head", "collaborator", "pending"];
 const configuredAdminUid = String(import.meta.env.VITE_ADMIN_UID || "").trim();
 const configuredLabHeadUid = String(import.meta.env.VITE_LAB_HEAD_UID || "").trim();
 
+/* Firestore reports "client is offline" / unavailable for a moment while its
+   connection is still coming up. Treating that as final signed people out to
+   the login page on a cold or flaky load, so it's retried first. */
+const PROFILE_RETRY_DELAYS_MS = [400, 1200, 2500];
+const isTransientFirestoreError = (error: any) => {
+  const code = String(error?.code || "");
+  const message = String(error?.message || "");
+  return code.includes("unavailable") || /client is offline/i.test(message);
+};
+
 const resolveProfile = async (fbUser: FirebaseUser): Promise<User> => {
   const profileRef = doc(db, "users", fbUser.uid);
   let snapshot;
-  try {
-    snapshot = await getDoc(profileRef);
-  } catch (error: any) {
-    const code = String(error?.code || "");
-    if (code.includes("permission-denied")) {
-      throw new Error("auth/profile-permission-denied");
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      snapshot = await getDoc(profileRef);
+      break;
+    } catch (error: any) {
+      const code = String(error?.code || "");
+      if (code.includes("permission-denied")) {
+        throw new Error("auth/profile-permission-denied");
+      }
+      const delay = PROFILE_RETRY_DELAYS_MS[attempt];
+      if (!isTransientFirestoreError(error) || delay === undefined) throw error;
+      await new Promise((resolve) => setTimeout(resolve, delay));
     }
-    throw error;
   }
 
   if (!snapshot.exists()) {
@@ -110,6 +126,8 @@ export const AuthProvider: React.FC<React.PropsWithChildren> = ({ children }) =>
       const data = snapshot.data() as Partial<User>;
       const nextRole = String(data.role ?? "").toLowerCase() as UserRole;
       if (!validRoles.includes(nextRole)) return;
+      // A live profile supersedes an earlier failed (e.g. offline) load.
+      setAuthError("");
       setAppUser((current) => ({
         uid: firebaseUser.uid,
         email: data.email || firebaseUser.email || current?.email || "",
@@ -157,8 +175,18 @@ export const AuthProvider: React.FC<React.PropsWithChildren> = ({ children }) =>
     void updatePresence(true);
     const timer = window.setInterval(() => void updatePresence(document.visibilityState === "visible"), 60_000);
     const visibility = () => void updatePresence(document.visibilityState === "visible");
+    // Closing the tab never ran the cleanup below, so people stayed "online"
+    // forever. pagehide fires on close and navigation away (best effort);
+    // readers also treat a heartbeat older than ~2.5 minutes as offline.
+    const pageHide = () => void updatePresence(false);
     document.addEventListener("visibilitychange", visibility);
-    return () => { window.clearInterval(timer); document.removeEventListener("visibilitychange", visibility); void updatePresence(false); };
+    window.addEventListener("pagehide", pageHide);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", visibility);
+      window.removeEventListener("pagehide", pageHide);
+      void updatePresence(false);
+    };
   }, [appUser, firebaseUser?.uid]);
 
   const login = async (email: string, password: string) => {
@@ -175,6 +203,18 @@ export const AuthProvider: React.FC<React.PropsWithChildren> = ({ children }) =>
       throw error;
     }
   };
+
+  /* Tell the change log who is acting. Only admin-level accounts get logged. */
+  useEffect(() => {
+    if (!appUser) return setAuditActor(null);
+    const level =
+      appUser.role === "admin" || appUser.adminLevel === "primary"
+        ? "primary"
+        : appUser.adminLevel === "moderator"
+          ? "moderator"
+          : "none";
+    setAuditActor({ uid: appUser.uid, name: appUser.name || appUser.email || "Unknown", level });
+  }, [appUser]);
 
   const logout = async () => { await signOut(auth); setAppUser(null); setAuthError(""); };
 

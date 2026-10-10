@@ -1,4 +1,4 @@
-import { collection, doc, onSnapshot, setDoc } from "firebase/firestore";
+import { collection, doc, onSnapshot, setDoc } from "../admin/core/auditedFirestore";
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { db, isFirebaseConfigured } from "../firebase/config";
 
