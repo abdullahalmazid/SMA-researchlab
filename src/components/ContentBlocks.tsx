@@ -49,7 +49,7 @@ export const StatsBlock: React.FC<{ blockId: string }> = ({ blockId }) => {
     <section style={{ background: "var(--color-primary)" }}>
       <div
         className="max-w-3xl mx-auto px-4 grid grid-cols-3"
-        style={{ borderTop: "1px solid rgba(255,255,255,0.1)" }}
+        style={{ borderTop: "1px solid color-mix(in srgb, var(--hero-text) 10%, transparent)" }}
       >
         {stats.map((s, i) => (
           <div
@@ -58,17 +58,17 @@ export const StatsBlock: React.FC<{ blockId: string }> = ({ blockId }) => {
             style={{
               borderRight:
                 i < stats.length - 1
-                  ? "1px solid rgba(255,255,255,0.1)"
+                  ? "1px solid color-mix(in srgb, var(--hero-text) 10%, transparent)"
                   : "none",
             }}
           >
-            <div className="mb-1 inline-flex text-white/80">
+            <div className="mb-1 inline-flex text-[color:color-mix(in_srgb,var(--hero-text)_80%,transparent)]">
               <AppIcon name={s.icon} size={20} />
             </div>
             <div
               className="text-3xl font-black leading-none"
               style={{
-                color: "var(--color-accent)",
+                color: "var(--hero-accent)",
                 fontFamily: "var(--font-heading)",
               }}
             >
@@ -76,7 +76,7 @@ export const StatsBlock: React.FC<{ blockId: string }> = ({ blockId }) => {
             </div>
             <div
               className="text-xs mt-1.5 font-medium"
-              style={{ color: "rgba(255,255,255,0.55)" }}
+              style={{ color: "color-mix(in srgb, var(--hero-text) 55%, transparent)" }}
             >
               {s.label}
             </div>
@@ -102,7 +102,7 @@ export const TextBlock: React.FC<{ blockId: string; index: number }> = ({
         <h2
           className="font-black text-2xl mb-4"
           style={{
-            color: "var(--color-primary)",
+            color: "var(--primary-ink)",
             fontFamily: "var(--font-heading)",
           }}
         >
@@ -143,7 +143,7 @@ export const MissionVisionBlock: React.FC<{ blockId: string }> = ({
       <div className="max-w-5xl mx-auto relative z-10">
         <div className="text-center mb-10">
           <h2
-            className="text-white font-black text-3xl"
+            className="text-[color:var(--hero-text)] font-black text-3xl"
             style={{ fontFamily: "var(--font-heading)" }}
           >
             <EditableText
@@ -158,8 +158,8 @@ export const MissionVisionBlock: React.FC<{ blockId: string }> = ({
           <div
             className="rounded-3xl p-8 relative overflow-hidden"
             style={{
-              background: "rgba(255,255,255,0.07)",
-              border: "1px solid rgba(255,255,255,0.12)",
+              background: "color-mix(in srgb, var(--hero-text) 7%, transparent)",
+              border: "1px solid color-mix(in srgb, var(--hero-text) 12%, transparent)",
             }}
           >
             <div
@@ -170,7 +170,7 @@ export const MissionVisionBlock: React.FC<{ blockId: string }> = ({
               }}
             />
             <h3
-              className="font-black text-xl text-white mb-3"
+              className="font-black text-xl text-[color:var(--hero-text)] mb-3"
               style={{ fontFamily: "var(--font-heading)" }}
             >
               <EditableText
@@ -181,7 +181,7 @@ export const MissionVisionBlock: React.FC<{ blockId: string }> = ({
             </h3>
             <p
               className="leading-relaxed text-sm"
-              style={{ color: "rgba(255,255,255,0.7)", whiteSpace: "pre-line" }}
+              style={{ color: "color-mix(in srgb, var(--hero-text) 70%, transparent)", whiteSpace: "pre-line" }}
             >
               <EditableText
                 id={`${blockId}-missionText`}
@@ -195,8 +195,8 @@ export const MissionVisionBlock: React.FC<{ blockId: string }> = ({
           <div
             className="rounded-3xl p-8 relative overflow-hidden"
             style={{
-              background: "rgba(255,255,255,0.07)",
-              border: "1px solid rgba(255,255,255,0.12)",
+              background: "color-mix(in srgb, var(--hero-text) 7%, transparent)",
+              border: "1px solid color-mix(in srgb, var(--hero-text) 12%, transparent)",
             }}
           >
             <div
@@ -207,7 +207,7 @@ export const MissionVisionBlock: React.FC<{ blockId: string }> = ({
               }}
             />
             <h3
-              className="font-black text-xl text-white mb-3"
+              className="font-black text-xl text-[color:var(--hero-text)] mb-3"
               style={{ fontFamily: "var(--font-heading)" }}
             >
               <EditableText
@@ -218,7 +218,7 @@ export const MissionVisionBlock: React.FC<{ blockId: string }> = ({
             </h3>
             <p
               className="leading-relaxed text-sm"
-              style={{ color: "rgba(255,255,255,0.7)", whiteSpace: "pre-line" }}
+              style={{ color: "color-mix(in srgb, var(--hero-text) 70%, transparent)", whiteSpace: "pre-line" }}
             >
               <EditableText
                 id={`${blockId}-visionText`}
@@ -241,7 +241,7 @@ export const CTABlock: React.FC<{ blockId: string }> = ({ blockId }) => {
         <h3
           className="font-black text-2xl mb-3"
           style={{
-            color: "var(--color-primary)",
+            color: "var(--primary-ink)",
             fontFamily: "var(--font-heading)",
           }}
         >
@@ -251,7 +251,7 @@ export const CTABlock: React.FC<{ blockId: string }> = ({ blockId }) => {
             className="inline"
           />
         </h3>
-        <p className="text-gray-500 text-sm mb-6 leading-relaxed">
+        <p className="text-sm mb-6 leading-relaxed text-[color:var(--site-muted)]">
           <EditableText
             id={`${blockId}-text`}
             defaultValue="Description text..."
@@ -261,8 +261,8 @@ export const CTABlock: React.FC<{ blockId: string }> = ({ blockId }) => {
         <div className="flex flex-wrap gap-3 justify-center">
           <a
             href="/collaborators"
-            className="no-underline font-bold text-sm px-7 py-3 rounded-xl text-[color:var(--hero-text)]"
-            style={{ background: "var(--color-primary)" }}
+            className="no-underline font-bold text-sm px-7 py-3 rounded-xl shadow-md transition hover:brightness-105"
+            style={{ background: "var(--color-accent)", color: "var(--on-accent)" }}
           >
             Meet the Team →
           </a>

@@ -1,9 +1,8 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { cld } from "../cloudinary";
 import AppIcon from "../components/AppIcon";
 import EditableText from "../components/EditableText";
-import { useThemeContext } from "../context/ThemeContext";
 import { useCollaborators, useSiteContent } from "../firebase/hooks";
 
 interface LabHeadData {
@@ -215,46 +214,16 @@ const DEFAULT_METRICS = {
 };
 
 /* ------------------------------------------------------------------ *
- * Colour utilities
+ * Building blocks
+ *
+ * Every colour comes from the Theme Control tokens (--site-*, --hero-*,
+ * --*-ink). The previous version tinted all text with the primary colour,
+ * which vanished on dark themes.
  * ------------------------------------------------------------------ */
 
-const hexToRgb = (hex: string) => {
-  const raw = (hex ?? "").replace("#", "").trim();
-  const clean =
-    raw.length === 3
-      ? raw
-          .split("")
-          .map((char) => char + char)
-          .join("")
-      : raw;
-  if (clean.length !== 6 || /[^0-9a-f]/i.test(clean)) return { r: 255, g: 255, b: 255 };
-  return {
-    r: Number.parseInt(clean.slice(0, 2), 16),
-    g: Number.parseInt(clean.slice(2, 4), 16),
-    b: Number.parseInt(clean.slice(4, 6), 16),
-  };
-};
+const FOCUS =
+  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-secondary)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--site-surface)]";
 
-const withAlpha = (hex: string, alpha: number) => {
-  const { r, g, b } = hexToRgb(hex);
-  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
-};
-
-/** Proper WCAG relative luminance — the raw-channel version misjudges mid greens and blues. */
-const relativeLuminance = (hex: string) => {
-  const { r, g, b } = hexToRgb(hex);
-  const channel = (value: number) => {
-    const scaled = value / 255;
-    return scaled <= 0.03928 ? scaled / 12.92 : ((scaled + 0.055) / 1.055) ** 2.4;
-  };
-  return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b);
-};
-
-/* ------------------------------------------------------------------ *
- * Small building blocks
- * ------------------------------------------------------------------ */
-
-/** Fluid rather than a fixed pixel size: ~220px on phones, up to 320px on wide screens. */
 const LabHeadAvatar: React.FC<{ photo: string; name: string }> = ({ photo, name }) => {
   const [failed, setFailed] = useState(false);
   const initials = name
@@ -264,94 +233,83 @@ const LabHeadAvatar: React.FC<{ photo: string; name: string }> = ({ photo, name 
     .slice(0, 2)
     .join("")
     .toUpperCase();
-
   const shared: React.CSSProperties = {
-    width: "clamp(220px, 24vw, 320px)",
-    aspectRatio: "1 / 1",
-    borderRadius: 28,
-    border: "4px solid rgba(255,255,255,0.3)",
-    boxShadow: "0 24px 56px rgba(0,0,0,0.28)",
+    width: "clamp(168px, 18vw, 240px)",
+    aspectRatio: "4 / 5",
+    borderRadius: 24,
+    boxShadow: "0 24px 60px rgba(0,0,0,0.35)",
+    border: "1px solid color-mix(in srgb, var(--hero-text) 22%, transparent)",
   };
-
-  if (photo && !failed) {
-    return (
-      <img
-        /* Transformed rather than the full-size original — the page renders it
-           at 320px at most. */
-        src={cld(photo, "portrait")}
-        alt={name}
-        decoding="async"
-        onError={() => setFailed(true)}
-        style={{ ...shared, objectFit: "cover" }}
-      />
-    );
-  }
-
-  return (
+  return photo && !failed ? (
+    <img src={cld(photo, "portrait")} alt={name} decoding="async" onError={() => setFailed(true)} style={{ ...shared, objectFit: "cover" }} />
+  ) : (
     <div
       aria-hidden="true"
-      className="flex items-center justify-center font-semibold text-white"
-      style={{
-        ...shared,
-        background: "rgba(255,255,255,0.12)",
-        fontSize: "clamp(64px, 7vw, 96px)",
-        letterSpacing: "0.02em",
-      }}
+      className="grid place-items-center font-bold"
+      style={{ ...shared, background: "color-mix(in srgb, var(--hero-text) 12%, transparent)", color: "var(--hero-text)", fontSize: "clamp(52px, 6vw, 76px)" }}
     >
       {initials}
     </div>
   );
 };
 
-/**
- * One heading device for the whole page: hairline, small-caps eyebrow, heading.
- * The original used an accent bar plus a second underline rule on every section.
- */
-const SectionHeading: React.FC<{
-  id: string;
-  eyebrow: React.ReactNode;
-  tone: { border: string; muted: string };
-  as?: "h2" | "h3";
-}> = ({ id, eyebrow, tone, as: Tag = "h2" }) => (
-  <div className="mb-6">
-    <div className="h-px w-10" style={{ background: tone.border }} />
-    <Tag
-      id={id}
-      className="mt-4 text-[11px] font-semibold uppercase tracking-[0.16em]"
-      style={{ color: tone.muted }}
-    >
-      {eyebrow}
-    </Tag>
-  </div>
+/** A titled card. */
+const Card: React.FC<{ id: string; title: React.ReactNode; action?: React.ReactNode; className?: string; children: React.ReactNode }> = ({
+  id,
+  title,
+  action,
+  className = "",
+  children,
+}) => (
+  <section aria-labelledby={id} className={`rounded-2xl border border-[color:var(--site-border)] bg-[color:var(--site-surface)] ${className}`}>
+    <header className="flex items-center gap-3 border-b border-[color:var(--site-border)] px-5 py-3.5 md:px-6">
+      <h3 id={id} className="flex-1 text-[15px] font-bold text-[color:var(--site-heading)]" style={{ fontFamily: "var(--font-heading)" }}>
+        {title}
+      </h3>
+      {action}
+    </header>
+    <div className="p-5 md:p-6">{children}</div>
+  </section>
 );
+
+/** Vertical timeline: a dot and rail on the left, period above the entry. */
+const Timeline: React.FC<{ items: Row[]; periodKey: string; titleKey: string; subKey: string }> = ({ items, periodKey, titleKey, subKey }) => (
+  <ol className="relative ml-1.5 border-l-2 border-[color:var(--site-border)]">
+    {items.map((item, index) => (
+      <li key={`${item[titleKey]}-${index}`} className="relative pb-5 pl-5 last:pb-0">
+        <span
+          aria-hidden="true"
+          className="absolute -left-[7px] top-1 h-3 w-3 rounded-full border-2 border-[color:var(--site-surface)]"
+          style={{ background: index === 0 ? "var(--color-secondary)" : "var(--site-border)" }}
+        />
+        {item[periodKey] && <p className="text-[11.5px] font-semibold uppercase tracking-[0.06em] tabular-nums text-[color:var(--site-muted)]">{item[periodKey]}</p>}
+        <p className="mt-0.5 text-[14.5px] font-semibold leading-snug text-[color:var(--site-heading)]">{item[titleKey]}</p>
+        {item[subKey] && <p className="mt-0.5 text-[13px] leading-6 text-[color:var(--site-text)]">{item[subKey]}</p>}
+      </li>
+    ))}
+  </ol>
+);
+
+type RecordTab = "editorial" | "supervision" | "collaborations" | "venues";
 
 /* ------------------------------------------------------------------ *
  * Page
  * ------------------------------------------------------------------ */
 
+const NAV = [
+  { id: "overview", label: "Overview" },
+  { id: "career", label: "Career" },
+  { id: "honours", label: "Honours & funding" },
+  { id: "record", label: "Academic record" },
+] as const;
+
 const LabHead: React.FC = () => {
   const { content, loading } = useSiteContent();
   const { collaborators, loading: collaboratorsLoading } = useCollaborators();
-  const { theme } = useThemeContext();
+  const [recordTab, setRecordTab] = useState<RecordTab>("editorial");
+  const [activeSection, setActiveSection] = useState<string>("overview");
 
-  const tone = useMemo(() => {
-    const isDark = relativeLuminance(theme.backgroundColor ?? "#ffffff") < 0.22;
-    return {
-      isDark,
-      page: `color-mix(in srgb, ${theme.primaryColor} ${isDark ? 6 : 4}%, ${theme.backgroundColor})`,
-      surface: theme.backgroundColor,
-      surfaceMuted: withAlpha(theme.primaryColor, isDark ? 0.1 : 0.05),
-      border: withAlpha(theme.primaryColor, isDark ? 0.2 : 0.13),
-      borderStrong: withAlpha(theme.primaryColor, isDark ? 0.36 : 0.26),
-      heading: theme.primaryColor,
-      body: withAlpha(theme.primaryColor, isDark ? 0.86 : 0.8),
-      muted: withAlpha(theme.primaryColor, isDark ? 0.66 : 0.6),
-      shadow: isDark ? "0 1px 2px rgba(0,0,0,0.4)" : "0 1px 2px rgba(15,23,42,0.05)",
-    };
-  }, [theme.backgroundColor, theme.primaryColor]);
-
-  const labHeadUid =
-    content["labhead.profileUid"] || String(import.meta.env.VITE_LAB_HEAD_UID || "");
+  const labHeadUid = content["labhead.profileUid"] || String(import.meta.env.VITE_LAB_HEAD_UID || "");
   const canonicalProfile = collaborators.find((profile) => profile.uid === labHeadUid);
 
   const labHead: LabHeadData = {
@@ -366,13 +324,9 @@ const LabHead: React.FC = () => {
     linkedin: canonicalProfile?.linkedin || content["labhead.linkedin"] || "",
     scholar: canonicalProfile?.scholar || content["labhead.scholar"] || DEFAULT_SCHOLAR,
     orcid: canonicalProfile?.orcid || content["labhead.orcid"] || "",
-    researchgate:
-      canonicalProfile?.researchgate || content["labhead.researchgate"] || DEFAULT_RESEARCHGATE,
+    researchgate: canonicalProfile?.researchgate || content["labhead.researchgate"] || DEFAULT_RESEARCHGATE,
     scopus: content["labhead.scopus"] || DEFAULT_SCOPUS,
-    researchInterests:
-      canonicalProfile?.researchInterests?.join(", ") ||
-      content["labhead.researchInterests"] ||
-      DEFAULT_INTERESTS,
+    researchInterests: canonicalProfile?.researchInterests?.join(", ") || content["labhead.researchInterests"] || DEFAULT_INTERESTS,
   };
 
   const interests = labHead.researchInterests
@@ -385,8 +339,7 @@ const LabHead: React.FC = () => {
     hIndex: content["labhead.metrics.hIndex"] || DEFAULT_METRICS.hIndex,
     i10Index: content["labhead.metrics.i10Index"] || DEFAULT_METRICS.i10Index,
     publications: content["labhead.metrics.publications"] || DEFAULT_METRICS.publications,
-    experienceYears:
-      content["labhead.metrics.experienceYears"] || DEFAULT_METRICS.experienceYears,
+    experienceYears: content["labhead.metrics.experienceYears"] || DEFAULT_METRICS.experienceYears,
     asOf: content["labhead.metrics.asOf"] || DEFAULT_METRICS.asOf,
   };
 
@@ -401,83 +354,39 @@ const LabHead: React.FC = () => {
   const venues = rowsFrom(content["labhead.venues"], DEFAULT_VENUES);
 
   const links = [
-    { href: labHead.linkedin, label: "LinkedIn", icon: "linkedin" as const },
     { href: labHead.scholar, label: "Google Scholar", icon: "scholar" as const },
-    { href: labHead.orcid, label: "ORCID", icon: "orcid" as const },
     { href: labHead.researchgate, label: "ResearchGate", icon: "researchgate" as const },
     { href: labHead.scopus, label: "Scopus", icon: "publications" as const },
+    { href: labHead.orcid, label: "ORCID", icon: "orcid" as const },
+    { href: labHead.linkedin, label: "LinkedIn", icon: "linkedin" as const },
   ].filter((link) => link.href);
 
   const hasSecondBio = Boolean(labHead.fullBio) && labHead.fullBio !== labHead.shortBio;
+  const firstName = labHead.name.split(" ").find((part) => !/^(dr|prof)\.?$/i.test(part)) ?? labHead.name;
 
-  const panelStyle: React.CSSProperties = {
-    background: tone.surface,
-    border: `1px solid ${tone.border}`,
-    boxShadow: tone.shadow,
+  /* Highlight the section in view in the sticky bar. */
+  useEffect(() => {
+    if (!labHead.name || typeof IntersectionObserver === "undefined") return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const visible = entries.filter((entry) => entry.isIntersecting).sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top)[0];
+        if (visible) setActiveSection(visible.target.id.replace("lh-", ""));
+      },
+      { rootMargin: "-140px 0px -55% 0px" },
+    );
+    NAV.forEach((item) => {
+      const el = document.getElementById(`lh-${item.id}`);
+      if (el) observer.observe(el);
+    });
+    return () => observer.disconnect();
+  }, [labHead.name]);
+
+  const jump = (id: string) => {
+    const el = document.getElementById(`lh-${id}`);
+    if (!el) return;
+    const offset = (parseFloat(getComputedStyle(document.body).getPropertyValue("--nav-offset")) || 0) + 64;
+    window.scrollTo({ top: el.getBoundingClientRect().top + window.scrollY - offset, behavior: "smooth" });
   };
-
-  const focusRing =
-    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--focus-ring)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--focus-offset)]";
-
-  const focusVars = {
-    "--focus-ring": theme.accentColor || theme.secondaryColor,
-    "--focus-offset": tone.surface,
-  } as React.CSSProperties;
-
-  const heroGradient = `linear-gradient(130deg, ${theme.primaryColor} 0%, ${theme.secondaryColor} 70%)`;
-
-  /* A timeline row: period on the left, role and organisation on the right. */
-  const timeline = (items: Row[], periodKey: string, titleKey: string, subKey: string) => (
-    <ol className="grid gap-5">
-      {items.map((item, index) => (
-        <li
-          key={`${item[titleKey]}-${index}`}
-          className="grid gap-1 sm:grid-cols-[150px_minmax(0,1fr)] sm:gap-5"
-        >
-          <span
-            className="text-[12.5px] font-semibold tabular-nums"
-            style={{ color: tone.muted }}
-          >
-            {item[periodKey]}
-          </span>
-          <span>
-            <span className="block text-[15px] font-semibold" style={{ color: tone.heading }}>
-              {item[titleKey]}
-            </span>
-            {item[subKey] && (
-              <span className="mt-0.5 block text-[13.5px] leading-6" style={{ color: tone.muted }}>
-                {item[subKey]}
-              </span>
-            )}
-          </span>
-        </li>
-      ))}
-    </ol>
-  );
-
-  /* Long lists sit behind a disclosure so the page stays scannable — the count
-     in the summary is what tells you whether it's worth opening. */
-  const disclosure = (label: string, count: number, children: React.ReactNode) => (
-    <details className="group">
-      <summary
-        className={`flex cursor-pointer list-none items-center gap-3 rounded-xl border px-4 py-3 text-sm font-semibold [&::-webkit-details-marker]:hidden ${focusRing}`}
-        style={{ ...focusVars, borderColor: tone.border, color: tone.body }}
-      >
-        {label}
-        <span className="text-[12px] font-medium tabular-nums" style={{ color: tone.muted }}>
-          {count}
-        </span>
-        <span
-          aria-hidden="true"
-          className="ml-auto transition-transform group-open:rotate-90"
-          style={{ color: tone.muted }}
-        >
-          ›
-        </span>
-      </summary>
-      <div className="pt-5">{children}</div>
-    </details>
-  );
 
   /* ---------------------------------------------------------------- *
    * Loading and empty states
@@ -485,38 +394,20 @@ const LabHead: React.FC = () => {
 
   if (loading || collaboratorsLoading) {
     return (
-      <main
-        className="min-h-screen"
-        style={{ background: tone.page }}
-        aria-busy="true"
-        role="status"
-      >
+      <main aria-busy="true" role="status" className="bg-[color:var(--color-bg)]">
         <span className="sr-only">Loading the lab head profile</span>
-
-        <div
-          className="px-4 py-16 motion-safe:animate-pulse md:py-20"
-          style={{ background: heroGradient }}
-        >
-          <div className="mx-auto max-w-6xl">
-            <div className="h-3 w-28 rounded-full bg-white/20" />
-            <div className="mt-8 flex flex-col items-center gap-8 md:flex-row md:items-center md:gap-12">
-              <div
-                className="shrink-0 rounded-[28px] bg-white/15"
-                style={{ width: "clamp(220px, 24vw, 320px)", aspectRatio: "1 / 1" }}
-              />
-              <div className="w-full max-w-xl space-y-4">
-                <div className="h-6 w-28 rounded-full bg-white/15" />
-                <div className="h-10 w-3/4 rounded-lg bg-white/20" />
-                <div className="h-4 w-1/2 rounded-full bg-white/15" />
-                <div className="h-11 w-40 rounded-xl bg-white/20" />
-              </div>
+        <div className="px-4 py-12 motion-safe:animate-pulse" style={{ background: "var(--color-primary)" }}>
+          <div className="mx-auto flex max-w-6xl flex-col items-center gap-8 md:flex-row">
+            <div className="rounded-3xl" style={{ width: "clamp(168px, 18vw, 240px)", aspectRatio: "4 / 5", background: "color-mix(in srgb, var(--hero-text) 12%, transparent)" }} />
+            <div className="w-full max-w-xl space-y-4">
+              <div className="h-9 w-3/4 rounded-lg" style={{ background: "color-mix(in srgb, var(--hero-text) 16%, transparent)" }} />
+              <div className="h-4 w-1/2 rounded-full" style={{ background: "color-mix(in srgb, var(--hero-text) 12%, transparent)" }} />
             </div>
           </div>
         </div>
-
-        <div className="mx-auto grid max-w-6xl gap-6 px-4 py-14 lg:grid-cols-[minmax(0,1fr)_320px]">
-          <div className="h-72 rounded-[20px] motion-safe:animate-pulse" style={panelStyle} />
-          <div className="h-56 rounded-[20px] motion-safe:animate-pulse" style={panelStyle} />
+        <div className="mx-auto grid max-w-6xl gap-5 px-4 py-10 lg:grid-cols-[minmax(0,1fr)_320px]">
+          <div className="h-72 rounded-2xl bg-[color:var(--site-surface-alt)] motion-safe:animate-pulse" />
+          <div className="h-56 rounded-2xl bg-[color:var(--site-surface-alt)] motion-safe:animate-pulse" />
         </div>
       </main>
     );
@@ -524,32 +415,15 @@ const LabHead: React.FC = () => {
 
   if (!labHead.name) {
     return (
-      <main
-        className="grid min-h-[70vh] place-items-center px-4 py-16"
-        style={{ background: tone.page }}
-      >
-        <div className="max-w-lg rounded-[20px] p-10 text-center" style={panelStyle}>
-          <div
-            className="mx-auto mb-5 inline-flex rounded-2xl p-3"
-            style={{ background: tone.surfaceMuted }}
-          >
-            <AppIcon name="admin" size={24} style={{ color: theme.primaryColor }} />
-          </div>
-          <h1
-            className="text-2xl font-bold tracking-tight"
-            style={{ color: tone.heading, fontFamily: "var(--font-heading)" }}
-          >
+      <main className="grid min-h-[70vh] place-items-center bg-[color:var(--color-bg)] px-4 py-16">
+        <div className="max-w-lg rounded-2xl border border-[color:var(--site-border)] bg-[color:var(--site-surface)] p-10 text-center">
+          <h1 className="text-2xl font-bold text-[color:var(--site-heading)]" style={{ fontFamily: "var(--font-heading)" }}>
             Lab Head Profile
           </h1>
-          <p className="mt-3 text-sm leading-6" style={{ color: tone.muted }}>
-            No lab head profile has been published yet. Add one from the admin Content Editor
-            under the Lab Head tab.
+          <p className="mt-3 text-sm leading-6 text-[color:var(--site-muted)]">
+            No lab head profile has been published yet. Add one from the admin Content Editor under the Lab Head tab.
           </p>
-          <Link
-            to="/"
-            style={{ ...focusVars, background: theme.primaryColor, color: theme.backgroundColor }}
-            className={`mt-7 inline-flex rounded-xl px-5 py-2.5 text-sm font-semibold no-underline transition hover:opacity-90 ${focusRing}`}
-          >
+          <Link to="/" className={`mt-7 inline-flex rounded-xl px-5 py-2.5 text-sm font-semibold no-underline ${FOCUS}`} style={{ background: "var(--color-primary)", color: "var(--hero-text)" }}>
             Back to home
           </Link>
         </div>
@@ -557,751 +431,439 @@ const LabHead: React.FC = () => {
     );
   }
 
+  const recordTabs: { id: RecordTab; label: string; count: number }[] = [
+    { id: "editorial" as const, label: "Editorial & review", count: editorial.length },
+    { id: "supervision" as const, label: "Supervision", count: supervision.length },
+    { id: "collaborations" as const, label: "Collaborations", count: collaborations.length },
+    { id: "venues" as const, label: "Journals", count: venues.length },
+  ].filter((tab) => tab.count > 0);
+  const currentRecord = recordTabs.some((tab) => tab.id === recordTab) ? recordTab : recordTabs[0]?.id;
+
+  const metricTiles = [
+    { value: metrics.citations, label: "Citations" },
+    { value: metrics.hIndex, label: "h-index" },
+    { value: metrics.i10Index, label: "i10-index" },
+    { value: metrics.publications, label: "Journal articles" },
+    { value: metrics.experienceYears, label: "Years of research" },
+  ].filter((metric) => metric.value);
+
   /* ---------------------------------------------------------------- *
    * Page
    * ---------------------------------------------------------------- */
 
   return (
-    <main style={{ background: tone.page }}>
-      {/* Hero — the person, not the page. Name is the H1 and sits above the fold. */}
+    <main className="bg-[color:var(--color-bg)]">
+      {/* ── Hero: the person, then the numbers ── */}
       <section
         aria-labelledby="labhead-name"
-        className="relative overflow-hidden px-4 py-16 md:py-20"
-        style={{ background: heroGradient }}
+        className="relative overflow-hidden px-4 pb-8 pt-10 md:pb-10 md:pt-14"
+        style={{
+          background: "linear-gradient(135deg, var(--color-primary) 0%, color-mix(in srgb, var(--color-primary) 72%, var(--color-secondary)) 100%)",
+          color: "var(--hero-text)",
+        }}
       >
         <div
           aria-hidden="true"
-          className="absolute inset-0 opacity-[0.12]"
-          style={{
-            backgroundImage: `radial-gradient(circle, ${withAlpha(theme.backgroundColor, 0.7)} 1px, transparent 1px)`,
-            backgroundSize: "28px 28px",
-          }}
+          className="pointer-events-none absolute -right-24 -top-24 h-80 w-80 rounded-full blur-3xl"
+          style={{ background: "color-mix(in srgb, var(--color-accent) 30%, transparent)" }}
         />
-
         <div className="relative mx-auto max-w-6xl">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-white/70">
-            <EditableText
-              id="labhead.heroTitle"
-              defaultValue="Meet the Lab Head"
-              className="inline"
-            />
-          </p>
-
-          <div className="mt-8 flex flex-col items-center gap-8 text-center md:flex-row md:items-center md:gap-12 md:text-left">
+          <div className="flex flex-col items-center gap-8 text-center md:flex-row md:items-end md:text-left">
             <div className="shrink-0">
               <LabHeadAvatar photo={labHead.photo} name={labHead.name} />
             </div>
 
-            <div className="min-w-0 flex-1">
-              <p className="inline-flex items-center gap-2 rounded-full border border-white/25 bg-white/10 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-white/85">
-                <span
-                  aria-hidden="true"
-                  className="h-1.5 w-1.5 rounded-full"
-                  style={{ background: theme.accentColor }}
-                />
-                <EditableText id="labhead.roleLabel" defaultValue="Lab Head" className="inline" />
+            <div className="min-w-0 flex-1 pb-1">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.18em]" style={{ color: "var(--hero-accent)" }}>
+                <EditableText id="labhead.heroTitle" defaultValue="Meet the Lab Head" className="inline" />
               </p>
-
               <h1
                 id="labhead-name"
-                className="mt-4 text-[30px] font-bold leading-[1.15] tracking-[-0.02em] text-white md:text-[46px]"
-                style={{ fontFamily: "var(--font-heading)" }}
+                className="mt-2 text-[30px] font-bold leading-[1.1] tracking-[-0.02em] md:text-[44px]"
+                style={{ fontFamily: "var(--font-heading)", color: "var(--hero-text)" }}
               >
                 <EditableText id="labhead.name" defaultValue={labHead.name} className="inline" />
               </h1>
-
               {(labHead.title || labHead.department) && (
-                <p className="mt-4 text-[15px] leading-7 text-white/85">
+                <p className="mt-3 text-[15px] leading-7" style={{ color: "color-mix(in srgb, var(--hero-text) 88%, transparent)" }}>
                   {labHead.title && (
-                    <EditableText
-                      id="labhead.title"
-                      defaultValue={labHead.title}
-                      className="inline"
-                    />
-                  )}
-                  {labHead.title && labHead.department && (
-                    <span aria-hidden="true" className="mx-2 text-white/40">
-                      /
+                    <span className="font-semibold">
+                      <EditableText id="labhead.title" defaultValue={labHead.title} className="inline" />
                     </span>
                   )}
-                  {labHead.department && (
-                    <EditableText
-                      id="labhead.department"
-                      defaultValue={labHead.department}
-                      className="inline"
-                    />
-                  )}
+                  {labHead.title && labHead.department && <span aria-hidden="true" className="mx-2 opacity-50">·</span>}
+                  {labHead.department && <EditableText id="labhead.department" defaultValue={labHead.department} className="inline" />}
                 </p>
               )}
-
-              <p className="mt-3 max-w-2xl text-[14px] leading-6 text-white/70">
-                <EditableText
-                  id="labhead.heroSubtitle"
-                  defaultValue="Research direction, academic profile, and contact information."
-                  className="inline"
-                />
+              <p className="mx-auto mt-2 max-w-2xl text-[14px] leading-6 md:mx-0" style={{ color: "color-mix(in srgb, var(--hero-text) 72%, transparent)" }}>
+                <EditableText id="labhead.heroSubtitle" defaultValue="Research direction, academic profile, and contact information." className="inline" />
               </p>
 
-              {(labHead.email || labHead.phone) && (
-                <div className="mt-7 flex flex-wrap justify-center gap-3 md:justify-start">
-                  {labHead.email && (
-                    <a
-                      href={`mailto:${labHead.email}`}
-                      style={
-                        {
-                          "--focus-ring": "#ffffff",
-                          "--focus-offset": theme.primaryColor,
-                          background: theme.backgroundColor,
-                          color: theme.primaryColor,
-                        } as React.CSSProperties
-                      }
-                      className={`inline-flex min-h-[44px] items-center rounded-xl px-5 text-sm font-semibold no-underline shadow-lg transition hover:opacity-90 ${focusRing}`}
-                    >
-                      Email {labHead.name.split(" ")[0]}
-                    </a>
-                  )}
-                  {labHead.phone && (
-                    <a
-                      href={`tel:${labHead.phone}`}
-                      style={
-                        {
-                          "--focus-ring": "#ffffff",
-                          "--focus-offset": theme.primaryColor,
-                        } as React.CSSProperties
-                      }
-                      className={`inline-flex min-h-[44px] items-center rounded-xl border border-white/35 px-5 text-sm font-semibold text-white no-underline transition hover:border-white/70 hover:bg-white/10 ${focusRing}`}
-                    >
-                      Call {labHead.phone}
-                    </a>
-                  )}
-                </div>
-              )}
+              <div className="mt-6 flex flex-wrap justify-center gap-2.5 md:justify-start">
+                {labHead.email && (
+                  <a
+                    href={`mailto:${labHead.email}`}
+                    className={`inline-flex h-10 items-center gap-2 rounded-xl px-4 text-[13.5px] font-bold no-underline shadow-lg transition hover:brightness-105 ${FOCUS}`}
+                    style={{ background: "var(--color-accent)", color: "var(--on-accent)" }}
+                  >
+                    <AppIcon name="contact" size={15} /> Email {firstName}
+                  </a>
+                )}
+                {labHead.phone && (
+                  <a
+                    href={`tel:${labHead.phone}`}
+                    className={`inline-flex h-10 items-center gap-2 rounded-xl border px-4 text-[13.5px] font-semibold no-underline transition ${FOCUS}`}
+                    style={{ borderColor: "color-mix(in srgb, var(--hero-text) 35%, transparent)", color: "var(--hero-text)" }}
+                  >
+                    <AppIcon name="phone" size={15} /> {labHead.phone}
+                  </a>
+                )}
+                {links.slice(0, 3).map((link) => (
+                  <a
+                    key={link.label}
+                    href={link.href}
+                    target="_blank"
+                    rel="noreferrer"
+                    title={link.label}
+                    aria-label={`${link.label} (opens in a new tab)`}
+                    className={`grid h-10 w-10 place-items-center rounded-xl transition ${FOCUS}`}
+                    style={{ background: "color-mix(in srgb, var(--hero-text) 12%, transparent)", color: "var(--hero-text)" }}
+                  >
+                    <AppIcon name={link.icon} size={16} />
+                  </a>
+                ))}
+              </div>
             </div>
           </div>
 
-          {/* Metrics. The "as of" stamp is not decoration — a citation count with
-              no date attached is wrong within weeks and nobody notices. */}
-          <div className="mt-12 border-t border-white/15 pt-7">
-            <dl className="flex flex-wrap gap-x-10 gap-y-5">
-              {[
-                { value: metrics.citations, label: "Citations" },
-                { value: metrics.hIndex, label: "h-index" },
-                { value: metrics.i10Index, label: "i10-index" },
-                { value: metrics.publications, label: "Journal articles" },
-                { value: metrics.experienceYears, label: "Years teaching & research" },
-              ]
-                .filter((metric) => metric.value)
-                .map((metric) => (
-                  <div key={metric.label} className="flex items-baseline gap-2.5">
-                    <dt className="sr-only">{metric.label}</dt>
-                    <dd
-                      className="text-[26px] font-bold leading-none tabular-nums"
-                      style={{ color: theme.accentColor, fontFamily: "var(--font-heading)" }}
-                    >
+          {/* Metrics — dated, because a citation count with no date is wrong within weeks. */}
+          {metricTiles.length > 0 && (
+            <div className="mt-8">
+              <dl className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-5">
+                {metricTiles.map((metric) => (
+                  <div
+                    key={metric.label}
+                    className="rounded-xl px-4 py-3 backdrop-blur-sm"
+                    style={{ background: "color-mix(in srgb, var(--hero-text) 9%, transparent)", border: "1px solid color-mix(in srgb, var(--hero-text) 14%, transparent)" }}
+                  >
+                    <dd className="text-[24px] font-bold leading-none tabular-nums" style={{ color: "var(--hero-accent)", fontFamily: "var(--font-heading)" }}>
                       {metric.value}
                     </dd>
-                    <span aria-hidden="true" className="text-[12.5px] text-white/60">
+                    <dt className="mt-1.5 text-[11.5px] font-medium" style={{ color: "color-mix(in srgb, var(--hero-text) 75%, transparent)" }}>
                       {metric.label}
-                    </span>
+                    </dt>
                   </div>
                 ))}
-            </dl>
-            {metrics.asOf && (
-              <p className="mt-4 text-[11.5px] text-white/45">
-                Google Scholar figures, accurate as of {metrics.asOf}.
-              </p>
-            )}
-          </div>
+              </dl>
+              {metrics.asOf && (
+                <p className="mt-2.5 text-[11.5px]" style={{ color: "color-mix(in srgb, var(--hero-text) 60%, transparent)" }}>
+                  Google Scholar figures, accurate as of {metrics.asOf}.
+                </p>
+              )}
+            </div>
+          )}
         </div>
       </section>
 
-      {/* Body — a single content column plus a record sidebar, on one neutral
-          surface. The original stacked four full-bleed tinted bands, which gave
-          every section identical weight. */}
-      <div className="mx-auto max-w-6xl px-4 py-14">
-        <div className="h-px w-10" style={{ background: tone.border }} />
-        <h2
-          id="labhead-about"
-          className="mt-4 text-[11px] font-semibold uppercase tracking-[0.16em]"
-          style={{ color: tone.muted }}
-        >
-          <EditableText
-            id="labhead.aboutTitle"
-            defaultValue="About the Lab Head"
-            className="inline"
-          />
-        </h2>
-
-        <div className="mt-8 grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
-          <div className="min-w-0 space-y-6">
-            <section
-              aria-labelledby="labhead-bio"
-              className="rounded-[20px] p-6 md:p-9"
-              style={panelStyle}
-            >
-              <SectionHeading
-                id="labhead-bio"
-                tone={tone}
-                eyebrow={
-                  <EditableText id="labhead.bioTitle" defaultValue="Biography" className="inline" />
-                }
-              />
-
-              <p
-                className="max-w-[68ch] text-[15.5px]"
-                style={{ whiteSpace: "pre-line", lineHeight: 1.8, color: tone.body }}
+      {/* ── Sticky section bar ── */}
+      <nav
+        aria-label="Sections"
+        className="sticky z-30 border-b border-[color:var(--site-border)] bg-[color:color-mix(in_srgb,var(--site-surface)_92%,transparent)] backdrop-blur-md"
+        style={{ top: "var(--nav-offset)" }}
+      >
+        <div className="mx-auto flex max-w-6xl gap-1 overflow-x-auto px-4 [scrollbar-width:none]">
+          {NAV.map((item) => {
+            const active = activeSection === item.id;
+            return (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => jump(item.id)}
+                aria-current={active ? "true" : undefined}
+                className={`h-11 shrink-0 border-b-2 px-3 text-[13px] font-semibold transition ${
+                  active
+                    ? "border-[color:var(--color-secondary)] text-[color:var(--site-heading)]"
+                    : "border-transparent text-[color:var(--site-muted)] hover:text-[color:var(--site-heading)]"
+                }`}
               >
-                <EditableText
-                  id="labhead.shortBio"
-                  defaultValue={labHead.shortBio || labHead.fullBio}
-                  wrapperClassName="block"
-                />
-              </p>
+                {item.label}
+              </button>
+            );
+          })}
+        </div>
+      </nav>
 
+      <div className="mx-auto grid max-w-6xl gap-5 px-4 py-8 lg:grid-cols-[minmax(0,1fr)_300px]">
+        <div className="min-w-0 space-y-5">
+          {/* ── Overview ── */}
+          <div id="lh-overview" className="scroll-mt-32 space-y-5">
+            <Card id="labhead-bio" title={<EditableText id="labhead.bioTitle" defaultValue="Biography" className="inline" />}>
+              <div className="max-w-[70ch] whitespace-pre-line text-[15px] leading-[1.8] text-[color:var(--site-text)]">
+                <EditableText id="labhead.shortBio" defaultValue={labHead.shortBio || labHead.fullBio} wrapperClassName="block" />
+              </div>
               {hasSecondBio && (
-                <div className="mt-8 border-t pt-7" style={{ borderColor: tone.border }}>
-                  <h3
-                    className="text-[11px] font-semibold uppercase tracking-[0.16em]"
-                    style={{ color: tone.muted }}
-                  >
-                    <EditableText
-                      id="labhead.detailedBioTitle"
-                      defaultValue="Detailed Biography"
-                      wrapperClassName="block"
-                    />
-                  </h3>
-                  <p
-                    className="mt-5 max-w-[68ch] text-[15.5px]"
-                    style={{ whiteSpace: "pre-line", lineHeight: 1.8, color: tone.body }}
-                  >
-                    <EditableText
-                      id="labhead.fullBio"
-                      defaultValue={labHead.fullBio}
-                      wrapperClassName="block"
-                    />
-                  </p>
-                </div>
+                <details className="group mt-5 border-t border-[color:var(--site-border)] pt-4">
+                  <summary className={`flex cursor-pointer list-none items-center gap-2 text-[13px] font-semibold [&::-webkit-details-marker]:hidden ${FOCUS}`} style={{ color: "var(--secondary-ink)" }}>
+                    <EditableText id="labhead.detailedBioTitle" defaultValue="Detailed Biography" className="inline" />
+                    <span aria-hidden="true" className="transition-transform group-open:rotate-90">›</span>
+                  </summary>
+                  <div className="mt-3 max-w-[70ch] whitespace-pre-line text-[15px] leading-[1.8] text-[color:var(--site-text)]">
+                    <EditableText id="labhead.fullBio" defaultValue={labHead.fullBio} wrapperClassName="block" />
+                  </div>
+                </details>
               )}
-            </section>
+            </Card>
 
-            <section
-              aria-labelledby="labhead-interests"
-              className="rounded-[20px] p-6 md:p-9"
-              style={panelStyle}
-            >
-              <SectionHeading
-                id="labhead-interests"
-                tone={tone}
-                eyebrow={
-                  <EditableText
-                    id="labhead.researchInterestsTitle"
-                    defaultValue="Research Interests"
-                    className="inline"
-                  />
-                }
-              />
-
+            <Card id="labhead-interests" title={<EditableText id="labhead.researchInterestsTitle" defaultValue="Research Interests" className="inline" />}>
               {interests.length > 0 ? (
-                <ul className="flex flex-wrap gap-2">
+                <ul className="grid gap-2 sm:grid-cols-2">
                   {interests.map((interest) => (
-                    <li
-                      key={interest}
-                      className="rounded-lg px-3 py-2 text-[13px] font-medium"
-                      style={{ background: tone.surfaceMuted, color: tone.body }}
-                    >
-                      {interest}
+                    <li key={interest} className="flex items-center gap-3 rounded-xl border border-[color:var(--site-border)] bg-[color:var(--site-surface-alt)] px-3.5 py-2.5">
+                      <span aria-hidden="true" className="h-2 w-2 shrink-0 rounded-full" style={{ background: "var(--color-accent)" }} />
+                      <span className="text-[13.5px] font-medium text-[color:var(--site-heading)]">{interest}</span>
                     </li>
                   ))}
                 </ul>
               ) : (
-                <p className="text-[15px]" style={{ color: tone.muted }}>
-                  <EditableText
-                    id="labhead.noResearchInterestsText"
-                    defaultValue="Research interests are not available yet."
-                    className="inline"
-                  />
+                <p className="text-[14px] text-[color:var(--site-muted)]">
+                  <EditableText id="labhead.noResearchInterestsText" defaultValue="Research interests are not available yet." className="inline" />
                 </p>
               )}
-            </section>
+            </Card>
+          </div>
 
-            {appointments.length > 0 && (
-              <section
-                aria-labelledby="labhead-appointments"
-                className="rounded-[20px] p-6 md:p-9"
-                style={panelStyle}
-              >
-                <SectionHeading
-                  id="labhead-appointments"
-                  tone={tone}
-                  eyebrow={
-                    <EditableText
-                      id="labhead.appointmentsTitle"
-                      defaultValue="Academic Appointments"
-                      className="inline"
-                    />
-                  }
-                />
-                {timeline(appointments, "period", "role", "organisation")}
+          {/* ── Career ── */}
+          <div id="lh-career" className="scroll-mt-32 grid gap-5 md:grid-cols-2">
+            <Card id="labhead-appointments" title={<EditableText id="labhead.appointmentsTitle" defaultValue="Academic Appointments" className="inline" />}>
+              <Timeline items={appointments} periodKey="period" titleKey="role" subKey="organisation" />
+            </Card>
+            <div className="space-y-5">
+              {leadership.length > 0 && (
+                <Card id="labhead-leadership" title={<EditableText id="labhead.leadershipTitle" defaultValue="Academic & Administrative Leadership" className="inline" />}>
+                  <Timeline items={leadership} periodKey="period" titleKey="role" subKey="organisation" />
+                </Card>
+              )}
+              <Card id="labhead-education" title={<EditableText id="labhead.educationTitle" defaultValue="Education" className="inline" />}>
+                <Timeline items={education} periodKey="year" titleKey="degree" subKey="institution" />
+              </Card>
+            </div>
+          </div>
 
-                {leadership.length > 0 && (
-                  <div className="mt-9 border-t pt-8" style={{ borderColor: tone.border }}>
-                    <h3
-                      className="mb-6 text-[11px] font-semibold uppercase tracking-[0.16em]"
-                      style={{ color: tone.muted }}
+          {/* ── Honours & funding ── */}
+          <div id="lh-honours" className="scroll-mt-32 space-y-5">
+            <Card id="labhead-honours" title={<EditableText id="labhead.honoursTitle" defaultValue="Honours & Awards" className="inline" />}>
+              <ul className="grid gap-2.5">
+                {honours.map((item, index) => (
+                  <li key={`${item.title}-${index}`} className="flex items-start gap-3">
+                    <span
+                      className="mt-0.5 shrink-0 rounded-md px-2 py-0.5 text-[11px] font-bold tabular-nums"
+                      style={{ background: "color-mix(in srgb, var(--color-accent) 18%, transparent)", color: "var(--accent-ink)", minWidth: 64, textAlign: "center" }}
                     >
-                      <EditableText
-                        id="labhead.leadershipTitle"
-                        defaultValue="Academic & Administrative Leadership"
-                        className="inline"
-                      />
-                    </h3>
-                    {timeline(leadership, "period", "role", "organisation")}
-                  </div>
-                )}
-              </section>
-            )}
-
-            {education.length > 0 && (
-              <section
-                aria-labelledby="labhead-education"
-                className="rounded-[20px] p-6 md:p-9"
-                style={panelStyle}
-              >
-                <SectionHeading
-                  id="labhead-education"
-                  tone={tone}
-                  eyebrow={
-                    <EditableText
-                      id="labhead.educationTitle"
-                      defaultValue="Education"
-                      className="inline"
-                    />
-                  }
-                />
-                {timeline(education, "year", "degree", "institution")}
-              </section>
-            )}
-
-            {honours.length > 0 && (
-              <section
-                aria-labelledby="labhead-honours"
-                className="rounded-[20px] p-6 md:p-9"
-                style={panelStyle}
-              >
-                <SectionHeading
-                  id="labhead-honours"
-                  tone={tone}
-                  eyebrow={
-                    <EditableText
-                      id="labhead.honoursTitle"
-                      defaultValue="Honours & Awards"
-                      className="inline"
-                    />
-                  }
-                />
-                {timeline(honours, "year", "title", "awardedBy")}
-              </section>
-            )}
+                      {item.year || "—"}
+                    </span>
+                    <span className="min-w-0">
+                      <span className="block text-[14px] font-semibold leading-snug text-[color:var(--site-heading)]">{item.title}</span>
+                      {item.awardedBy && <span className="block text-[12.5px] text-[color:var(--site-muted)]">{item.awardedBy}</span>}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </Card>
 
             {grants.length > 0 && (
-              <section
-                aria-labelledby="labhead-grants"
-                className="rounded-[20px] p-6 md:p-9"
-                style={panelStyle}
-              >
-                <SectionHeading
-                  id="labhead-grants"
-                  tone={tone}
-                  eyebrow={
-                    <EditableText
-                      id="labhead.grantsTitle"
-                      defaultValue="Research Funding"
-                      className="inline"
-                    />
-                  }
-                />
-                <ol className="grid gap-6">
+              <Card id="labhead-grants" title={<EditableText id="labhead.grantsTitle" defaultValue="Research Funding" className="inline" />}>
+                <ul className="grid gap-3">
                   {grants.map((grant, index) => (
-                    <li key={`${grant.title}-${index}`}>
-                      <p className="text-[15px] font-semibold" style={{ color: tone.heading }}>
-                        {grant.title}
-                      </p>
-                      <p className="mt-1 text-[13.5px] leading-6" style={{ color: tone.muted }}>
-                        {[grant.funder, grant.year].filter(Boolean).join(" · ")}
-                      </p>
-                      {grant.amount && (
-                        <p
-                          className="mt-1.5 text-[13px] font-semibold tabular-nums"
-                          style={{ color: theme.secondaryColor }}
-                        >
-                          {grant.amount}
-                        </p>
-                      )}
+                    <li key={`${grant.title}-${index}`} className="rounded-xl border border-[color:var(--site-border)] bg-[color:var(--site-surface-alt)] p-4">
+                      <div className="flex flex-wrap items-center gap-2">
+                        {grant.amount && (
+                          <span className="rounded-md px-2 py-0.5 text-[12px] font-bold" style={{ background: "color-mix(in srgb, var(--color-secondary) 14%, transparent)", color: "var(--secondary-ink)" }}>
+                            {grant.amount}
+                          </span>
+                        )}
+                        {grant.year && <span className="text-[12px] font-semibold tabular-nums text-[color:var(--site-muted)]">{grant.year}</span>}
+                      </div>
+                      <p className="mt-2 text-[14px] font-semibold leading-snug text-[color:var(--site-heading)]">{grant.title}</p>
+                      {grant.funder && <p className="mt-1 text-[12.5px] text-[color:var(--site-text)]">{grant.funder}</p>}
                     </li>
                   ))}
-                </ol>
-              </section>
+                </ul>
+              </Card>
             )}
+          </div>
 
-            {/* The long tail. Behind disclosures so the page stays readable —
-                nineteen editorial roles and twenty-six theses would otherwise
-                bury the sections above. */}
-            <section
-              aria-labelledby="labhead-record"
-              className="rounded-[20px] p-6 md:p-9"
-              style={panelStyle}
-            >
-              <SectionHeading
+          {/* ── Academic record: tabs instead of four collapsed boxes ── */}
+          {recordTabs.length > 0 && (
+            <div id="lh-record" className="scroll-mt-32">
+              <Card
                 id="labhead-record"
-                tone={tone}
-                eyebrow={
-                  <EditableText
-                    id="labhead.recordTitle"
-                    defaultValue="Academic Record"
-                    className="inline"
-                  />
+                title={<EditableText id="labhead.recordTitle" defaultValue="Academic Record" className="inline" />}
+                action={
+                  <Link to="/publications" className="text-[12.5px] font-semibold no-underline hover:underline" style={{ color: "var(--secondary-ink)" }}>
+                    <EditableText id="labhead.publicationsCta" defaultValue="Browse all publications" className="inline" /> →
+                  </Link>
                 }
-              />
+              >
+                <div role="tablist" aria-label="Academic record" className="-mt-1 mb-4 flex gap-1 overflow-x-auto rounded-xl bg-[color:var(--site-surface-alt)] p-1 [scrollbar-width:none]">
+                  {recordTabs.map((tab) => {
+                    const on = tab.id === currentRecord;
+                    return (
+                      <button
+                        key={tab.id}
+                        type="button"
+                        role="tab"
+                        aria-selected={on}
+                        onClick={() => setRecordTab(tab.id)}
+                        className={`flex h-8 shrink-0 items-center gap-1.5 rounded-lg px-3 text-[12.5px] font-semibold transition ${
+                          on ? "bg-[color:var(--site-surface)] text-[color:var(--site-heading)] shadow-sm" : "text-[color:var(--site-muted)] hover:text-[color:var(--site-heading)]"
+                        }`}
+                      >
+                        {tab.label}
+                        <span className="tabular-nums opacity-60">{tab.count}</span>
+                      </button>
+                    );
+                  })}
+                </div>
 
-              <div className="grid gap-3">
-                {editorial.length > 0 &&
-                  disclosure(
-                    "Editorial & peer review",
-                    editorial.length,
-                    <ul className="grid gap-3">
+                <div role="tabpanel" className="max-h-[440px] overflow-y-auto pr-1">
+                  {currentRecord === "editorial" && (
+                    <ul className="divide-y divide-[color:var(--site-border)]">
                       {editorial.map((item, index) => (
-                        <li
-                          key={`${item.outlet}-${index}`}
-                          className="grid gap-0.5 sm:grid-cols-[170px_minmax(0,1fr)] sm:gap-5"
-                        >
-                          <span
-                            className="text-[12.5px] font-semibold"
-                            style={{ color: tone.muted }}
-                          >
-                            {item.role}
-                          </span>
-                          <span className="text-[14px] leading-6" style={{ color: tone.body }}>
-                            {item.outlet}
-                          </span>
+                        <li key={`${item.outlet}-${index}`} className="grid gap-0.5 py-2.5 sm:grid-cols-[150px_minmax(0,1fr)] sm:gap-4">
+                          <span className="text-[12px] font-semibold text-[color:var(--site-muted)]">{item.role}</span>
+                          <span className="text-[13.5px] text-[color:var(--site-heading)]">{item.outlet}</span>
                         </li>
                       ))}
-                    </ul>,
+                    </ul>
                   )}
-
-                {supervision.length > 0 &&
-                  disclosure(
-                    "Supervised graduate research",
-                    supervision.length,
-                    <ol className="grid gap-4">
+                  {currentRecord === "supervision" && (
+                    <ol className="divide-y divide-[color:var(--site-border)]">
                       {supervision.map((item, index) => (
-                        <li
-                          key={`${item.researcher}-${index}`}
-                          className="grid gap-0.5 sm:grid-cols-[70px_minmax(0,1fr)] sm:gap-5"
-                        >
-                          <span
-                            className="text-[12.5px] font-semibold tabular-nums"
-                            style={{ color: tone.muted }}
-                          >
-                            {item.year}
-                          </span>
+                        <li key={`${item.researcher}-${index}`} className="grid gap-0.5 py-2.5 sm:grid-cols-[56px_minmax(0,1fr)] sm:gap-4">
+                          <span className="text-[12px] font-semibold tabular-nums text-[color:var(--site-muted)]">{item.year}</span>
                           <span>
-                            <span
-                              className="block text-[14px] font-semibold"
-                              style={{ color: tone.heading }}
-                            >
-                              {item.researcher}
-                            </span>
-                            <span
-                              className="mt-0.5 block text-[13.5px] leading-6"
-                              style={{ color: tone.body }}
-                            >
-                              {item.thesis}
-                            </span>
+                            <span className="block text-[13.5px] font-semibold text-[color:var(--site-heading)]">{item.researcher}</span>
+                            <span className="block text-[13px] leading-6 text-[color:var(--site-text)]">{item.thesis}</span>
                           </span>
                         </li>
                       ))}
-                    </ol>,
+                    </ol>
                   )}
-
-                {collaborations.length > 0 &&
-                  disclosure(
-                    "International collaborations",
-                    collaborations.length,
+                  {currentRecord === "collaborations" && (
                     <ul className="grid gap-2 sm:grid-cols-2">
                       {collaborations.map((item, index) => (
-                        <li
-                          key={`${item.institution}-${index}`}
-                          className="rounded-lg px-3 py-2.5"
-                          style={{ background: tone.surfaceMuted }}
-                        >
-                          <span
-                            className="block text-[13.5px] font-medium"
-                            style={{ color: tone.body }}
-                          >
-                            {item.institution}
-                          </span>
-                          {item.country && (
-                            <span className="text-[12px]" style={{ color: tone.muted }}>
-                              {item.country}
-                            </span>
-                          )}
+                        <li key={`${item.institution}-${index}`} className="rounded-lg border border-[color:var(--site-border)] px-3 py-2.5">
+                          <span className="block text-[13.5px] font-medium text-[color:var(--site-heading)]">{item.institution}</span>
+                          {item.country && <span className="text-[12px] text-[color:var(--site-muted)]">{item.country}</span>}
                         </li>
                       ))}
-                    </ul>,
+                    </ul>
                   )}
-
-                {venues.length > 0 &&
-                  disclosure(
-                    "Selected journals",
-                    venues.length,
+                  {currentRecord === "venues" && (
                     <ul className="flex flex-wrap gap-2">
                       {venues.map((venue, index) => (
-                        <li
-                          key={`${venue.name}-${index}`}
-                          className="rounded-lg px-3 py-2 text-[13px]"
-                          style={{ background: tone.surfaceMuted, color: tone.body }}
-                        >
+                        <li key={`${venue.name}-${index}`} className="rounded-lg border border-[color:var(--site-border)] bg-[color:var(--site-surface-alt)] px-3 py-1.5 text-[13px] text-[color:var(--site-heading)]">
                           {venue.name}
                         </li>
                       ))}
-                    </ul>,
+                    </ul>
                   )}
-              </div>
-
-              {/* The Publications page does search, filtering and citations —
-                  duplicating the list here would be a second copy to maintain. */}
-              <Link
-                to="/publications"
-                style={{ ...focusVars, borderColor: tone.border, color: tone.body }}
-                className={`mt-6 inline-flex min-h-[44px] items-center gap-2 rounded-xl border px-4 text-sm font-semibold no-underline transition hover:border-[color:${tone.borderStrong}] ${focusRing}`}
-              >
-                <EditableText
-                  id="labhead.publicationsCta"
-                  defaultValue="Browse all publications"
-                  className="inline"
-                />
-                <span aria-hidden="true">→</span>
-              </Link>
-            </section>
-          </div>
-
-          {/* Record sidebar */}
-          <aside className="space-y-6 lg:sticky lg:top-24 lg:h-fit">
-            <section
-              aria-labelledby="labhead-links"
-              className="rounded-[20px] p-6"
-              style={panelStyle}
-            >
-              <SectionHeading
-                id="labhead-links"
-                tone={tone}
-                eyebrow={
-                  <EditableText
-                    id="labhead.linksTitle"
-                    defaultValue="Academic Profiles"
-                    className="inline"
-                  />
-                }
-              />
-
-              {links.length === 0 ? (
-                <p className="text-sm" style={{ color: tone.muted }}>
-                  <EditableText
-                    id="labhead.noLinksText"
-                    defaultValue="No profile links yet."
-                    className="inline"
-                  />
-                </p>
-              ) : (
-                /* Labelled links, not 38px icon-only squares: a title attribute is
-                   not a reliable accessible name, and 38px misses the 44px target. */
-                <ul className="grid gap-2">
-                  {links.map((link) => (
-                    <li key={link.label}>
-                      <a
-                        href={link.href}
-                        target="_blank"
-                        rel="noreferrer"
-                        style={
-                          {
-                            ...focusVars,
-                            "--hover-border": tone.borderStrong,
-                            borderColor: tone.border,
-                            color: tone.body,
-                          } as React.CSSProperties
-                        }
-                        className={`flex min-h-[44px] items-center gap-3 rounded-xl border px-3.5 text-sm font-medium no-underline transition hover:border-[color:var(--hover-border)] ${focusRing}`}
-                      >
-                        <AppIcon name={link.icon} size={16} />
-                        <span className="flex-1">{link.label}</span>
-                        <span aria-hidden="true" style={{ color: tone.muted }}>
-                          ↗
-                        </span>
-                        <span className="sr-only">(opens in a new tab)</span>
-                      </a>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </section>
-
-            {(labHead.email || labHead.phone) && (
-              <section
-                aria-labelledby="labhead-contact"
-                className="rounded-[20px] p-6"
-                style={panelStyle}
-              >
-                <SectionHeading
-                  id="labhead-contact"
-                  tone={tone}
-                  eyebrow={
-                    <EditableText
-                      id="labhead.contactInfoLabel"
-                      defaultValue="Contact Info"
-                      className="inline"
-                    />
-                  }
-                />
-
-                <dl className="grid gap-4">
-                  {labHead.email && (
-                    <div>
-                      <dt
-                        className="text-[10px] font-semibold uppercase tracking-[0.14em]"
-                        style={{ color: tone.muted }}
-                      >
-                        <EditableText
-                          id="labhead.emailLabel"
-                          defaultValue="Email"
-                          className="inline"
-                        />
-                      </dt>
-                      <dd className="mt-1.5 break-all text-sm font-medium">
-                        <a
-                          href={`mailto:${labHead.email}`}
-                          style={{ ...focusVars, color: theme.secondaryColor }}
-                          className={`rounded-sm underline decoration-transparent underline-offset-4 transition hover:decoration-current ${focusRing}`}
-                        >
-                          {labHead.email}
-                        </a>
-                      </dd>
-                    </div>
-                  )}
-
-                  {labHead.phone && (
-                    <div className="border-t pt-4" style={{ borderColor: tone.border }}>
-                      <dt
-                        className="text-[10px] font-semibold uppercase tracking-[0.14em]"
-                        style={{ color: tone.muted }}
-                      >
-                        <EditableText
-                          id="labhead.phoneLabel"
-                          defaultValue="Phone"
-                          className="inline"
-                        />
-                      </dt>
-                      <dd className="mt-1.5 text-sm font-medium">
-                        <a
-                          href={`tel:${labHead.phone}`}
-                          style={{ ...focusVars, color: theme.secondaryColor }}
-                          className={`rounded-sm underline decoration-transparent underline-offset-4 transition hover:decoration-current ${focusRing}`}
-                        >
-                          {labHead.phone}
-                        </a>
-                      </dd>
-                    </div>
-                  )}
-                </dl>
-              </section>
-            )}
-          </aside>
+                </div>
+              </Card>
+            </div>
+          )}
         </div>
+
+        {/* ── Sidebar ── */}
+        <aside className="space-y-5 lg:sticky lg:top-[calc(var(--nav-offset)+64px)] lg:h-fit">
+          <Card id="labhead-links" title={<EditableText id="labhead.linksTitle" defaultValue="Academic Profiles" className="inline" />}>
+            {links.length === 0 ? (
+              <p className="text-sm text-[color:var(--site-muted)]">
+                <EditableText id="labhead.noLinksText" defaultValue="No profile links yet." className="inline" />
+              </p>
+            ) : (
+              <ul className="grid gap-2">
+                {links.map((link) => (
+                  <li key={link.label}>
+                    <a
+                      href={link.href}
+                      target="_blank"
+                      rel="noreferrer"
+                      className={`flex h-10 items-center gap-3 rounded-xl border border-[color:var(--site-border)] px-3 text-[13.5px] font-medium text-[color:var(--site-heading)] no-underline transition hover:border-[color:var(--color-secondary)] ${FOCUS}`}
+                    >
+                      <AppIcon name={link.icon} size={16} />
+                      <span className="flex-1">{link.label}</span>
+                      <span aria-hidden="true" className="text-[color:var(--site-muted)]">↗</span>
+                      <span className="sr-only">(opens in a new tab)</span>
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Card>
+
+          {(labHead.email || labHead.phone) && (
+            <Card id="labhead-contact" title={<EditableText id="labhead.contactInfoLabel" defaultValue="Contact Info" className="inline" />}>
+              <dl className="grid gap-3">
+                {labHead.email && (
+                  <div>
+                    <dt className="text-[10.5px] font-semibold uppercase tracking-[0.14em] text-[color:var(--site-muted)]">
+                      <EditableText id="labhead.emailLabel" defaultValue="Email" className="inline" />
+                    </dt>
+                    <dd className="mt-1 break-all text-[13.5px] font-semibold">
+                      <a href={`mailto:${labHead.email}`} className="no-underline hover:underline" style={{ color: "var(--secondary-ink)" }}>
+                        {labHead.email}
+                      </a>
+                    </dd>
+                  </div>
+                )}
+                {labHead.phone && (
+                  <div className="border-t border-[color:var(--site-border)] pt-3">
+                    <dt className="text-[10.5px] font-semibold uppercase tracking-[0.14em] text-[color:var(--site-muted)]">
+                      <EditableText id="labhead.phoneLabel" defaultValue="Phone" className="inline" />
+                    </dt>
+                    <dd className="mt-1 text-[13.5px] font-semibold">
+                      <a href={`tel:${labHead.phone}`} className="no-underline hover:underline" style={{ color: "var(--secondary-ink)" }}>
+                        {labHead.phone}
+                      </a>
+                    </dd>
+                  </div>
+                )}
+              </dl>
+            </Card>
+          )}
+        </aside>
       </div>
 
-      {/* Onward navigation. The self-link to /lab-head is removed — it pointed at
-          the page the reader is already on. */}
-      <section
-        aria-labelledby="labhead-explore"
-        className="border-t px-4 py-14"
-        style={{ borderColor: tone.border, background: tone.surfaceMuted }}
-      >
+      {/* ── Continue exploring ── */}
+      <section aria-labelledby="labhead-explore" className="border-t border-[color:var(--site-border)] bg-[color:var(--site-surface-alt)] px-4 py-10">
         <div className="mx-auto max-w-6xl">
-          <div className="h-px w-10" style={{ background: tone.borderStrong }} />
-          <h2
-            id="labhead-explore"
-            className="mt-4 text-[11px] font-semibold uppercase tracking-[0.16em]"
-            style={{ color: tone.muted }}
-          >
-            Continue exploring
+          <h2 id="labhead-explore" className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[color:var(--site-muted)]">
+            <EditableText id="labhead.exploreTitle" defaultValue="Continue exploring" className="inline" />
           </h2>
-
-          <ul className="mt-7 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <ul className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {[
-              {
-                to: "/about",
-                icon: "building" as const,
-                title: "About",
-                desc: "Learn more about the lab and mission.",
-                color: theme.secondaryColor,
-              },
-              {
-                to: "/research-ideas",
-                icon: "ideas" as const,
-                title: "Research Ideas",
-                desc: "Discover open questions to collaborate on.",
-                color: theme.accentColor,
-              },
-              {
-                to: "/collaborators#collaborator-request",
-                icon: "handshake" as const,
-                title: "Request Collaboration",
-                desc: "Jump directly to the collaborator request form.",
-                color: theme.primaryColor,
-              },
+              { to: "/about", icon: "building" as const, title: "About", desc: "Learn more about the lab and mission.", ink: "var(--secondary-ink)", tint: "var(--color-secondary)" },
+              { to: "/research-ideas", icon: "ideas" as const, title: "Research Ideas", desc: "Discover open questions to collaborate on.", ink: "var(--accent-ink)", tint: "var(--color-accent)" },
+              { to: "/collaborators#collaborator-request", icon: "handshake" as const, title: "Request Collaboration", desc: "Jump directly to the collaborator request form.", ink: "var(--primary-ink)", tint: "var(--color-primary)" },
             ].map((item) => (
               <li key={item.to}>
-                {/* Hover is CSS, not onMouseEnter style mutation — so it also
-                    responds to keyboard focus and respects reduced motion. */}
                 <Link
                   to={item.to}
-                  style={
-                    {
-                      ...focusVars,
-                      "--card-accent": item.color,
-                      background: tone.surface,
-                      borderColor: tone.border,
-                      boxShadow: tone.shadow,
-                    } as React.CSSProperties
-                  }
-                  className={`group flex h-full items-start gap-4 rounded-[16px] border p-5 no-underline transition duration-200 hover:border-[color:var(--card-accent)] motion-safe:hover:-translate-y-0.5 ${focusRing}`}
+                  className={`group flex h-full items-start gap-3.5 rounded-2xl border border-[color:var(--site-border)] bg-[color:var(--site-surface)] p-4 no-underline transition hover:border-[color:var(--color-secondary)] motion-safe:hover:-translate-y-0.5 ${FOCUS}`}
                 >
-                  <span
-                    className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl"
-                    style={{ background: withAlpha(item.color, 0.12), color: item.color }}
-                  >
-                    <AppIcon name={item.icon} size={20} />
+                  <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl" style={{ background: `color-mix(in srgb, ${item.tint} 14%, transparent)`, color: item.ink }}>
+                    <AppIcon name={item.icon} size={19} />
                   </span>
-                  <span className="min-w-0">
-                    <span className="block text-sm font-semibold" style={{ color: tone.heading }}>
-                      <EditableText
-                        id={`labhead.cardTitle.${item.icon}`}
-                        defaultValue={item.title}
-                        className="inline"
-                      />
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-[14px] font-semibold text-[color:var(--site-heading)]">
+                      <EditableText id={`labhead.cardTitle.${item.icon}`} defaultValue={item.title} className="inline" />
                     </span>
-                    <span className="mt-1 block text-xs leading-5" style={{ color: tone.muted }}>
-                      <EditableText
-                        id={`labhead.cardDesc.${item.icon}`}
-                        defaultValue={item.desc}
-                        className="inline"
-                      />
+                    <span className="mt-0.5 block text-[12.5px] leading-5 text-[color:var(--site-muted)]">
+                      <EditableText id={`labhead.cardDesc.${item.icon}`} defaultValue={item.desc} className="inline" />
                     </span>
                   </span>
-                  <span
-                    aria-hidden="true"
-                    className="ml-auto self-center text-sm transition-transform motion-safe:group-hover:translate-x-0.5"
-                    style={{ color: tone.muted }}
-                  >
+                  <span aria-hidden="true" className="self-center text-[color:var(--site-muted)] transition-transform motion-safe:group-hover:translate-x-0.5">
                     →
                   </span>
                 </Link>
