@@ -674,7 +674,7 @@ export const PublicationView: React.FC<{
         }`}
         style={{ background: "var(--color-primary)" }}
       >
-        <div className={inDrawer ? "max-w-5xl" : "mx-auto max-w-5xl"}>
+        <div className={inDrawer ? "" : "mx-auto max-w-5xl"}>
           <p
             className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[11px] font-semibold uppercase tracking-[.16em]"
             style={{ color: statusColor }}
@@ -724,8 +724,8 @@ export const PublicationView: React.FC<{
       )}
 
       <div
-        className={`grid max-w-5xl gap-6 py-8 lg:grid-cols-[minmax(0,1fr)_300px] print:block ${
-          inDrawer ? "px-4 md:px-8" : "mx-auto px-4"
+        className={`grid gap-6 py-8 lg:grid-cols-[minmax(0,1fr)_300px] print:block ${
+          inDrawer ? "px-4 md:px-8" : "mx-auto max-w-5xl px-4"
         }`}
       >
         <div className="min-w-0">
@@ -737,7 +737,7 @@ export const PublicationView: React.FC<{
               Abstract
             </h2>
 
-            <p className="mt-5 max-w-[68ch] whitespace-pre-line text-[15.5px] leading-[1.75] text-slate-700">
+            <p className="mt-5 whitespace-pre-line text-[15.5px] leading-[1.75] text-slate-700">
               {publication.abstract || "No abstract has been provided for this publication."}
             </p>
 

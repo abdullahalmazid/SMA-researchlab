@@ -3,24 +3,9 @@ import { Link } from "react-router-dom";
 import { cld } from "../cloudinary";
 import AppIcon from "../components/AppIcon";
 import EditableText from "../components/EditableText";
-import { useCollaborators, useSiteContent } from "../firebase/hooks";
-
-interface LabHeadData {
-  name: string;
-  title: string;
-  department: string;
-  photo: string;
-  shortBio: string;
-  fullBio: string;
-  email: string;
-  phone: string;
-  linkedin: string;
-  scholar: string;
-  orcid: string;
-  researchgate: string;
-  scopus: string;
-  researchInterests: string;
-}
+import PublicationDrawer, { type PublicationDrawerTarget } from "../components/PublicationDrawer";
+import { usePublications } from "../firebase/hooks";
+import { useLabHead } from "../hooks/useLabHead";
 
 /* ------------------------------------------------------------------ *
  * Record data
@@ -187,32 +172,6 @@ const DEFAULT_VENUES: Row[] = [
   { name: "Business Strategy & Development" },
 ];
 
-const DEFAULT_INTERESTS =
-  "Applied artificial intelligence and machine learning, Logistics and supply chain management, Supply chain risk management, Supply chain sustainability";
-
-const DEFAULT_BIO = `Dr. Syed Mithun Ali is a Professor in the Department of Industrial and Production Engineering at Bangladesh University of Engineering and Technology (BUET). He holds a PhD in supply chain management from the Nagoya Institute of Technology, Japan.
-
-His research enhances both the theoretical and practical understanding of the environmental, social and economic sustainability of organisations and their supply chains. Through mentoring and international partnerships, he works to advance sustainable practices that benefit both industry and the environment.`;
-
-/* Institutional address only — the CV's personal mobile numbers and private
-   email are deliberately not published here. */
-const DEFAULT_EMAIL = "mithun@ipe.buet.ac.bd";
-const DEFAULT_SCHOLAR = "https://scholar.google.com/citations?user=vCkenssAAAAJ&hl=en";
-const DEFAULT_RESEARCHGATE = "https://www.researchgate.net/profile/Syed_Mithun_Ali";
-const DEFAULT_SCOPUS = "https://www.scopus.com/authid/detail.uri?authorId=57193722242";
-
-/* Figures come from the Google Scholar record in the CV rather than its prose,
-   which quotes slightly different numbers. `asOf` is displayed beside them so
-   they can't go quietly stale. */
-const DEFAULT_METRICS = {
-  citations: "12,160",
-  hIndex: "60",
-  i10Index: "141",
-  publications: "152",
-  experienceYears: "19+",
-  asOf: "August 2026",
-};
-
 /* ------------------------------------------------------------------ *
  * Building blocks
  *
@@ -299,49 +258,24 @@ type RecordTab = "editorial" | "supervision" | "collaborations" | "venues";
 const NAV = [
   { id: "overview", label: "Overview" },
   { id: "career", label: "Career" },
-  { id: "honours", label: "Honours & funding" },
+  { id: "recognition", label: "Recognition" },
+  { id: "publications", label: "Publications" },
   { id: "record", label: "Academic record" },
 ] as const;
 
 const LabHead: React.FC = () => {
-  const { content, loading } = useSiteContent();
-  const { collaborators, loading: collaboratorsLoading } = useCollaborators();
+  const { labHead, metrics, content, loading } = useLabHead();
   const [recordTab, setRecordTab] = useState<RecordTab>("editorial");
   const [activeSection, setActiveSection] = useState<string>("overview");
+  const { ongoing, published } = usePublications();
+  const [openPaper, setOpenPaper] = useState<PublicationDrawerTarget | null>(null);
+  const interests = labHead.interests;
 
-  const labHeadUid = content["labhead.profileUid"] || String(import.meta.env.VITE_LAB_HEAD_UID || "");
-  const canonicalProfile = collaborators.find((profile) => profile.uid === labHeadUid);
-
-  const labHead: LabHeadData = {
-    name: canonicalProfile?.name || content["labhead.name"] || "",
-    title: canonicalProfile?.designation || content["labhead.title"] || "",
-    department: canonicalProfile?.affiliation || content["labhead.department"] || "",
-    photo: canonicalProfile?.photo || content["labhead.photo"] || "",
-    shortBio: canonicalProfile?.bio || content["labhead.shortBio"] || DEFAULT_BIO,
-    fullBio: content["labhead.fullBio"] || canonicalProfile?.bio || "",
-    email: canonicalProfile?.email || content["labhead.email"] || DEFAULT_EMAIL,
-    phone: content["labhead.phone"] ?? "",
-    linkedin: canonicalProfile?.linkedin || content["labhead.linkedin"] || "",
-    scholar: canonicalProfile?.scholar || content["labhead.scholar"] || DEFAULT_SCHOLAR,
-    orcid: canonicalProfile?.orcid || content["labhead.orcid"] || "",
-    researchgate: canonicalProfile?.researchgate || content["labhead.researchgate"] || DEFAULT_RESEARCHGATE,
-    scopus: content["labhead.scopus"] || DEFAULT_SCOPUS,
-    researchInterests: canonicalProfile?.researchInterests?.join(", ") || content["labhead.researchInterests"] || DEFAULT_INTERESTS,
-  };
-
-  const interests = labHead.researchInterests
-    .split(",")
-    .map((entry) => entry.trim())
-    .filter(Boolean);
-
-  const metrics = {
-    citations: content["labhead.metrics.citations"] || DEFAULT_METRICS.citations,
-    hIndex: content["labhead.metrics.hIndex"] || DEFAULT_METRICS.hIndex,
-    i10Index: content["labhead.metrics.i10Index"] || DEFAULT_METRICS.i10Index,
-    publications: content["labhead.metrics.publications"] || DEFAULT_METRICS.publications,
-    experienceYears: content["labhead.metrics.experienceYears"] || DEFAULT_METRICS.experienceYears,
-    asOf: content["labhead.metrics.asOf"] || DEFAULT_METRICS.asOf,
-  };
+  /* His latest papers from the site's own records (the Publications page
+     already lists only papers he co-authored). */
+  const latestPapers = [...ongoing, ...published]
+    .sort((a, b) => (b.year ?? 0) - (a.year ?? 0) || String(b.createdAt ?? "").localeCompare(String(a.createdAt ?? "")))
+    .slice(0, 5);
 
   const appointments = rowsFrom(content["labhead.appointments"], DEFAULT_APPOINTMENTS);
   const leadership = rowsFrom(content["labhead.leadership"], DEFAULT_LEADERSHIP);
@@ -361,7 +295,6 @@ const LabHead: React.FC = () => {
     { href: labHead.linkedin, label: "LinkedIn", icon: "linkedin" as const },
   ].filter((link) => link.href);
 
-  const hasSecondBio = Boolean(labHead.fullBio) && labHead.fullBio !== labHead.shortBio;
   const firstName = labHead.name.split(" ").find((part) => !/^(dr|prof)\.?$/i.test(part)) ?? labHead.name;
 
   /* Highlight the section in view in the sticky bar. */
@@ -392,7 +325,7 @@ const LabHead: React.FC = () => {
    * Loading and empty states
    * ---------------------------------------------------------------- */
 
-  if (loading || collaboratorsLoading) {
+  if (loading) {
     return (
       <main aria-busy="true" role="status" className="bg-[color:var(--color-bg)]">
         <span className="sr-only">Loading the lab head profile</span>
@@ -496,7 +429,7 @@ const LabHead: React.FC = () => {
                 </p>
               )}
               <p className="mx-auto mt-2 max-w-2xl text-[14px] leading-6 md:mx-0" style={{ color: "color-mix(in srgb, var(--hero-text) 72%, transparent)" }}>
-                <EditableText id="labhead.heroSubtitle" defaultValue="Research direction, academic profile, and contact information." className="inline" />
+                <EditableText id="labhead.shortBio" defaultValue={labHead.intro} className="inline" multiline />
               </p>
 
               <div className="mt-6 flex flex-wrap justify-center gap-2.5 md:justify-start">
@@ -598,37 +531,31 @@ const LabHead: React.FC = () => {
           {/* ── Overview ── */}
           <div id="lh-overview" className="scroll-mt-32 space-y-5">
             <Card id="labhead-bio" title={<EditableText id="labhead.bioTitle" defaultValue="Biography" className="inline" />}>
-              <div className="max-w-[70ch] whitespace-pre-line text-[15px] leading-[1.8] text-[color:var(--site-text)]">
-                <EditableText id="labhead.shortBio" defaultValue={labHead.shortBio || labHead.fullBio} wrapperClassName="block" />
+              <div className="whitespace-pre-line text-[15px] leading-[1.8] text-[color:var(--site-text)]">
+                <EditableText id="labhead.fullBio" defaultValue={labHead.biography} wrapperClassName="block" multiline />
               </div>
-              {hasSecondBio && (
-                <details className="group mt-5 border-t border-[color:var(--site-border)] pt-4">
-                  <summary className={`flex cursor-pointer list-none items-center gap-2 text-[13px] font-semibold [&::-webkit-details-marker]:hidden ${FOCUS}`} style={{ color: "var(--secondary-ink)" }}>
-                    <EditableText id="labhead.detailedBioTitle" defaultValue="Detailed Biography" className="inline" />
-                    <span aria-hidden="true" className="transition-transform group-open:rotate-90">›</span>
-                  </summary>
-                  <div className="mt-3 max-w-[70ch] whitespace-pre-line text-[15px] leading-[1.8] text-[color:var(--site-text)]">
-                    <EditableText id="labhead.fullBio" defaultValue={labHead.fullBio} wrapperClassName="block" />
-                  </div>
-                </details>
-              )}
-            </Card>
-
-            <Card id="labhead-interests" title={<EditableText id="labhead.researchInterestsTitle" defaultValue="Research Interests" className="inline" />}>
-              {interests.length > 0 ? (
-                <ul className="grid gap-2 sm:grid-cols-2">
-                  {interests.map((interest) => (
-                    <li key={interest} className="flex items-center gap-3 rounded-xl border border-[color:var(--site-border)] bg-[color:var(--site-surface-alt)] px-3.5 py-2.5">
-                      <span aria-hidden="true" className="h-2 w-2 shrink-0 rounded-full" style={{ background: "var(--color-accent)" }} />
-                      <span className="text-[13.5px] font-medium text-[color:var(--site-heading)]">{interest}</span>
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <p className="text-[14px] text-[color:var(--site-muted)]">
-                  <EditableText id="labhead.noResearchInterestsText" defaultValue="Research interests are not available yet." className="inline" />
-                </p>
-              )}
+              <div className="mt-6 border-t border-[color:var(--site-border)] pt-5">
+                <h4 className="mb-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-[color:var(--site-muted)]">
+                  <EditableText id="labhead.researchInterestsTitle" defaultValue="Research Interests" className="inline" />
+                </h4>
+                {interests.length > 0 ? (
+                  <ul className="flex flex-wrap gap-2">
+                    {interests.map((interest) => (
+                      <li
+                        key={interest}
+                        className="inline-flex items-center gap-2 rounded-full border border-[color:var(--site-border)] bg-[color:var(--site-surface-alt)] px-3 py-1.5 text-[13px] font-medium text-[color:var(--site-heading)]"
+                      >
+                        <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full" style={{ background: "var(--color-accent)" }} />
+                        {interest}
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="text-[14px] text-[color:var(--site-muted)]">
+                    <EditableText id="labhead.noResearchInterestsText" defaultValue="Research interests are not available yet." className="inline" />
+                  </p>
+                )}
+              </div>
             </Card>
           </div>
 
@@ -650,7 +577,7 @@ const LabHead: React.FC = () => {
           </div>
 
           {/* ── Honours & funding ── */}
-          <div id="lh-honours" className="scroll-mt-32 space-y-5">
+          <div id="lh-recognition" className="scroll-mt-32 space-y-5">
             <Card id="labhead-honours" title={<EditableText id="labhead.honoursTitle" defaultValue="Honours & Awards" className="inline" />}>
               <ul className="grid gap-2.5">
                 {honours.map((item, index) => (
@@ -692,17 +619,58 @@ const LabHead: React.FC = () => {
             )}
           </div>
 
+          {/* ── Latest publications ── */}
+          <div id="lh-publications" className="scroll-mt-32">
+            <Card
+              id="labhead-publications"
+              title={<EditableText id="labhead.latestPublicationsTitle" defaultValue="Latest Publications" className="inline" />}
+              action={
+                <Link to="/publications" className="text-[12.5px] font-semibold no-underline hover:underline" style={{ color: "var(--secondary-ink)" }}>
+                  <EditableText id="labhead.publicationsCta" defaultValue="Browse all publications" className="inline" /> →
+                </Link>
+              }
+            >
+              {latestPapers.length === 0 ? (
+                <p className="text-[14px] text-[color:var(--site-muted)]">Publications will appear here as they're added.</p>
+              ) : (
+                <ul className="divide-y divide-[color:var(--site-border)]">
+                  {latestPapers.map((paper) => (
+                    <li key={paper.id}>
+                      <button
+                        type="button"
+                        aria-haspopup="dialog"
+                        onClick={() =>
+                          setOpenPaper({ entry: { id: paper.id, title: paper.title, journal: paper.journal, year: paper.year, url: paper.url }, detailId: paper.id })
+                        }
+                        className={`group flex w-full items-start gap-3 py-3 text-left ${FOCUS}`}
+                      >
+                        <span className="w-12 shrink-0 pt-0.5 text-[12.5px] font-bold tabular-nums text-[color:var(--site-muted)]">{paper.year}</span>
+                        <span className="min-w-0 flex-1">
+                          <span className="block text-[14px] font-semibold leading-snug text-[color:var(--site-heading)] decoration-[color:var(--site-border)] underline-offset-2 group-hover:underline">
+                            {paper.title}
+                          </span>
+                          <span className="mt-0.5 block truncate text-[12.5px] text-[color:var(--site-muted)]">
+                            {paper.type === "ongoing" ? "Ongoing · " : ""}
+                            {paper.journal}
+                          </span>
+                        </span>
+                        <span aria-hidden="true" className="pt-0.5 text-[color:var(--site-muted)] transition-transform motion-safe:group-hover:translate-x-0.5">
+                          →
+                        </span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </Card>
+          </div>
+
           {/* ── Academic record: tabs instead of four collapsed boxes ── */}
           {recordTabs.length > 0 && (
             <div id="lh-record" className="scroll-mt-32">
               <Card
                 id="labhead-record"
                 title={<EditableText id="labhead.recordTitle" defaultValue="Academic Record" className="inline" />}
-                action={
-                  <Link to="/publications" className="text-[12.5px] font-semibold no-underline hover:underline" style={{ color: "var(--secondary-ink)" }}>
-                    <EditableText id="labhead.publicationsCta" defaultValue="Browse all publications" className="inline" /> →
-                  </Link>
-                }
               >
                 <div role="tablist" aria-label="Academic record" className="-mt-1 mb-4 flex gap-1 overflow-x-auto rounded-xl bg-[color:var(--site-surface-alt)] p-1 [scrollbar-width:none]">
                   {recordTabs.map((tab) => {
@@ -872,6 +840,8 @@ const LabHead: React.FC = () => {
           </ul>
         </div>
       </section>
+
+      <PublicationDrawer target={openPaper} onClose={() => setOpenPaper(null)} />
     </main>
   );
 };

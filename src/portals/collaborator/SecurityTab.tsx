@@ -74,8 +74,8 @@ const SecurityTab: React.FC<{ firebaseUser: FirebaseUser; email: string; role: s
             </Button>
           }
         >
-          <form onSubmit={submit} className="max-w-md space-y-3">
-            <Field label="Current password" htmlFor="sec-current">
+          <form onSubmit={submit} className="grid gap-3 sm:grid-cols-2">
+            <Field label="Current password" htmlFor="sec-current" className="sm:col-span-2 sm:w-[calc(50%-6px)]">
               <input
                 id="sec-current"
                 required
@@ -128,11 +128,13 @@ const SecurityTab: React.FC<{ firebaseUser: FirebaseUser; email: string; role: s
               {mismatch && <p className="mt-1 text-[11.5px] text-rose-600">Doesn't match the new password.</p>}
             </Field>
             {notice && (
-              <Notice tone={notice.tone} onDismiss={() => setNotice(null)}>
-                {notice.text}
-              </Notice>
+              <div className="sm:col-span-2">
+                <Notice tone={notice.tone} onDismiss={() => setNotice(null)}>
+                  {notice.text}
+                </Notice>
+              </div>
             )}
-            <button type="submit" disabled={saving} className={buttonClass("primary")}>
+            <button type="submit" disabled={saving} className={buttonClass("primary", "justify-self-start sm:col-span-2")}>
               {saving ? "Updating…" : "Update password"}
             </button>
           </form>

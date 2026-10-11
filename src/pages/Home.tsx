@@ -1,8 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { NewsLink, PersonLink } from "../components/PersonDrawer";
 import { Link } from "react-router-dom";
 import AppIcon, { type AppIconName } from "../components/AppIcon";
 import EditableText from "../components/EditableText";
+import { NewsLink, PersonLink } from "../components/PersonDrawer";
 import { useThemeContext } from "../context/ThemeContext";
 import {
   useAnnouncements,
@@ -12,24 +12,8 @@ import {
   useResearchIdeas,
   useSiteContent,
 } from "../firebase/hooks";
+import { useLabHead } from "../hooks/useLabHead";
 import type { Announcement, CollaboratorProfile, GalleryItem } from "../types";
-
-// ── Types ──────────────────────────────────────────────────────
-interface LabHeadData {
-  name: string;
-  title: string;
-  department: string;
-  photo: string;
-  shortBio: string;
-  fullBio: string;
-  email: string;
-  phone: string;
-  linkedin: string;
-  scholar: string;
-  orcid: string;
-  researchgate: string;
-  researchInterests: string;
-}
 
 /** The optional fields ManageAnnouncements writes. Declared locally so this
  *  file compiles against the existing Announcement type. */
@@ -48,7 +32,9 @@ const COLLAB_INTERVAL = 7000;
 function announcementTitle(post: AnnouncementPost): string {
   if (post.title?.trim()) return post.title.trim();
   const first = (post.content || "").split(/(?<=[.!?])\s/)[0]?.trim() ?? "";
-  return first.length > 72 ? `${first.slice(0, 70).trimEnd()}…` : first || "Untitled";
+  return first.length > 72
+    ? `${first.slice(0, 70).trimEnd()}…`
+    : first || "Untitled";
 }
 
 const prefersReducedMotion = () =>
@@ -81,15 +67,20 @@ function useCarousel(length: number, intervalMs: number) {
     return () => window.clearInterval(id);
   }, [paused, length, intervalMs, safeIndex]);
 
-  const prev = useCallback(() => setIndex((c) => (c - 1 + length) % length), [length]);
+  const prev = useCallback(
+    () => setIndex((c) => (c - 1 + length) % length),
+    [length],
+  );
   const next = useCallback(() => setIndex((c) => (c + 1) % length), [length]);
 
   return { index: safeIndex, setIndex, prev, next, paused, setPaused };
 }
 
-const PauseButton: React.FC<{ paused: boolean; onToggle: () => void; label: string }> = ({
-  paused, onToggle, label,
-}) => (
+const PauseButton: React.FC<{
+  paused: boolean;
+  onToggle: () => void;
+  label: string;
+}> = ({ paused, onToggle, label }) => (
   <button
     type="button"
     onClick={onToggle}
@@ -97,11 +88,23 @@ const PauseButton: React.FC<{ paused: boolean; onToggle: () => void; label: stri
     aria-label={paused ? `Resume ${label}` : `Pause ${label}`}
   >
     {paused ? (
-      <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <svg
+        width="12"
+        height="12"
+        viewBox="0 0 24 24"
+        fill="currentColor"
+        aria-hidden="true"
+      >
         <path d="M7 4l13 8-13 8z" />
       </svg>
     ) : (
-      <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <svg
+        width="12"
+        height="12"
+        viewBox="0 0 24 24"
+        fill="currentColor"
+        aria-hidden="true"
+      >
         <path d="M7 4h4v16H7zM13 4h4v16h-4z" />
       </svg>
     )}
@@ -113,6 +116,8 @@ const Home: React.FC = () => {
   const { content, loading } = useSiteContent();
   const { theme } = useThemeContext();
   const announcements = useAnnouncements();
+  /* Same lab head as the Lab head page and the footer. */
+  const { labHead, metrics: labHeadMetrics } = useLabHead();
   const { collaborators } = useCollaborators();
   const { ongoing, published } = usePublications();
   const { ideas } = useResearchIdeas();
@@ -128,16 +133,23 @@ const Home: React.FC = () => {
     const clean = (theme.backgroundColor ?? "").replace("#", "").trim();
     const full =
       clean.length === 3
-        ? clean.split("").map((char) => char + char).join("")
+        ? clean
+            .split("")
+            .map((char) => char + char)
+            .join("")
         : clean;
     if (full.length !== 6 || /[^0-9a-f]/i.test(full)) return false;
 
     const channel = (offset: number) => {
       const value = Number.parseInt(full.slice(offset, offset + 2), 16) / 255;
-      return value <= 0.03928 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+      return value <= 0.03928
+        ? value / 12.92
+        : ((value + 0.055) / 1.055) ** 2.4;
     };
 
-    return 0.2126 * channel(0) + 0.7152 * channel(2) + 0.0722 * channel(4) < 0.22;
+    return (
+      0.2126 * channel(0) + 0.7152 * channel(2) + 0.0722 * channel(4) < 0.22
+    );
   }, [theme.backgroundColor]);
 
   // Theme Control tokens (src/theme/tokens.ts) — already light/dark aware.
@@ -159,19 +171,42 @@ const Home: React.FC = () => {
 
   if (loading)
     return (
-      <div className="flex items-center justify-center min-h-screen" role="status" aria-label="Loading">
+      <div
+        className="flex items-center justify-center min-h-screen"
+        role="status"
+        aria-label="Loading"
+      >
         <div
           className="w-12 h-12 rounded-full border-4 border-t-transparent animate-spin"
-          style={{ borderColor: "var(--color-primary)", borderTopColor: "transparent" }}
+          style={{
+            borderColor: "var(--color-primary)",
+            borderTopColor: "transparent",
+          }}
         />
       </div>
     );
 
   const stats = [
-    { value: collaborators.length, label: content["home.statsLabel1"] ?? "Collaborators", icon: "collaborators" as AppIconName },
-    { value: published.length, label: content["home.statsLabel2"] ?? "Publications", icon: "paper" as AppIconName },
-    { value: ongoing.length, label: content["home.statsLabel3"] ?? "Ongoing Projects", icon: "lab" as AppIconName },
-    { value: ideas.length, label: content["home.statsLabel4"] ?? "Research Ideas", icon: "ideas" as AppIconName },
+    {
+      value: collaborators.length,
+      label: content["home.statsLabel1"] ?? "Collaborators",
+      icon: "collaborators" as AppIconName,
+    },
+    {
+      value: published.length,
+      label: content["home.statsLabel2"] ?? "Publications",
+      icon: "paper" as AppIconName,
+    },
+    {
+      value: ongoing.length,
+      label: content["home.statsLabel3"] ?? "Ongoing Projects",
+      icon: "lab" as AppIconName,
+    },
+    {
+      value: ideas.length,
+      label: content["home.statsLabel4"] ?? "Research Ideas",
+      icon: "ideas" as AppIconName,
+    },
   ];
 
   const publishedAnnouncements = (announcements as AnnouncementPost[])
@@ -182,31 +217,30 @@ const Home: React.FC = () => {
         String(b.createdAt).localeCompare(String(a.createdAt)),
     );
 
-  const latestAnnouncements = publishedAnnouncements.slice(0, HOME_ANNOUNCEMENT_LIMIT);
-
-  const labHead: LabHeadData = {
-    name: content["labhead.name"] ?? "",
-    title: content["labhead.title"] ?? "",
-    department: content["labhead.department"] ?? "",
-    photo: content["labhead.photo"] ?? "",
-    shortBio: content["labhead.shortBio"] ?? "",
-    fullBio: content["labhead.fullBio"] ?? "",
-    email: content["labhead.email"] ?? "",
-    phone: content["labhead.phone"] ?? "",
-    linkedin: content["labhead.linkedin"] ?? "",
-    scholar: content["labhead.scholar"] ?? "",
-    orcid: content["labhead.orcid"] ?? "",
-    researchgate: content["labhead.researchgate"] ?? "",
-    researchInterests: content["labhead.researchInterests"] ?? "",
-  };
+  const latestAnnouncements = publishedAnnouncements.slice(
+    0,
+    HOME_ANNOUNCEMENT_LIMIT,
+  );
 
   const hasLabHead = !!labHead.name;
 
   const heroLinks = [
-    { href: labHead.linkedin, icon: "linkedin" as AppIconName, label: "LinkedIn" },
-    { href: labHead.scholar, icon: "scholar" as AppIconName, label: "Google Scholar" },
+    {
+      href: labHead.linkedin,
+      icon: "linkedin" as AppIconName,
+      label: "LinkedIn",
+    },
+    {
+      href: labHead.scholar,
+      icon: "scholar" as AppIconName,
+      label: "Google Scholar",
+    },
     { href: labHead.orcid, icon: "orcid" as AppIconName, label: "ORCID" },
-    { href: labHead.researchgate, icon: "researchgate" as AppIconName, label: "ResearchGate" },
+    {
+      href: labHead.researchgate,
+      icon: "researchgate" as AppIconName,
+      label: "ResearchGate",
+    },
   ].filter((l) => l.href);
 
   return (
@@ -224,7 +258,10 @@ const Home: React.FC = () => {
             style={{ filter: "brightness(0.45)" }}
           />
         ) : (
-          <div className="absolute inset-0" style={{ background: "var(--color-primary)" }} />
+          <div
+            className="absolute inset-0"
+            style={{ background: "var(--color-primary)" }}
+          />
         )}
 
         <div
@@ -239,7 +276,8 @@ const Home: React.FC = () => {
           aria-hidden="true"
           className="absolute top-0 right-0 w-96 h-96 opacity-10"
           style={{
-            backgroundImage: "radial-gradient(circle, color-mix(in srgb, var(--hero-text) 60%, transparent) 1px, transparent 1px)",
+            backgroundImage:
+              "radial-gradient(circle, color-mix(in srgb, var(--hero-text) 60%, transparent) 1px, transparent 1px)",
             backgroundSize: "24px 24px",
           }}
         />
@@ -247,7 +285,10 @@ const Home: React.FC = () => {
         <div
           aria-hidden="true"
           className="absolute bottom-0 left-0 w-72 h-72 rounded-full opacity-20 blur-3xl"
-          style={{ background: "var(--color-accent)", transform: "translate(-30%, 30%)" }}
+          style={{
+            background: "var(--color-accent)",
+            transform: "translate(-30%, 30%)",
+          }}
         />
 
         <div className="relative z-10 max-w-7xl mx-auto px-10 lg:px-20 py-4 lg:py-5 flex flex-col lg:flex-row items-center gap-14">
@@ -262,14 +303,25 @@ const Home: React.FC = () => {
           >
             <div
               className="inline-flex items-center gap-2 mb-6 px-4 py-1.5 rounded-full border"
-              style={{ borderColor: "color-mix(in srgb, var(--hero-text) 20%, transparent)", background: "color-mix(in srgb, var(--hero-text) 6%, transparent)" }}
+              style={{
+                borderColor:
+                  "color-mix(in srgb, var(--hero-text) 20%, transparent)",
+                background:
+                  "color-mix(in srgb, var(--hero-text) 6%, transparent)",
+              }}
             >
               <span
                 aria-hidden="true"
                 className="w-1.5 h-1.5 rounded-full motion-safe:animate-pulse"
                 style={{ background: "var(--color-accent)" }}
               />
-              <span className="text-xs font-bold tracking-widest uppercase" style={{ color: "color-mix(in srgb, var(--hero-text) 75%, transparent)" }}>
+              <span
+                className="text-xs font-bold tracking-widest uppercase"
+                style={{
+                  color:
+                    "color-mix(in srgb, var(--hero-text) 75%, transparent)",
+                }}
+              >
                 <EditableText
                   id="home.buetBadge"
                   tag="span"
@@ -293,26 +345,34 @@ const Home: React.FC = () => {
                 id="home.heroTitle"
                 tag="h1"
                 className="font-black text-[color:var(--hero-text)] leading-none mb-5"
-                defaultValue={content["home.heroTitle"] ?? "DASS Research Lounge"}
+                defaultValue={
+                  content["home.heroTitle"] ?? "DASS Research Lounge"
+                }
               />
             </div>
 
             <div className="flex justify-center lg:justify-start mb-5">
-              <div className="h-1 w-20 rounded-full" style={{ background: "var(--color-accent)" }} />
+              <div
+                className="h-1 w-20 rounded-full"
+                style={{ background: "var(--color-accent)" }}
+              />
             </div>
 
             {/* Centred on mobile, left-aligned with the title on desktop — the old
                 `margin: 0 auto` centred this block even when everything else was left. */}
             <div
               className="mx-auto mb-8 max-w-[500px] lg:mx-0"
-              style={{ color: "color-mix(in srgb, var(--hero-text) 80%, transparent)" }}
+              style={{
+                color: "color-mix(in srgb, var(--hero-text) 80%, transparent)",
+              }}
             >
               <EditableText
                 id="home.heroSubtitle"
                 tag="p"
                 className="text-base lg:text-lg leading-relaxed"
                 defaultValue={
-                  content["home.heroSubtitle"] ?? "Advancing the frontiers of science and technology."
+                  content["home.heroSubtitle"] ??
+                  "Advancing the frontiers of science and technology."
                 }
               />
             </div>
@@ -331,7 +391,9 @@ const Home: React.FC = () => {
                 <EditableText
                   id="home.heroCta"
                   tag="span"
-                  defaultValue={content["home.heroCta"] ?? "Explore Research Ideas"}
+                  defaultValue={
+                    content["home.heroCta"] ?? "Explore Research Ideas"
+                  }
                   className="inline"
                 />{" "}
                 <span aria-hidden="true">→</span>
@@ -340,20 +402,27 @@ const Home: React.FC = () => {
                 to="/about"
                 className="hm-cta no-underline font-bold px-7 py-3.5 rounded-xl text-sm text-[color:var(--hero-text)]"
                 style={{
-                  border: "1.5px solid color-mix(in srgb, var(--hero-text) 35%, transparent)",
-                  background: "color-mix(in srgb, var(--hero-text) 8%, transparent)",
+                  border:
+                    "1.5px solid color-mix(in srgb, var(--hero-text) 35%, transparent)",
+                  background:
+                    "color-mix(in srgb, var(--hero-text) 8%, transparent)",
                   backdropFilter: "blur(4px)",
                 }}
               >
-                <EditableText id="home.aboutButton" tag="span" defaultValue="About the Lab" className="inline" />
+                <EditableText
+                  id="home.aboutButton"
+                  tag="span"
+                  defaultValue="About the Lab"
+                  className="inline"
+                />
               </Link>
             </div>
           </div>
 
-          {/* ── Right: Lab Head Card ── */}
+          {/* ── Right: Lab Head card — compact, so it never outgrows the headline ── */}
           {hasLabHead && (
             <div
-              className="flex-shrink-0 w-full lg:w-80"
+              className="w-full flex-shrink-0 lg:w-[380px]"
               style={{
                 opacity: visible ? 1 : 0,
                 transform: visible ? "translateY(0)" : "translateY(24px)",
@@ -361,100 +430,171 @@ const Home: React.FC = () => {
               }}
             >
               <div
-                className="rounded-2xl overflow-hidden"
+                className="overflow-hidden rounded-2xl text-left"
                 style={{
-                  background: "color-mix(in srgb, var(--hero-text) 7%, transparent)",
+                  background:
+                    "color-mix(in srgb, var(--hero-text) 8%, transparent)",
                   backdropFilter: "blur(20px)",
                   WebkitBackdropFilter: "blur(20px)",
-                  border: "1px solid color-mix(in srgb, var(--hero-text) 14%, transparent)",
-                  boxShadow: "0 20px 60px rgba(0,0,0,0.4), inset 0 1px 0 color-mix(in srgb, var(--hero-text) 10%, transparent)",
+                  border:
+                    "1px solid color-mix(in srgb, var(--hero-text) 16%, transparent)",
+                  boxShadow:
+                    "0 20px 60px rgba(0,0,0,0.35), inset 0 1px 0 color-mix(in srgb, var(--hero-text) 10%, transparent)",
                 }}
               >
                 <div
                   className="h-1 w-full"
-                  style={{ background: "linear-gradient(90deg, var(--color-accent), var(--color-secondary))" }}
+                  style={{
+                    background:
+                      "linear-gradient(90deg, var(--color-accent), var(--color-secondary))",
+                  }}
                 />
 
-                <div className="flex justify-center pt-7 pb-4">
-                  <LabHeadAvatar photo={labHead.photo} name={labHead.name} size={200} rounded="xl" />
-                </div>
-
-                <div className="px-6 pb-6 text-center">
-                  <div
-                    className="inline-block px-3 py-0.5 rounded-full text-xs font-bold mb-2"
-                    style={{ background: "rgba(245,158,11,0.15)", color: "var(--hero-accent)" }}
-                  >
-                    <EditableText id="home.labDirectorBadge" tag="span" defaultValue="Lab Director" className="inline" />
+                <div className="p-5">
+                  <div className="flex items-center gap-4">
+                    <LabHeadAvatar
+                      photo={labHead.photo}
+                      name={labHead.name}
+                      size={84}
+                      rounded="xl"
+                    />
+                    <div className="min-w-0">
+                      <span
+                        className="inline-block rounded-full px-2.5 py-0.5 text-[10.5px] font-bold uppercase tracking-[0.08em]"
+                        style={{
+                          background:
+                            "color-mix(in srgb, var(--color-accent) 20%, transparent)",
+                          color: "var(--hero-accent)",
+                        }}
+                      >
+                        <EditableText
+                          id="home.labDirectorBadge"
+                          tag="span"
+                          defaultValue="Lab Director"
+                          className="inline"
+                        />
+                      </span>
+                      <h2
+                        className="mt-1.5 text-[19px] font-black leading-tight text-[color:var(--hero-text)]"
+                        style={{ fontFamily: "var(--font-heading)" }}
+                      >
+                        <EditableText
+                          id="labhead.name"
+                          tag="span"
+                          defaultValue={labHead.name}
+                          className="inline"
+                        />
+                      </h2>
+                      {(labHead.title || labHead.department) && (
+                        <p
+                          className="mt-1 text-[12px] leading-snug"
+                          style={{
+                            color:
+                              "color-mix(in srgb, var(--hero-text) 75%, transparent)",
+                            display: "-webkit-box",
+                            WebkitLineClamp: 2,
+                            WebkitBoxOrient: "vertical",
+                            overflow: "hidden",
+                          }}
+                        >
+                          {[labHead.title, labHead.department]
+                            .filter(Boolean)
+                            .join(" · ")}
+                        </p>
+                      )}
+                    </div>
                   </div>
 
-                  <h2 className="text-[color:var(--hero-text)] font-black text-xl leading-tight" style={{ fontFamily: "var(--font-heading)" }}>
-                    <EditableText id="labhead.name" tag="span" defaultValue={labHead.name} className="inline" />
-                  </h2>
-
-                  {labHead.title && (
-                    <p className="text-xs mt-1.5 font-semibold" style={{ color: "color-mix(in srgb, var(--hero-text) 70%, transparent)" }}>
-                      <EditableText id="labhead.title" tag="span" defaultValue={labHead.title} className="inline" />
-                    </p>
-                  )}
-                  {labHead.department && (
-                    <p className="text-xs mt-0.5" style={{ color: "color-mix(in srgb, var(--hero-text) 55%, transparent)" }}>
-                      <EditableText id="labhead.department" tag="span" defaultValue={labHead.department} className="inline" />
-                    </p>
-                  )}
-
-                  <div className="my-4 h-px w-full" style={{ background: "color-mix(in srgb, var(--hero-text) 10%, transparent)" }} />
-
-                  {labHead.shortBio && (
+                  {labHead.intro && (
                     <p
-                      className="text-xs leading-relaxed mb-5"
+                      className="mt-4 text-[13px] leading-relaxed"
                       style={{
-                        color: "color-mix(in srgb, var(--hero-text) 70%, transparent)",
-                        display: "-webkit-box",
-                        WebkitLineClamp: 4,
-                        WebkitBoxOrient: "vertical",
-                        overflow: "hidden",
+                        color:
+                          "color-mix(in srgb, var(--hero-text) 85%, transparent)",
                       }}
                     >
                       <EditableText
                         id="labhead.shortBio"
                         tag="span"
-                        defaultValue={labHead.shortBio}
+                        defaultValue={labHead.intro}
                         className="inline"
                         multiline
                       />
                     </p>
                   )}
 
-                  {/* These were background:#ffffff with text-[color:var(--hero-text)] — white icons
-                      on a white chip, invisible against the glass card. */}
-                  {heroLinks.length > 0 && (
-                    <div className="flex items-center justify-center gap-2 mb-4">
-                      {heroLinks.map((l) => (
-                        <a
-                          key={l.icon}
-                          href={l.href}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="hm-social no-underline"
-                          aria-label={`${labHead.name} on ${l.label}`}
+                  <dl className="mt-4 grid grid-cols-2 gap-2">
+                    {[
+                      { value: labHeadMetrics.citations, label: "Citations" },
+                      { value: labHeadMetrics.hIndex, label: "h-index" },
+                    ]
+                      .filter((metric) => metric.value)
+                      .map((metric) => (
+                        <div
+                          key={metric.label}
+                          className="rounded-xl px-3 py-2"
+                          style={{
+                            background:
+                              "color-mix(in srgb, var(--hero-text) 8%, transparent)",
+                          }}
                         >
-                          <AppIcon name={l.icon} size={15} />
-                        </a>
+                          <dd
+                            className="text-[19px] font-black leading-none tabular-nums"
+                            style={{
+                              color: "var(--hero-accent)",
+                              fontFamily: "var(--font-heading)",
+                            }}
+                          >
+                            {metric.value}
+                          </dd>
+                          <dt
+                            className="mt-1 text-[11px]"
+                            style={{
+                              color:
+                                "color-mix(in srgb, var(--hero-text) 70%, transparent)",
+                            }}
+                          >
+                            {metric.label}
+                          </dt>
+                        </div>
                       ))}
-                    </div>
-                  )}
+                  </dl>
 
-                  <Link
-                    to="/lab-head"
-                    className="hm-cta w-full inline-flex items-center justify-center no-underline text-sm font-black py-2.5 rounded-xl"
+                  <div
+                    className="mt-4 flex items-center gap-2 border-t pt-4"
                     style={{
-                      background: "linear-gradient(135deg, var(--color-accent), var(--color-secondary))",
-                      color: "var(--on-accent)",
-                      boxShadow: "0 4px 12px rgba(245,158,11,0.3)",
+                      borderColor:
+                        "color-mix(in srgb, var(--hero-text) 12%, transparent)",
                     }}
                   >
-                    <EditableText id="labhead.fullProfileCta" defaultValue="Full Profile →" className="font-black text-sm" />
-                  </Link>
+                    {heroLinks.slice(0, 3).map((l) => (
+                      <a
+                        key={l.icon}
+                        href={l.href}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="hm-social no-underline"
+                        aria-label={`${labHead.name} on ${l.label}`}
+                      >
+                        <AppIcon name={l.icon} size={15} />
+                      </a>
+                    ))}
+                    <Link
+                      to="/lab-head"
+                      className="hm-cta ml-auto inline-flex h-9 items-center gap-1.5 rounded-xl px-4 text-[13px] font-bold no-underline"
+                      style={{
+                        background: "var(--color-accent)",
+                        color: "var(--on-accent)",
+                      }}
+                    >
+                      <EditableText
+                        id="labhead.fullProfileCta"
+                        defaultValue="View full profile"
+                        className="inline"
+                      />
+                      <span aria-hidden="true"></span>
+                    </Link>
+                  </div>
                 </div>
               </div>
             </div>
@@ -469,18 +609,36 @@ const Home: React.FC = () => {
             <div
               key={s.label}
               className="text-center py-6 px-4"
-              style={{ borderRight: i < stats.length - 1 ? "1px solid color-mix(in srgb, var(--hero-text) 10%, transparent)" : "none" }}
+              style={{
+                borderRight:
+                  i < stats.length - 1
+                    ? "1px solid color-mix(in srgb, var(--hero-text) 10%, transparent)"
+                    : "none",
+              }}
             >
-              <div className="mb-1 inline-flex text-[color:color-mix(in_srgb,var(--hero-text)_80%,transparent)]" aria-hidden="true">
+              <div
+                className="mb-1 inline-flex text-[color:color-mix(in_srgb,var(--hero-text)_80%,transparent)]"
+                aria-hidden="true"
+              >
                 <AppIcon name={s.icon} size={20} />
               </div>
               <div
                 className="text-3xl font-black leading-none"
-                style={{ color: "var(--hero-accent)", fontFamily: "var(--font-heading)" }}
+                style={{
+                  color: "var(--hero-accent)",
+                  fontFamily: "var(--font-heading)",
+                }}
               >
                 {s.value}
               </div>
-              <div className="text-xs mt-1.5 font-medium" style={{ color: "color-mix(in srgb, var(--hero-text) 65%, transparent)", letterSpacing: "0.5px" }}>
+              <div
+                className="text-xs mt-1.5 font-medium"
+                style={{
+                  color:
+                    "color-mix(in srgb, var(--hero-text) 65%, transparent)",
+                  letterSpacing: "0.5px",
+                }}
+              >
                 {s.label}
               </div>
             </div>
@@ -495,8 +653,16 @@ const Home: React.FC = () => {
       >
         <div>
           <div className="flex items-center gap-3 mb-2">
-            <div className="w-1 h-8 rounded-full" style={{ background: "var(--color-accent)" }} />
-            <div style={{ color: sectionTextPrimary, fontFamily: "var(--font-heading)" }}>
+            <div
+              className="w-1 h-8 rounded-full"
+              style={{ background: "var(--color-accent)" }}
+            />
+            <div
+              style={{
+                color: sectionTextPrimary,
+                fontFamily: "var(--font-heading)",
+              }}
+            >
               <EditableText
                 id="home.introTitle"
                 tag="h2"
@@ -505,9 +671,18 @@ const Home: React.FC = () => {
               />
             </div>
           </div>
-          <div className="w-16 h-0.5 ml-4 mb-7 rounded" style={{ background: "var(--color-accent)", opacity: 0.4 }} />
+          <div
+            className="w-16 h-0.5 ml-4 mb-7 rounded"
+            style={{ background: "var(--color-accent)", opacity: 0.4 }}
+          />
 
-          <div style={{ whiteSpace: "pre-line", lineHeight: 1.85, color: sectionTextSecondary }}>
+          <div
+            style={{
+              whiteSpace: "pre-line",
+              lineHeight: 1.85,
+              color: sectionTextSecondary,
+            }}
+          >
             <EditableText
               id="home.introText"
               tag="p"
@@ -519,31 +694,58 @@ const Home: React.FC = () => {
           <Link
             to="/about"
             className="hm-cta inline-block no-underline font-bold text-sm px-6 py-2.5 rounded-xl text-[color:var(--hero-text)]"
-            style={{ background: "var(--color-primary)", boxShadow: "0 2px 12px rgba(30,58,95,0.25)" }}
+            style={{
+              background: "var(--color-primary)",
+              boxShadow: "0 2px 12px rgba(30,58,95,0.25)",
+            }}
           >
-            <EditableText id="home.readMore" defaultValue="Read More" className="font-bold text-sm" />
+            <EditableText
+              id="home.readMore"
+              defaultValue="Read More"
+              className="font-bold text-sm"
+            />
           </Link>
         </div>
 
         <div>
           <div className="flex items-center gap-3 mb-2">
-            <div className="w-1 h-8 rounded-full" style={{ background: "var(--color-secondary)" }} />
-            <div style={{ color: sectionTextPrimary, fontFamily: "var(--font-heading)" }}>
+            <div
+              className="w-1 h-8 rounded-full"
+              style={{ background: "var(--color-secondary)" }}
+            />
+            <div
+              style={{
+                color: sectionTextPrimary,
+                fontFamily: "var(--font-heading)",
+              }}
+            >
               <EditableText
                 id="home.announcementsTitle"
                 tag="h2"
                 className="font-black text-xl"
-                defaultValue={content["home.announcementsTitle"] ?? "Latest Updates"}
+                defaultValue={
+                  content["home.announcementsTitle"] ?? "Latest Updates"
+                }
               />
             </div>
           </div>
-          <div className="w-12 h-0.5 ml-4 mb-6 rounded" style={{ background: "var(--color-secondary)", opacity: 0.3 }} />
+          <div
+            className="w-12 h-0.5 ml-4 mb-6 rounded"
+            style={{ background: "var(--color-secondary)", opacity: 0.3 }}
+          />
 
           <div className="flex flex-col gap-3">
             {latestAnnouncements.length === 0 ? (
-              <div className="text-center py-8 rounded-xl border-2 border-dashed" style={{ borderColor: sectionCardBorder }}>
+              <div
+                className="text-center py-8 rounded-xl border-2 border-dashed"
+                style={{ borderColor: sectionCardBorder }}
+              >
                 <p className="text-sm" style={{ color: sectionTextMuted }}>
-                  <EditableText id="home.noAnnouncements" defaultValue="No announcements yet." className="text-sm" />
+                  <EditableText
+                    id="home.noAnnouncements"
+                    defaultValue="No announcements yet."
+                    className="text-sm"
+                  />
                 </p>
               </div>
             ) : (
@@ -564,10 +766,15 @@ const Home: React.FC = () => {
                   {/* Date and the Read button share one line, so the button adds no height.
                       Pinned shows as the accent edge; the date already says how new it is. */}
                   <div className="mb-1 flex items-center gap-2">
-                    <span className="text-xs font-medium" style={{ color: sectionTextMuted }}>
+                    <span
+                      className="text-xs font-medium"
+                      style={{ color: sectionTextMuted }}
+                    >
                       {a.isPinned && <span className="sr-only">Pinned. </span>}
                       {new Date(a.createdAt).toLocaleDateString("en-US", {
-                        year: "numeric", month: "short", day: "numeric",
+                        year: "numeric",
+                        month: "short",
+                        day: "numeric",
                       })}
                     </span>
                     {/* Opens in a drawer over the home page — no jump to the News section. */}
@@ -581,7 +788,13 @@ const Home: React.FC = () => {
                     </NewsLink>
                   </div>
 
-                  <p className="font-bold text-sm leading-snug" style={{ color: sectionTextPrimary, fontFamily: "var(--font-heading)" }}>
+                  <p
+                    className="font-bold text-sm leading-snug"
+                    style={{
+                      color: sectionTextPrimary,
+                      fontFamily: "var(--font-heading)",
+                    }}
+                  >
                     {announcementTitle(a)}
                   </p>
 
@@ -605,11 +818,22 @@ const Home: React.FC = () => {
               <Link
                 to="/announcements"
                 className="hm-cta no-underline inline-flex items-center justify-center gap-1.5 text-xs font-bold py-2.5 rounded-xl border"
-                style={{ color: "var(--secondary-ink)", borderColor: sectionCardBorder, background: sectionCardBg }}
+                style={{
+                  color: "var(--secondary-ink)",
+                  borderColor: sectionCardBorder,
+                  background: sectionCardBg,
+                }}
               >
-                <EditableText id="home.showAllNews" defaultValue="Show all news" className="font-bold text-xs" />
+                <EditableText
+                  id="home.showAllNews"
+                  defaultValue="Show all news"
+                  className="font-bold text-xs"
+                />
                 <span aria-hidden="true">→</span>
-                <span className="font-semibold tabular-nums" style={{ color: sectionTextMuted }}>
+                <span
+                  className="font-semibold tabular-nums"
+                  style={{ color: sectionTextMuted }}
+                >
                   ({publishedAnnouncements.length})
                 </span>
               </Link>
@@ -619,12 +843,36 @@ const Home: React.FC = () => {
       </div>
 
       {/* ══════════════ QUICK LINKS ══════════════ */}
-      <div className="border-t border-b" style={{ borderColor: stripBorder, background: stripBg }}>
+      <div
+        className="border-t border-b"
+        style={{ borderColor: stripBorder, background: stripBg }}
+      >
         <div className="max-w-6xl mx-auto px-6 py-10 grid grid-cols-1 sm:grid-cols-3 gap-6">
           {[
-            { to: "/collaborators", icon: "handshake" as AppIconName, title: "Collaborators", desc: "Meet the researchers behind our work.", color: "var(--color-primary)", ink: "var(--primary-ink)" },
-            { to: "/publications", icon: "publications" as AppIconName, title: "Publications", desc: "Explore our published and ongoing research.", color: "var(--color-secondary)", ink: "var(--secondary-ink)" },
-            { to: "/research-ideas", icon: "ideas" as AppIconName, title: "Research Ideas", desc: "Discover open research questions and collaborate.", color: "var(--color-accent)", ink: "var(--accent-ink)" },
+            {
+              to: "/collaborators",
+              icon: "handshake" as AppIconName,
+              title: "Collaborators",
+              desc: "Meet the researchers behind our work.",
+              color: "var(--color-primary)",
+              ink: "var(--primary-ink)",
+            },
+            {
+              to: "/publications",
+              icon: "publications" as AppIconName,
+              title: "Publications",
+              desc: "Explore our published and ongoing research.",
+              color: "var(--color-secondary)",
+              ink: "var(--secondary-ink)",
+            },
+            {
+              to: "/research-ideas",
+              icon: "ideas" as AppIconName,
+              title: "Research Ideas",
+              desc: "Discover open research questions and collaborate.",
+              color: "var(--color-accent)",
+              ink: "var(--accent-ink)",
+            },
           ].map((item) => (
             /* Hover is CSS now, not onMouseEnter style mutation — so it also
                responds to keyboard focus and respects reduced motion. */
@@ -632,25 +880,45 @@ const Home: React.FC = () => {
               key={item.to}
               to={item.to}
               className="hm-quick no-underline flex items-start gap-4 p-5 rounded-2xl border"
-              style={{ borderColor: stripBorder, ["--hm-accent" as string]: item.color }}
+              style={{
+                borderColor: stripBorder,
+                ["--hm-accent" as string]: item.color,
+              }}
             >
               <span
                 className="w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0"
-                style={{ background: `color-mix(in srgb, ${item.color} 12%, transparent)`, color: item.ink }}
+                style={{
+                  background: `color-mix(in srgb, ${item.color} 12%, transparent)`,
+                  color: item.ink,
+                }}
               >
                 <AppIcon name={item.icon} size={20} />
               </span>
               <span>
-                <span className="block font-black text-sm" style={{ color: item.ink }}>{item.title}</span>
-                <span className="block text-xs mt-0.5 leading-relaxed" style={{ color: sectionTextMuted }}>{item.desc}</span>
+                <span
+                  className="block font-black text-sm"
+                  style={{ color: item.ink }}
+                >
+                  {item.title}
+                </span>
+                <span
+                  className="block text-xs mt-0.5 leading-relaxed"
+                  style={{ color: sectionTextMuted }}
+                >
+                  {item.desc}
+                </span>
               </span>
             </Link>
           ))}
         </div>
       </div>
 
-      {collaborators.length > 0 && <TeamSection collaborators={collaborators} isDarkTheme={isDarkTheme} />}
-      {gallery.length > 0 && <GallerySection gallery={gallery} isDarkTheme={isDarkTheme} />}
+      {collaborators.length > 0 && (
+        <TeamSection collaborators={collaborators} isDarkTheme={isDarkTheme} />
+      )}
+      {gallery.length > 0 && (
+        <GallerySection gallery={gallery} isDarkTheme={isDarkTheme} />
+      )}
     </div>
   );
 };
@@ -682,10 +950,21 @@ const SectionHeader: React.FC<{
     <div className="flex items-center gap-3">
       <div
         className="w-1 h-8 rounded-full"
-        style={{ background: "linear-gradient(180deg, var(--color-accent), var(--color-secondary))" }}
+        style={{
+          background:
+            "linear-gradient(180deg, var(--color-accent), var(--color-secondary))",
+        }}
       />
-      <h2 className="font-black text-2xl" style={{ color, fontFamily: "var(--font-heading)" }}>
-        <EditableText id={id} tag="span" defaultValue={defaultValue} className="inline" />
+      <h2
+        className="font-black text-2xl"
+        style={{ color, fontFamily: "var(--font-heading)" }}
+      >
+        <EditableText
+          id={id}
+          tag="span"
+          defaultValue={defaultValue}
+          className="inline"
+        />
       </h2>
     </div>
     {children && <div className="flex items-center gap-2">{children}</div>}
@@ -693,10 +972,10 @@ const SectionHeader: React.FC<{
 );
 
 // ── Team: three members in a row, paged ──────────────────────
-const TeamSection: React.FC<{ collaborators: CollaboratorProfile[]; isDarkTheme: boolean }> = ({
-  collaborators,
-  isDarkTheme,
-}) => {
+const TeamSection: React.FC<{
+  collaborators: CollaboratorProfile[];
+  isDarkTheme: boolean;
+}> = ({ collaborators, isDarkTheme }) => {
   const t = sectionTokens(isDarkTheme);
   const pageCount = Math.ceil(collaborators.length / TEAM_PER_PAGE);
   const pages = useCarousel(pageCount, COLLAB_INTERVAL);
@@ -708,18 +987,43 @@ const TeamSection: React.FC<{ collaborators: CollaboratorProfile[]; isDarkTheme:
   return (
     <section
       className="py-16 px-6"
-      style={{ background: "var(--color-bg)", borderTop: `1px solid ${t.sectionBorder}` }}
+      style={{
+        background: "var(--color-bg)",
+        borderTop: `1px solid ${t.sectionBorder}`,
+      }}
       onMouseEnter={() => pages.setPaused(true)}
       onMouseLeave={() => pages.setPaused(prefersReducedMotion())}
       onFocusCapture={() => pages.setPaused(true)}
     >
       <div className="max-w-6xl mx-auto">
-        <SectionHeader id="home.teamHeader" defaultValue="Our Team" color={t.headingText}>
+        <SectionHeader
+          id="home.teamHeader"
+          defaultValue="Our Team"
+          color={t.headingText}
+        >
           {pageCount > 1 && (
             <>
-              <PauseButton paused={pages.paused} onToggle={() => pages.setPaused((p) => !p)} label="team slideshow" />
-              <button type="button" onClick={pages.prev} className="hm-ctrl" aria-label="Previous team members">‹</button>
-              <button type="button" onClick={pages.next} className="hm-ctrl" aria-label="Next team members">›</button>
+              <PauseButton
+                paused={pages.paused}
+                onToggle={() => pages.setPaused((p) => !p)}
+                label="team slideshow"
+              />
+              <button
+                type="button"
+                onClick={pages.prev}
+                className="hm-ctrl"
+                aria-label="Previous team members"
+              >
+                ‹
+              </button>
+              <button
+                type="button"
+                onClick={pages.next}
+                className="hm-ctrl"
+                aria-label="Next team members"
+              >
+                ›
+              </button>
             </>
           )}
         </SectionHeader>
@@ -739,12 +1043,22 @@ const TeamSection: React.FC<{ collaborators: CollaboratorProfile[]; isDarkTheme:
             >
               <div
                 className="w-full h-1.5 flex-shrink-0"
-                style={{ background: "linear-gradient(90deg, var(--color-accent), var(--color-primary))" }}
+                style={{
+                  background:
+                    "linear-gradient(90deg, var(--color-accent), var(--color-primary))",
+                }}
               />
               <div className="flex flex-col items-center flex-1 px-6 py-7">
-                <CollabAvatar photo={member.photo ?? ""} name={member.name} size={132} />
+                <CollabAvatar
+                  photo={member.photo ?? ""}
+                  name={member.name}
+                  size={132}
+                />
 
-                <h3 className="font-black text-lg mt-4 leading-tight" style={{ color: t.headingText }}>
+                <h3
+                  className="font-black text-lg mt-4 leading-tight"
+                  style={{ color: t.headingText }}
+                >
                   {member.name}
                 </h3>
 
@@ -761,7 +1075,10 @@ const TeamSection: React.FC<{ collaborators: CollaboratorProfile[]; isDarkTheme:
                 )}
 
                 {member.affiliation && (
-                  <p className="text-xs mt-2 font-medium inline-flex items-center gap-1.5" style={{ color: t.mutedText }}>
+                  <p
+                    className="text-xs mt-2 font-medium inline-flex items-center gap-1.5"
+                    style={{ color: t.mutedText }}
+                  >
                     <AppIcon name="building" size={13} /> {member.affiliation}
                   </p>
                 )}
@@ -807,7 +1124,10 @@ const TeamSection: React.FC<{ collaborators: CollaboratorProfile[]; isDarkTheme:
               ))}
             </div>
           )}
-          <Link to="/collaborators" className="hm-pill no-underline text-xs font-bold px-4 py-1.5 rounded-full">
+          <Link
+            to="/collaborators"
+            className="hm-pill no-underline text-xs font-bold px-4 py-1.5 rounded-full"
+          >
             <EditableText
               id="home.viewAllCollaborators"
               defaultValue={`View all ${collaborators.length} members →`}
@@ -821,7 +1141,10 @@ const TeamSection: React.FC<{ collaborators: CollaboratorProfile[]; isDarkTheme:
 };
 
 // ── Gallery: mosaic grid ──────────────────────────────────────
-const GallerySection: React.FC<{ gallery: GalleryItem[]; isDarkTheme: boolean }> = ({ gallery, isDarkTheme }) => {
+const GallerySection: React.FC<{
+  gallery: GalleryItem[];
+  isDarkTheme: boolean;
+}> = ({ gallery, isDarkTheme }) => {
   const t = sectionTokens(isDarkTheme);
   const [imgErr, setImgErr] = useState<Record<string, boolean>>({});
   const tiles = gallery.slice(0, MOSAIC_LIMIT);
@@ -829,12 +1152,23 @@ const GallerySection: React.FC<{ gallery: GalleryItem[]; isDarkTheme: boolean }>
   return (
     <section
       className="py-16 px-6"
-      style={{ background: "var(--color-bg)", borderTop: `1px solid ${t.sectionBorder}` }}
+      style={{
+        background: "var(--color-bg)",
+        borderTop: `1px solid ${t.sectionBorder}`,
+      }}
     >
       <div className="max-w-6xl mx-auto">
-        <SectionHeader id="home.galleryHeader" defaultValue="Gallery" color={t.headingText}>
+        <SectionHeader
+          id="home.galleryHeader"
+          defaultValue="Gallery"
+          color={t.headingText}
+        >
           <Link to="/gallery" className="hm-ctrl hm-ctrl-wide no-underline">
-            <EditableText id="home.galleryAllCta" defaultValue="View all →" className="text-xs font-bold" />
+            <EditableText
+              id="home.galleryAllCta"
+              defaultValue="View all →"
+              className="text-xs font-bold"
+            />
           </Link>
         </SectionHeader>
 
@@ -862,7 +1196,9 @@ const GallerySection: React.FC<{ gallery: GalleryItem[]; isDarkTheme: boolean }>
                 )}
                 {shot.title && (
                   <span className="hm-tile-caption">
-                    <span className="block font-bold text-sm leading-tight">{shot.title}</span>
+                    <span className="block font-bold text-sm leading-tight">
+                      {shot.title}
+                    </span>
                   </span>
                 )}
               </Link>
@@ -878,9 +1214,19 @@ const GallerySection: React.FC<{ gallery: GalleryItem[]; isDarkTheme: boolean }>
 // AVATARS
 // ══════════════════════════════════════════════════════════════
 const initialsOf = (name: string) =>
-  name.split(" ").map((w) => w[0]).filter(Boolean).slice(0, 2).join("").toUpperCase();
+  name
+    .split(" ")
+    .map((w) => w[0])
+    .filter(Boolean)
+    .slice(0, 2)
+    .join("")
+    .toUpperCase();
 
-const CollabAvatar: React.FC<{ photo: string; name: string; size: number }> = ({ photo, name, size }) => {
+const CollabAvatar: React.FC<{ photo: string; name: string; size: number }> = ({
+  photo,
+  name,
+  size,
+}) => {
   const [err, setErr] = useState(false);
   if (photo && !err) {
     return (
@@ -889,7 +1235,13 @@ const CollabAvatar: React.FC<{ photo: string; name: string; size: number }> = ({
         alt=""
         loading="lazy"
         onError={() => setErr(true)}
-        style={{ width: size, height: size, borderRadius: "8%", objectFit: "cover", display: "block" }}
+        style={{
+          width: size,
+          height: size,
+          borderRadius: "8%",
+          objectFit: "cover",
+          display: "block",
+        }}
       />
     );
   }
@@ -898,8 +1250,11 @@ const CollabAvatar: React.FC<{ photo: string; name: string; size: number }> = ({
       aria-hidden="true"
       className="flex items-center justify-center text-[color:var(--on-secondary)] font-black"
       style={{
-        width: size, height: size, borderRadius: "8%",
-        background: "var(--color-secondary)", fontSize: size * 0.3,
+        width: size,
+        height: size,
+        borderRadius: "8%",
+        background: "var(--color-secondary)",
+        fontSize: size * 0.3,
       }}
     >
       {initialsOf(name)}
@@ -942,7 +1297,9 @@ const LabHeadAvatar: React.FC<{
       aria-hidden="true"
       className="flex items-center justify-center text-[color:var(--on-secondary)] font-black"
       style={{
-        width: size, height: size, borderRadius,
+        width: size,
+        height: size,
+        borderRadius,
         background: "var(--color-secondary)",
         fontSize: size * 0.3,
         border: "3px solid rgba(255,255,255,0.3)",

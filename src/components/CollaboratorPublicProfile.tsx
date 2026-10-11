@@ -259,7 +259,7 @@ const CollaboratorPublicProfile: React.FC<Props> = ({
               <section aria-labelledby="about-heading" className={`${PANEL} ${box}`}>
                 <Eyebrow id="about-heading">About</Eyebrow>
                 <p
-                  className="max-w-[68ch] text-[15.5px] text-slate-700"
+                  className="text-[15.5px] text-slate-700"
                   style={{ whiteSpace: "pre-line", lineHeight: 1.8 }}
                 >
                   {c.bio}

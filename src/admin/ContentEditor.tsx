@@ -352,16 +352,16 @@ const FIELD_GROUPS: FieldGroup[] = [
       {
         section: "Biography",
         key: "labhead.shortBio",
-        label: "Short Bio",
+        label: "Short intro",
         type: "textarea",
-        hint: "Also used on the Home page hero card, where it clamps to four lines — keep it to roughly 60 words.",
+        hint: "One or two sentences (about 200 characters). Shown on the Home page lab head card and under his name on the Lab head page. Leave empty to use the first sentences of the Biography.",
       },
       {
         section: "Biography",
         key: "labhead.fullBio",
-        label: "Full Bio",
+        label: "Biography",
         type: "textarea",
-        hint: "Shown on the profile page beneath the short bio. Leave a blank line between paragraphs.",
+        hint: "The full biography — shown once, in the Biography section of the Lab head page. Leave a blank line between paragraphs. If empty, his collaborator profile bio is used.",
       },
       {
         section: "Biography",

@@ -54,7 +54,7 @@ const AnnouncementView: React.FC<{ post: Announcement }> = ({ post }) => (
     <p className="mt-2 text-[12.5px] text-[color:var(--site-muted)]">
       {fmtDate(post.createdAt)} · {relativeTo(post.createdAt)}
     </p>
-    <div className="mt-5 max-w-[70ch] whitespace-pre-line text-[15px] leading-[1.85] text-[color:var(--site-text)]">{bodyOf(post)}</div>
+    <div className="mt-5 whitespace-pre-line text-[15px] leading-[1.85] text-[color:var(--site-text)]">{bodyOf(post)}</div>
     {post.link && (
       <a
         href={post.link}
